@@ -1,8 +1,21 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from foreshadow.clock import Clock
+
+REPO_FIXTURES = Path(__file__).parent / "fixtures" / "repos"
+
+
+def load_repo_fixture(name: str) -> dict:
+    return json.loads((REPO_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def repo_fixture():
+    return load_repo_fixture
 
 
 @pytest.fixture
