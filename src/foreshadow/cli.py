@@ -1,21 +1,60 @@
+from __future__ import annotations
+
+import sys
+from datetime import UTC, date, datetime
+
 import typer
+
+from foreshadow.clock import Clock
+from foreshadow.db import connect, migrate
+from foreshadow.paths import resolve_data_dir
+from foreshadow.pipeline import run_pipeline, show_repo
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
 
 @app.command()
-def run(force: bool = False, date: str | None = None, llm: bool = False) -> None:
-    raise NotImplementedError
+def run(
+    force: bool = False,
+    date: str | None = None,
+    llm: bool = False,
+) -> None:
+    clock = _clock(date)
+    try:
+        result = run_pipeline(clock=clock, force=force, llm=llm)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+    text = result.summary or ""
+    sys.stdout.write(text if text.endswith("\n") else text + "\n")
 
 
 @app.command()
-def report(date: str | None = None, json: bool = False) -> None:
-    raise NotImplementedError
+def report(
+    date: str | None = None,
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    clock = _clock(date)
+    day = _resolve_report_date(clock, date)
+    if day is None:
+        print("no report", file=sys.stderr)
+        raise SystemExit(2)
+    path = resolve_data_dir() / "reports" / f"{day}{'.json' if as_json else '.md'}"
+    if not path.is_file():
+        print(f"no report for {day}", file=sys.stderr)
+        raise SystemExit(2)
+    sys.stdout.write(path.read_text(encoding="utf-8"))
 
 
 @app.command()
 def show(repo: str) -> None:
-    raise NotImplementedError
+    text = show_repo(repo)
+    if text is None:
+        print(f"unknown repo: {repo}", file=sys.stderr)
+        raise SystemExit(2)
+    sys.stdout.write(text if text.endswith("\n") else text + "\n")
 
 
 @app.command()
@@ -26,3 +65,33 @@ def review(repo: str, action: str, m: str | None = None) -> None:
 @app.command()
 def watchlist(action: str | None = None) -> None:
     raise NotImplementedError
+
+
+def _clock(date_str: str | None) -> Clock:
+    if not date_str:
+        return Clock()
+    day = date.fromisoformat(date_str)
+    return Clock(now=datetime(day.year, day.month, day.day, 0, 5, tzinfo=UTC))
+
+
+def _resolve_report_date(clock: Clock, date_arg: str | None) -> str | None:
+    if date_arg:
+        return date_arg
+    db_path = resolve_data_dir() / "foreshadow.sqlite3"
+    today = clock.today().isoformat()
+    reports = resolve_data_dir() / "reports"
+    today_file = reports / f"{today}.md"
+    if today_file.is_file():
+        return today
+    if not db_path.is_file():
+        return None
+    conn = connect(db_path)
+    migrate(conn)
+    row = conn.execute(
+        """
+        SELECT run_date FROM daily_runs
+        WHERE status IN ('complete', 'degraded')
+        ORDER BY run_date DESC LIMIT 1
+        """
+    ).fetchone()
+    return str(row[0]) if row else None

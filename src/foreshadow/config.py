@@ -138,6 +138,13 @@ class Settings(BaseModel):
     llm: LLMSettings = Field(default_factory=LLMSettings)
 
 
+def user_config_path() -> Path:
+    env = os.environ.get("FORESHADOW_CONFIG")
+    if env:
+        return Path(env)
+    return Path.home() / ".config" / "foreshadow" / "config.toml"
+
+
 def ensure_default_config(path: Path) -> None:
     """Write the documented default config if ``path`` does not exist. Never overwrite."""
     if path.exists():
