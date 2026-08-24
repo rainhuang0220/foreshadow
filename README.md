@@ -8,7 +8,8 @@ The running implementation is **not on this folder’s checkout**.
 |---|---|
 | Code + CLI (`0.1.0`) | `.worktrees/p0-implementation` (branch `p0-implementation`) |
 | Spec | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
-| GitHub | will be `https://github.com/rainhuang0220/foreshadow` after the remote exists |
+| GitHub | https://github.com/rainhuang0220/foreshadow (default branch `p0-implementation`) |
+| PR (do not merge yet) | https://github.com/rainhuang0220/foreshadow/pull/1 |
 
 ```bash
 cd .worktrees/p0-implementation
