@@ -38,6 +38,8 @@ class ScoredRepo:
     full_name: str
     breakdown: ScoreBreakdown
     evidence: dict[str, Any] = field(default_factory=dict)
+    why_now: str | None = None
+    contribution_bullets: list[str] | None = None
 
 
 def mix_opportunity(

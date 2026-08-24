@@ -188,7 +188,7 @@ def build_card(
         "exceptional": bd.exceptional,
         "vetoed": bd.vetoed,
         "veto_reason": bd.veto_reason,
-        "why_now": build_why_now(scored, repo),
+        "why_now": scored.why_now or build_why_now(scored, repo),
         "windows": windows,
         "components": components,
         "evidence_ref": {
@@ -198,7 +198,11 @@ def build_card(
             or "",
             "license_spdx": spdx,
         },
-        "best_contribution": _help_bullets(feat_map),
+        "best_contribution": (
+            list(scored.contribution_bullets)[:3]
+            if scored.contribution_bullets
+            else _help_bullets(feat_map)
+        ),
         "risk": build_risk(scored, repo),
         "direction_topics": _topic_label(repo.get("topics") or []),
     }

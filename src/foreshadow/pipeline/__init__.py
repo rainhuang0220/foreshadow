@@ -341,6 +341,13 @@ def _run(
         min_explosion=settings.scoring.min_explosion,
         max_per_owner=settings.scoring.max_per_owner,
     )
+    from foreshadow.llm import fill_why_now
+
+    fill_why_now(
+        selected,
+        settings,
+        repos={scored.full_name: data for _, scored, data in scored_rows},
+    )
     id_by_name = {scored.full_name: repo_id for repo_id, scored, _ in scored_rows}
     for row in selected:
         repo_id = id_by_name.get(row.full_name)
