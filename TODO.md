@@ -5,7 +5,8 @@
 - [x] Owner review of [`docs/p0-architecture.md`](docs/p0-architecture.md)
 - [x] Confirm: Python 3.12; GitHub remote `rainhuang0220/foreshadow`; `gh auth token` fallback
 - [x] Write P0 implementation plan
-- [ ] Execute plan Task 1 — repo skeleton (MIT, uv, ruff, CI, README)
+- [x] Execute plan Task 1 — repo skeleton (MIT, uv, ruff, CI, README)
+- [ ] Execute plan Task 2 — config, paths, clock, models, SQLite v1
 
 ## P0 implementation (do not start before the plan)
 

@@ -1,0 +1,39 @@
+[project]
+name = "foreshadow-radar"
+version = "0.0.0"
+description = "Find what the future has already foreshadowed."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "rainhuang0220" }]
+dependencies = [
+  "httpx",
+  "pydantic>=2",
+  "typer",
+  "platformdirs",
+]
+
+[project.scripts]
+foreshadow = "foreshadow.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foreshadow"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/foreshadow/sql" = "foreshadow/sql"
+"src/foreshadow/directions.toml" = "foreshadow/directions.toml"
+
+[dependency-groups]
+dev = ["pytest", "ruff", "respx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]

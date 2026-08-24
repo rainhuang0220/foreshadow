@@ -3,10 +3,11 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 — spec **Accepted**; implementation plan written; **no application code yet** |
-| **Current Goal** | Execute the P0 plan (`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`) starting at Task 1 |
-| **Workspace** | `/Users/rainhuang/Desktop/Foreshadow` — greenfield. No git, no application code. |
+| **Current Phase** | P0 — skeleton in progress; **pipeline not implemented** |
+| **Current Goal** | Finish Task 1 then continue the P0 plan (`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`) |
+| **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
+| **Package** | `foreshadow-radar` `0.0.0` (CLI stubs only) |
 | **Date** | 2026-08-24 |
 
 ## Completed
@@ -18,22 +19,23 @@
 - Spec copied to `docs/p0-architecture.md`.
 - Owner locked: Python 3.12 only (no Go in P0, no dual stack); remote `rainhuang0220/foreshadow`; token `GITHUB_TOKEN` → `GH_TOKEN` → `gh auth token`.
 - Implementation plan: [`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`](docs/superpowers/plans/2026-08-24-foreshadow-p0.md) (Tasks 1–11).
+- Task 1 repo skeleton: `pyproject.toml`, package import `foreshadow`, `foreshadow --help`, MIT, README caveats, CI.
 
 ## In Progress
 
-- Waiting to execute the plan (subagent-driven or inline).
+- P0 implementation via plan tasks (Task 1 landing).
 
 ## Blocked
 
-- None for starting Task 1.
+- None.
 
 ## Next Action
 
-Execute Task 1 of the P0 plan (repo skeleton). Do not skip to later tasks.
+Execute Task 2 (config, paths, clock, models, SQLite v1). Do not skip ahead.
 
 ## Known Bugs
 
-None in code (no code). Spec risks are listed in `docs/p0-architecture.md` § Risks.
+None in code beyond intentional `NotImplementedError` stubs. Spec risks are listed in `docs/p0-architecture.md` § Risks.
 
 ## Architecture Decisions
 
