@@ -25,7 +25,9 @@ def run(
     except SystemExit:
         raise
     except Exception as exc:
-        print(str(exc), file=sys.stderr)
+        from foreshadow.github.client import redact
+
+        print(redact(str(exc)), file=sys.stderr)
         raise SystemExit(1) from exc
     text = result.summary or ""
     sys.stdout.write(text if text.endswith("\n") else text + "\n")

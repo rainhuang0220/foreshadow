@@ -690,17 +690,14 @@ def discover_hydrate_snapshot(
     health["budget_used"] = int(getattr(client, "graphql_used", 0) or 0)
     health["rest_used"] = int(getattr(client, "rest_used", 0) or 0)
     _persist_failures(conn, run_id, getattr(client, "source_failures", []), now)
-    status = "degraded" if is_degraded(health) else "complete"
     conn.execute(
         """
         UPDATE daily_runs SET
-          finished_at=?, status=?, source_health_json=?,
+          status='running', finished_at=NULL, source_health_json=?,
           budget_used=?, budget_rest_used=?, candidate_count=?
         WHERE id=?
         """,
         (
-            clock.now().isoformat(),
-            status,
             json.dumps(health, ensure_ascii=False),
             health["budget_used"],
             health["rest_used"],

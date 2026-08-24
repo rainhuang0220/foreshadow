@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from fakes import FakeGitHub, repo_node
@@ -433,3 +434,62 @@ def test_run_pipeline_replaces_scores_not_reviews(
     assert conn.execute("SELECT COUNT(*) FROM daily_runs").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM scores").fetchone()[0] >= 1
+
+
+def _crash_after_hydrate(
+    tmp_home, tmp_path, frozen_clock, monkeypatch, exc: BaseException
+):
+    isolate(tmp_home, tmp_path, monkeypatch)
+    gh, _ = mini_github()
+    from foreshadow.pipeline.score import score_repo as real_score
+
+    calls = {"n": 0}
+
+    def boom(*args, **kwargs):
+        if calls["n"] == 0:
+            calls["n"] += 1
+            raise exc
+        return real_score(*args, **kwargs)
+
+    monkeypatch.setattr("foreshadow.pipeline.score_repo", boom)
+    with pytest.raises(type(exc)):
+        run_pipeline(clock=frozen_clock, force=False, llm=False, client=gh)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    status = conn.execute("SELECT status FROM daily_runs").fetchone()[0]
+    assert status not in {"complete", "degraded"}
+    assert not (tmp_home / "reports" / "2026-08-24.md").exists()
+    recovered = run_pipeline(clock=frozen_clock, force=False, llm=False, client=gh)
+    assert recovered.skipped is False
+    assert recovered.status in {"complete", "degraded"}
+    assert recovered.report_path is not None
+    assert Path(recovered.report_path).is_file()
+
+
+def test_score_crash_after_hydrate_does_not_skip(
+    tmp_home, tmp_path, frozen_clock, monkeypatch
+):
+    _crash_after_hydrate(
+        tmp_home, tmp_path, frozen_clock, monkeypatch, RuntimeError("score failed")
+    )
+
+
+def test_keyboard_interrupt_after_hydrate_does_not_skip(
+    tmp_home, tmp_path, frozen_clock, monkeypatch
+):
+    _crash_after_hydrate(
+        tmp_home, tmp_path, frozen_clock, monkeypatch, KeyboardInterrupt()
+    )
+
+
+def test_cli_run_redacts_exception_token(tmp_home, tmp_path, monkeypatch):
+    isolate(tmp_home, tmp_path, monkeypatch)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("token ghp_abcdefghijklmnopqrstuvwxyz012345 leaked")
+
+    monkeypatch.setattr("foreshadow.cli.run_pipeline", boom)
+    result = CliRunner().invoke(app, ["run", "--date", "2026-08-24"])
+    assert result.exit_code == 1
+    blob = f"{result.stdout}{result.stderr}{result.output}"
+    assert "ghp_" not in blob
+    assert "[REDACTED]" in blob

@@ -97,10 +97,13 @@ def run_pipeline(
         """,
         (today_s,),
     ).fetchone()
-    if existing and existing[0] == "complete" and not force:
-        path = (
-            Path(existing[1]) if existing[1] else data_dir / "reports" / f"{today_s}.md"
-        )
+    report_file = (
+        Path(existing[1])
+        if existing and existing[1]
+        else data_dir / "reports" / f"{today_s}.md"
+    )
+    if existing and existing[0] == "complete" and not force and report_file.is_file():
+        path = report_file
         health = _as_dict(existing[5])
         snap_days = _snapshot_days(conn)
         result = RunResult(
@@ -150,22 +153,49 @@ def run_pipeline(
             wrote_config=wrote,
         )
     except Exception as exc:
-        try:
+        _mark_run_unfinished(conn, clock, today_s, exc, failed=True)
+        raise
+    except BaseException:
+        _mark_run_unfinished(conn, clock, today_s, None, failed=False)
+        raise
+    finally:
+        if created_client and hasattr(client, "close"):
+            client.close()
+
+
+def _mark_run_unfinished(
+    conn: sqlite3.Connection,
+    clock: Clock,
+    today_s: str,
+    exc: BaseException | None,
+    *,
+    failed: bool,
+) -> None:
+    from foreshadow.github.client import redact
+
+    try:
+        if failed:
+            detail = redact(str(exc) if exc is not None else "error")[:500]
             conn.execute(
                 """
                 UPDATE daily_runs
                 SET status='failed', error=?, finished_at=?
                 WHERE run_date=?
                 """,
-                (str(exc)[:500], clock.now().isoformat(), today_s),
+                (detail, clock.now().isoformat(), today_s),
             )
-            conn.commit()
-        except sqlite3.Error:
-            pass
-        raise
-    finally:
-        if created_client and hasattr(client, "close"):
-            client.close()
+        else:
+            conn.execute(
+                """
+                UPDATE daily_runs
+                SET status='running', finished_at=NULL, report_path=NULL
+                WHERE run_date=?
+                """,
+                (today_s,),
+            )
+        conn.commit()
+    except sqlite3.Error:
+        pass
 
 
 def show_repo(ref: str) -> str | None:
@@ -264,6 +294,15 @@ def _run(
     today_s = today.isoformat()
     health = dict(disc.source_health)
     run_id = disc.run_id
+    conn.execute(
+        """
+        UPDATE daily_runs
+        SET status='running', finished_at=NULL, report_path=NULL
+        WHERE id=?
+        """,
+        (run_id,),
+    )
+    conn.commit()
 
     cand_rows = conn.execute(
         """

@@ -160,7 +160,7 @@ def test_search_capped_is_not_degraded(tmp_home, frozen_clock):
     status = conn.execute(
         "SELECT status FROM daily_runs WHERE id=?", (result.run_id,)
     ).fetchone()[0]
-    assert status == "complete"
+    assert status == "running"
     phase_b = result.phase_b_ids
     w = {f"R_w_{i}" for i in range(50)}
     assert len(phase_b) == 30
