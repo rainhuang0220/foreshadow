@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, NoReturn
 
 from foreshadow.clock import Clock
-from foreshadow.config import ScoringSettings
+from foreshadow.config import Settings, load_config
 from foreshadow.github.client import GitHubError
 from foreshadow.github.queries import HYDRATE_B
 from foreshadow.pipeline.hydrate import (
@@ -28,7 +28,15 @@ ACTIONS = ("watch", "interested", "reject", "investigate", "enter", "later")
 
 
 class ReviewError(Exception):
-    """Unknown action or unresolvable repo ref."""
+    """Unknown action or unresolvable repo ref. CLI → exit 2."""
+
+
+class ReviewFetchError(Exception):
+    """Hydrate 429 / 5xx / budget (not a missing name). CLI → exit 1."""
+
+    def __init__(self, message: str, *, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def apply_review(
@@ -38,15 +46,22 @@ def apply_review(
     action: str,
     note: str | None,
     clock: Clock,
+    settings: Settings | None = None,
 ) -> None:
     action_n = (action or "").strip().lower()
     if action_n not in ACTIONS:
         raise ReviewError(f"unknown action: {action} ({', '.join(ACTIONS)})")
     clock = clock or Clock()
+    settings = settings or load_config()
     today = clock.today()
     local = _resolve_local(conn, repo_ref)
     unseen = local is None
     if _needs_hydrate(conn, local, action_n, today):
+        if client is None:
+            raise ReviewFetchError(
+                f"GitHub client required to hydrate {repo_ref}",
+                reason="client",
+            )
         repo_id = _hydrate_one(conn, client, repo_ref, local, clock)
     else:
         assert local is not None
@@ -55,7 +70,7 @@ def apply_review(
     run_id = _today_run_id(conn, today.isoformat())
     scored: ScoredRepo | None = None
     if action_n == "enter" or unseen:
-        scored = _score_snapshot(conn, repo_id, clock)
+        scored = _score_snapshot(conn, repo_id, clock, settings.scoring)
         if action_n == "enter" and run_id is not None and scored is not None:
             _upsert_score(conn, run_id, repo_id, scored, clock.now().isoformat())
     if action_n == "enter":
@@ -145,6 +160,18 @@ def format_stances(rows: list[dict[str, Any]], action: str | None = None) -> str
     if not lines:
         return "no reviews\n"
     return "\n".join(lines).rstrip() + "\n"
+
+
+def needs_hydrate(
+    conn: sqlite3.Connection,
+    repo_ref: str,
+    action: str,
+    clock: Clock,
+) -> bool:
+    """True when review must call GitHub (unseen, no snapshot, or enter without today's Phase B)."""
+    action_n = (action or "").strip().lower()
+    local = _resolve_local(conn, repo_ref)
+    return _needs_hydrate(conn, local, action_n, clock.today())
 
 
 def stance_blocks_top5(
@@ -273,11 +300,9 @@ def _hydrate_one(
 ) -> int:
     now = clock.now().isoformat()
     body, err = _fetch_phase_b(client, repo_ref, local)
-    if err is not None or body is None:
-        raise ReviewError(f"unknown repo: {repo_ref}")
-    repo = extract_repo(body)
-    if repo is None:
-        raise ReviewError(f"unknown repo: {repo_ref}")
+    repo = extract_repo(body) if body is not None else None
+    if err is not None or repo is None:
+        _raise_hydrate_failure(repo_ref, err)
     repo_id = upsert_repo_from_graphql(conn, repo, now)
     owner, name = _split_name(str(repo.get("nameWithOwner") or repo_ref))
     rest = hydrate_phase_b_rest(
@@ -319,10 +344,14 @@ def _fetch_phase_b(
         body, err = hydrate_b_node(client, node_id)
         if err is None and extract_repo(body) is not None:
             return body, None
+        if err is not None and not _is_not_found(err):
+            return None, err
     if owner and name:
         named, named_err = _hydrate_b_name(client, owner, name)
         if named_err is None and extract_repo(named) is not None:
             return named, None
+        if named_err is not None and not _is_not_found(named_err):
+            return None, named_err
         if body is None:
             body, err = named, named_err
     if body is not None and extract_repo(body) is not None:
@@ -334,6 +363,21 @@ def _fetch_phase_b(
         status=404,
         source="HydrateB",
     )
+
+
+def _is_not_found(exc: GitHubError) -> bool:
+    if exc.status in {404, 410, 451}:
+        return True
+    return exc.reason == "http_404"
+
+
+def _raise_hydrate_failure(repo_ref: str, err: GitHubError | None) -> NoReturn:
+    if err is not None and not _is_not_found(err):
+        raise ReviewFetchError(
+            err.detail or err.reason or f"hydrate failed for {repo_ref}",
+            reason=err.reason,
+        ) from err
+    raise ReviewError(f"unknown repo: {repo_ref}")
 
 
 def _hydrate_b_name(
@@ -362,14 +406,17 @@ def _today_run_id(conn: sqlite3.Connection, today: str) -> int | None:
 
 
 def _score_snapshot(
-    conn: sqlite3.Connection, repo_id: int, clock: Clock
+    conn: sqlite3.Connection,
+    repo_id: int,
+    clock: Clock,
+    scoring: Any,
 ) -> ScoredRepo | None:
     from foreshadow.pipeline import load_score_input
 
     data = load_score_input(conn, repo_id)
     if data is None:
         return None
-    return score_repo(data, clock=clock, scoring=ScoringSettings())
+    return score_repo(data, clock=clock, scoring=scoring)
 
 
 def _scores_json(scored: ScoredRepo | None) -> str:

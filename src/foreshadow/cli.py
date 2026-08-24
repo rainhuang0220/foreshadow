@@ -12,9 +12,11 @@ from foreshadow.pipeline import run_pipeline, show_repo
 from foreshadow.reviews import (
     ACTIONS,
     ReviewError,
+    ReviewFetchError,
     apply_review,
     current_stances,
     format_stances,
+    needs_hydrate,
 )
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -80,26 +82,34 @@ def review(
     conn = connect(resolve_data_dir() / "foreshadow.sqlite3")
     migrate(conn)
     from foreshadow.config import load_config
-    from foreshadow.github.client import GitHubClient, resolve_token
 
     settings = load_config()
-    client = GitHubClient(
-        token=resolve_token(),
-        settings=settings.github,
-        clock=clock,
-    )
+    client = None
+    if needs_hydrate(conn, repo, action_n, clock):
+        from foreshadow.github.client import GitHubClient, resolve_token
+
+        client = GitHubClient(
+            token=resolve_token(),
+            settings=settings.github,
+            clock=clock,
+        )
     try:
-        apply_review(conn, client, repo, action_n, m, clock)
+        apply_review(conn, client, repo, action_n, m, clock, settings=settings)
     except ReviewError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from exc
+    except ReviewFetchError as exc:
+        from foreshadow.github.client import redact
+
+        print(redact(str(exc)), file=sys.stderr)
+        raise SystemExit(1) from exc
     except Exception as exc:
         from foreshadow.github.client import redact
 
         print(redact(str(exc)), file=sys.stderr)
         raise SystemExit(1) from exc
     finally:
-        if hasattr(client, "close"):
+        if client is not None and hasattr(client, "close"):
             client.close()
     sys.stdout.write(f"recorded {action_n} for {repo}\n")
 

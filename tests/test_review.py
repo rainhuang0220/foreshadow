@@ -5,14 +5,39 @@ from typer.testing import CliRunner
 
 from fakes import seed_repo
 from foreshadow.cli import app
+from foreshadow.config import Settings
 from foreshadow.db import connect, migrate
 from foreshadow.pipeline import run_pipeline
+from foreshadow.pipeline.score import score_repo
 from foreshadow.pipeline.snapshot import upsert_snapshot
 from foreshadow.reviews import (
     ReviewError,
+    ReviewFetchError,
     apply_review,
     stance_blocks_top5,
 )
+
+
+def _seed_snapshot(
+    conn, repo_id: int, captured_at: str, day: str = "2026-08-24"
+) -> None:
+    upsert_snapshot(
+        conn,
+        repo_id,
+        day,
+        {
+            "stars": 10,
+            "forks": 1,
+            "open_issues": 1,
+            "open_prs": 0,
+            "last_pushed_at": "2026-08-20T00:00:00Z",
+            "created_at": "2026-05-01T00:00:00Z",
+            "captured_at": captured_at,
+            "topics_json": "[]",
+            "features_json": "{}",
+            "completeness": 1.0,
+        },
+    )
 
 
 def test_enter_writes_entry_and_scores(tmp_home, frozen_clock, fake_github):
@@ -71,23 +96,7 @@ def test_review_resolves_alias(tmp_home, frozen_clock, fake_github):
         "INSERT INTO repo_aliases(repo_id, full_name, seen_at) VALUES (?,?,?)",
         (rid, "acme/memkit", frozen_clock.now().isoformat()),
     )
-    upsert_snapshot(
-        conn,
-        rid,
-        "2026-08-24",
-        {
-            "stars": 10,
-            "forks": 1,
-            "open_issues": 1,
-            "open_prs": 0,
-            "last_pushed_at": "2026-08-20T00:00:00Z",
-            "created_at": "2026-05-01T00:00:00Z",
-            "captured_at": frozen_clock.now().isoformat(),
-            "topics_json": "[]",
-            "features_json": "{}",
-            "completeness": 1.0,
-        },
-    )
+    _seed_snapshot(conn, rid, frozen_clock.now().isoformat())
     conn.commit()
     calls = fake_github.hydrate_calls
     apply_review(conn, fake_github, "acme/memkit", "watch", None, frozen_clock)
@@ -128,3 +137,93 @@ def test_cli_review_enter_and_unknown_action(tmp_home, fake_github):
     bad = runner.invoke(app, ["review", "acme/memkit", "star"])
     assert bad.exit_code == 2
     assert "watch" in (bad.stdout + bad.stderr)
+
+
+@pytest.mark.parametrize("action", ["watch", "interested", "reject", "later"])
+def test_cli_watch_known_repo_without_token(tmp_home, monkeypatch, action):
+    monkeypatch.setenv("HOME", str(tmp_home))
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("FORESHADOW_CONFIG", raising=False)
+
+    def boom() -> str:
+        raise SystemExit(2)
+
+    monkeypatch.setattr("foreshadow.github.client.resolve_token", boom)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    rid = seed_repo(conn, "R_memkit", "acme/memkit")
+    _seed_snapshot(conn, rid, "2026-08-24T00:05:00+00:00")
+    conn.commit()
+    result = CliRunner().invoke(app, ["review", "acme/memkit", action])
+    assert result.exit_code == 0
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    assert conn.execute("SELECT action FROM reviews").fetchone()[0] == action
+
+
+def test_enter_uses_settings_scoring(tmp_home, frozen_clock, fake_github, monkeypatch):
+    seen: dict = {}
+    real = score_repo
+
+    def wrapped(repo, *, clock=None, scoring=None, bags=None):
+        seen["scoring"] = scoring
+        return real(repo, clock=clock, scoring=scoring, bags=bags)
+
+    monkeypatch.setattr("foreshadow.reviews.score_repo", wrapped)
+    settings = Settings()
+    settings.scoring.window_slack_days = 7
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    apply_review(
+        conn, fake_github, "acme/memkit", "enter", None, frozen_clock, settings=settings
+    )
+    assert seen["scoring"] is settings.scoring
+    assert seen["scoring"].window_slack_days == 7
+
+
+def test_cli_enter_uses_load_config_scoring(tmp_home, fake_github, monkeypatch):
+    cfg = tmp_home / ".config" / "foreshadow" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text("[scoring]\nwindow_slack_days = 3\n", encoding="utf-8")
+    seen: dict = {}
+    real = score_repo
+
+    def wrapped(repo, *, clock=None, scoring=None, bags=None):
+        seen["scoring"] = scoring
+        return real(repo, clock=clock, scoring=scoring, bags=bags)
+
+    monkeypatch.setattr("foreshadow.reviews.score_repo", wrapped)
+    result = CliRunner().invoke(app, ["review", "acme/memkit", "enter"])
+    assert result.exit_code == 0
+    assert seen["scoring"].window_slack_days == 3
+
+
+def test_hydrate_5xx_is_not_unknown_repo(tmp_home, frozen_clock, fake_github):
+    fake_github.fail_ids.add("R_memkit")
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    with pytest.raises(ReviewFetchError, match="server error"):
+        apply_review(conn, fake_github, "acme/memkit", "watch", None, frozen_clock)
+    assert conn.execute("SELECT count(*) FROM reviews").fetchone()[0] == 0
+
+
+def test_cli_hydrate_5xx_exit_1_not_unknown(tmp_home, fake_github):
+    fake_github.fail_ids.add("R_memkit")
+    result = CliRunner().invoke(app, ["review", "acme/memkit", "watch"])
+    assert result.exit_code == 1
+    out = result.stdout + result.stderr
+    assert "unknown repo" not in out.lower()
+
+
+def test_cli_hydrate_budget_exit_1(tmp_home, fake_github):
+    fake_github.graphql_used = 800
+    result = CliRunner().invoke(app, ["review", "acme/memkit", "watch"])
+    assert result.exit_code == 1
+    out = result.stdout + result.stderr
+    assert "unknown repo" not in out.lower()
+
+
+def test_cli_unknown_repo_exit_2(tmp_home, fake_github):
+    result = CliRunner().invoke(app, ["review", "nope/unknown", "watch"])
+    assert result.exit_code == 2
+    assert "unknown repo" in (result.stdout + result.stderr)
