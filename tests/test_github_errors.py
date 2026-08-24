@@ -86,6 +86,40 @@ def test_429_retries_then_source_failure(respx_mock):
     assert any(f.reason == "rate_limit" for f in c.source_failures)
 
 
+def test_403_permission_is_not_retried(respx_mock):
+    route = respx_mock.get("https://api.github.com/repos/a/b").mock(
+        return_value=httpx.Response(
+            403,
+            headers={"X-RateLimit-Remaining": "4000"},
+            json={"message": "Resource not accessible by integration"},
+        )
+    )
+    sleeps: list[float] = []
+    c = GitHubClient(token="x", sleep=sleeps.append)
+    with pytest.raises(GitHubError) as ei:
+        c.get("/repos/a/b")
+    assert ei.value.status == 403
+    assert ei.value.reason != "rate_limit"
+    assert route.call_count == 1
+    assert sleeps == []
+
+
+def test_403_primary_remaining_zero_no_retry(respx_mock):
+    route = respx_mock.get("https://api.github.com/repos/a/b").mock(
+        return_value=httpx.Response(
+            403,
+            headers={"X-RateLimit-Remaining": "0"},
+            json={"message": "API rate limit exceeded"},
+        )
+    )
+    c = GitHubClient(token="x", sleep=lambda _: None)
+    with pytest.raises(GitHubError) as ei:
+        c.get("/repos/a/b")
+    assert ei.value.reason == "rate_limit"
+    assert ei.value.retryable is False
+    assert route.call_count == 1
+
+
 def test_403_retry_after_then_success(respx_mock):
     calls = {"n": 0}
 

@@ -245,6 +245,21 @@ def rest_path_denied(url: str) -> bool:
     return False
 
 
+def _is_contents_path(url: str) -> bool:
+    parts = [p for p in rest_path(url).split("/") if p]
+    return len(parts) >= 4 and parts[0] == "repos" and parts[3] == "contents"
+
+
+def _remaining_zero(resp: httpx.Response) -> bool:
+    raw = resp.headers.get("x-ratelimit-remaining")
+    if raw is None:
+        return False
+    try:
+        return int(raw) == 0
+    except ValueError:
+        return False
+
+
 def _retry_after_seconds(resp: httpx.Response) -> float | None:
     raw = resp.headers.get("Retry-After")
     if raw is None:
@@ -444,6 +459,9 @@ class GitHubClient:
                 self._fail("timeout", str(exc), retryable=True, source=url)
 
             if resp.status_code in _NOT_FOUND:
+                if method == "HEAD" and _is_contents_path(url):
+                    self.rest_used += 1
+                    return resp
                 self._fail(
                     "http_404",
                     resp.text,
@@ -452,10 +470,20 @@ class GitHubClient:
                     source=url,
                 )
             if resp.status_code == 304:
-                return resp
+                cached = self.cache.get_rest_body(rest_key) if rest_key else None
+                if cached is None:
+                    return resp
+                headers = httpx.Headers(resp.headers)
+                if "content-type" not in headers:
+                    headers["content-type"] = "application/json"
+                return httpx.Response(
+                    304,
+                    headers=headers,
+                    content=cached,
+                    request=resp.request,
+                )
             if self._is_rate_limited(resp):
-                remaining = resp.headers.get("x-ratelimit-remaining")
-                if resp.status_code == 403 and remaining == "0":
+                if resp.status_code == 403 and _remaining_zero(resp):
                     self._fail(
                         "rate_limit",
                         resp.text,
@@ -611,14 +639,12 @@ class GitHubClient:
             return True
         if resp.status_code != 403:
             return False
-        remaining = resp.headers.get("x-ratelimit-remaining")
-        try:
-            if remaining is not None and int(remaining) > 0:
-                return True
-        except ValueError:
-            pass
+        if _remaining_zero(resp):
+            return True
+        if resp.headers.get("Retry-After") is not None:
+            return True
         text = (resp.text or "").lower()
-        return "rate limit" in text or "secondary rate" in text or "abuse" in text
+        return "secondary rate" in text or "abuse" in text
 
     def _backoff(self, attempt: int, retry_after: float | None) -> float:
         if retry_after is not None:

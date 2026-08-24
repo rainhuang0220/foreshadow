@@ -17,7 +17,11 @@ from foreshadow.github.queries import (
     HYDRATE_B_STRIPPED,
     SEARCH_REPOS,
 )
-from foreshadow.github.rest import fetch_contributors
+from foreshadow.github.rest import (
+    content_exists,
+    fetch_contributors,
+    fetch_root_contents,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HYDRATE_A_JSON = FIXTURES / "graphql" / "hydrate_a.json"
@@ -150,6 +154,16 @@ def test_head_allowed(respx_mock):
     assert r.status_code == 200
 
 
+def test_contents_head_404_is_absent(respx_mock):
+    route = respx_mock.head("https://api.github.com/repos/a/b/contents/tests").mock(
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
+    c = GitHubClient(token="x")
+    assert content_exists(c, "a", "b", "tests") is False
+    assert route.call_count == 1
+    assert c.source_failures == []
+
+
 def test_documents_have_first_and_no_watchers():
     conn_re = re.compile(
         r"\b(" + "|".join(CONNECTION_FIELDS) + r")\s*\(",
@@ -203,21 +217,26 @@ def test_force_skips_same_day_graphql_cache(respx_mock, frozen_clock):
 
 def test_rest_etag_304_does_not_consume_budget(respx_mock):
     url = "https://api.github.com/repos/a/b/contents"
-    respx_mock.get(url).mock(
-        side_effect=[
-            httpx.Response(
-                200, json=[{"name": "README.md"}], headers={"ETag": '"abc"'}
-            ),
-            httpx.Response(304, headers={"ETag": '"abc"'}),
-        ]
-    )
+    payload = [{"name": "README.md"}]
+    calls = {"n": 0}
+
+    def handler(_request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(200, json=payload, headers={"ETag": '"abc"'})
+        return httpx.Response(304, headers={"ETag": '"abc"'})
+
+    respx_mock.get(url).mock(side_effect=handler)
     c = GitHubClient(token="x")
     assert c.get("/repos/a/b/contents").status_code == 200
     assert c.rest_used == 1
     r2 = c.get("/repos/a/b/contents")
     assert r2.status_code == 304
+    assert r2.json() == payload
     assert c.rest_used == 1
     assert respx_mock.calls[1].request.headers["If-None-Match"] == '"abc"'
+    assert fetch_root_contents(c, "a", "b") == payload
+    assert c.rest_used == 1
 
 
 def test_force_still_sends_rest_etag(respx_mock, frozen_clock):

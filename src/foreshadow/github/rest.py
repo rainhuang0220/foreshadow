@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from foreshadow.github.client import GitHubClient
+from foreshadow.github.client import GitHubClient, GitHubError
 
 BOT_LOGINS = frozenset(
     {
@@ -122,5 +122,10 @@ def content_exists(client: GitHubClient, owner: str, repo: str, path: str) -> bo
         f"{client.settings.api_url.rstrip('/')}"
         f"/repos/{owner}/{repo}/contents/{path.lstrip('/')}"
     )
-    resp = client.request("HEAD", url)
+    try:
+        resp = client.request("HEAD", url)
+    except GitHubError as exc:
+        if exc.status in (404, 410, 451):
+            return False
+        raise
     return resp.status_code == 200
