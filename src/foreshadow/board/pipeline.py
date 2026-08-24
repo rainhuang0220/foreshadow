@@ -42,6 +42,7 @@ def _card(
     stars: int | None,
     settings: BoardSettings,
     override: ChairOverride | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> BoardCard:
     dims = dimensions_from_breakdown(row.breakdown)
     evidence = evidence_from_scored(row)
@@ -61,11 +62,20 @@ def _card(
         suggested = str(titles[0])
     elif row.contribution_bullets:
         suggested = row.contribution_bullets[0]
+    extra_meta = extra or {}
     return BoardCard(
         full_name=row.full_name,
         owner=row.owner,
-        html_url=html_url,
-        stars=stars,
+        html_url=html_url or extra_meta.get("html_url"),
+        stars=stars if stars is not None else extra_meta.get("stars"),
+        forks=extra_meta.get("forks"),
+        contributors=extra_meta.get("contributors"),
+        open_issues=extra_meta.get("open_issues"),
+        last_pushed_at=extra_meta.get("last_pushed_at"),
+        last_release=extra_meta.get("last_release"),
+        first_seen_at=extra_meta.get("first_seen_at"),
+        description=extra_meta.get("description"),
+        language=extra_meta.get("language"),
         official_eligible=is_official_eligible(row),
         lightweight_score=lightweight_score(dims),
         trend=trend,
@@ -130,6 +140,7 @@ def assemble_board(
                 stars=(extras.get(row.full_name) or {}).get("stars"),
                 settings=settings,
                 override=chair_overrides.get(row.full_name),
+                extra=extras.get(row.full_name) or {},
             ): row.full_name
             for row in shortlist_src
         }
@@ -149,6 +160,8 @@ def assemble_board(
             -(c.contributor.score or -1.0),
         ),
     )
+    for i, card in enumerate(ranked, start=1):
+        card.list_rank = i
     deep = ranked[: settings.deep_review_n]
     deep_scores = [c.final_score for c in deep if c.final_score is not None]
     fifth = None
@@ -285,7 +298,8 @@ def load_scored_from_db(
     run_id = int(run[0])
     rows = conn.execute(
         """
-        SELECT c.repo_id, c.hydrate_status, r.full_name, r.html_url, r.node_id
+        SELECT c.repo_id, c.hydrate_status, r.full_name, r.html_url, r.node_id,
+               r.first_seen_at, r.description, r.language
         FROM candidates c
         JOIN repos r ON r.id = c.repo_id
         WHERE c.run_id=?
@@ -296,7 +310,16 @@ def load_scored_from_db(
     scored: list[ScoredRepo] = []
     extras: dict[str, dict[str, Any]] = {}
     snap_days = 1
-    for repo_id, status, full_name, html_url, node_id in rows:
+    for (
+        repo_id,
+        status,
+        full_name,
+        html_url,
+        node_id,
+        first_seen,
+        description,
+        language,
+    ) in rows:
         if status not in {"ok", "incomplete"}:
             continue
         data = load_score_input(conn, repo_id)
@@ -304,14 +327,33 @@ def load_scored_from_db(
             continue
         row = score_repo(data, clock=clock, scoring=settings.scoring, bags=bags)
         scored.append(row)
+        features = data.get("features") or {}
         extras[full_name] = {
-            "html_url": html_url,
+            "html_url": html_url or data.get("html_url"),
             "stars": data.get("S"),
+            "forks": data.get("F"),
+            "contributors": data.get("C"),
+            "open_issues": data.get("I_open"),
+            "last_pushed_at": data.get("pushed_at"),
+            "last_release": _last_release(features),
+            "first_seen_at": first_seen,
+            "description": description,
+            "language": language,
             "node_id": node_id,
             "hydrate_status": status,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days
+
+
+def _last_release(features: Any) -> str | None:
+    if not isinstance(features, dict):
+        return None
+    for key in ("latest_release", "last_release", "released_at"):
+        value = features.get(key)
+        if value:
+            return str(value)
+    return None
 
 
 def build_board_from_db(

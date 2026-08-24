@@ -31,3 +31,21 @@ def test_sql_packaged():
     )
     assert "CREATE TABLE repos" in text
     assert "unique_human_authors_100" not in text
+    users = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/002_users.sql")
+        .read_text()
+    )
+    assert "CREATE TABLE users" in users
+    assert "password_hash" in users
+
+
+def test_migrate_adds_users_and_backfills_reviews(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    row = conn.execute(
+        "SELECT username, is_local FROM users WHERE is_local=1"
+    ).fetchone()
+    assert row[0] == "local"
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(reviews)")]
+    assert "user_id" in cols

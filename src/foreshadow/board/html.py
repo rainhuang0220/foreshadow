@@ -1,269 +1,213 @@
+"""Static HTML export. Interactive Board lives in server.py + static/index.html."""
+
 from __future__ import annotations
 
 import html
 from datetime import UTC, datetime
 
-from foreshadow.board.schema import BoardCard, BoardDocument
+from foreshadow.board.present import present_board
+from foreshadow.board.schema import BoardDocument
 
 
 def _e(s: object) -> str:
     return html.escape("" if s is None else str(s), quote=True)
 
 
-def _dim_cell(value: int | None, insufficient: bool = False) -> str:
-    if value is None or insufficient:
-        return '<td class="na">N/A</td>'
-    return f"<td>{value}/20</td>"
+def _bar(value: int | None, max_v: int = 20) -> str:
+    if value is None:
+        return '<span class="na">N/A</span>'
+    filled = max(0, min(max_v, value))
+    return (
+        f'<span class="bar" aria-hidden="true">'
+        f"{'█' * filled}{'░' * (max_v - filled)}</span>"
+        f" <b>{value}</b> / {max_v}"
+    )
 
 
-def _score(v: float | None) -> str:
+def _score(v: object) -> str:
     if v is None:
         return "N/A"
-    return f"{v:.1f}"
-
-
-def _reviewer_block(title: str, card: BoardCard, which: str) -> str:
-    r = getattr(card, which)
-    ev = "".join(
-        f"<li>{_e(item.polarity)} {_e(item.metric)}: {_e(item.detail)}"
-        f"{' <span class="muted">[' + _e(item.window) + ']</span>' if item.window else ''}"
-        f"</li>"
-        for item in r.evidence[:8]
-    )
-    st = "".join(f"<li>{_e(x)}</li>" for x in r.strengths)
-    wk = "".join(f"<li>{_e(x)}</li>" for x in r.weaknesses)
-    rk = "".join(f"<li>{_e(x)}</li>" for x in r.risks)
-    dims = "".join(
-        f"<tr><th>{_e(k)}</th>{_dim_cell(v, k == 'momentum' and card.momentum_na)}</tr>"
-        for k, v in r.dimensions.items()
-    )
-    return f"""
-<section class="reviewer">
-  <h4>{_e(title)} · {_score(r.score)} · {_e(r.confidence)} · {_e(r.recommendation)}</h4>
-  <table class="dims">{dims}</table>
-  <p class="muted">Weights: {_e(r.weights)}</p>
-  <div class="cols">
-    <div><h5>Strengths</h5><ul>{st}</ul></div>
-    <div><h5>Weaknesses</h5><ul>{wk}</ul></div>
-    <div><h5>Risks</h5><ul>{rk}</ul></div>
-  </div>
-  <h5>Evidence</h5>
-  <ul class="ev">{ev}</ul>
-</section>
-"""
-
-
-def _actions(card: BoardCard) -> str:
-    bits = []
-    for action, cmd in card.review_commands.items():
-        bits.append(f"<code title='{_e(cmd)}'>{_e(action)}</code>")
-    return " ".join(bits)
-
-
-def _card_html(card: BoardCard, *, dense: bool) -> str:
-    stamp = ""
-    if card.momentum_na:
-        stamp = '<span class="stamp">PROVISIONAL</span>'
-    if card.vetoed:
-        stamp += ' <span class="stamp stamp-bad">VETO</span>'
-    why_not = ""
-    if card.chair.exclusion_reason:
-        why_not = f"<p class='exclude'><strong>Why not Top 5?</strong> {_e(card.chair.exclusion_reason)}</p>"
-    why_yes = ""
-    if card.chair.why_selected:
-        why_yes = f"<p><strong>Why selected:</strong> {_e(card.chair.why_selected)}</p>"
-    dims = "".join(
-        f"<tr><th>{_e(k)}</th>{_dim_cell(v, k == 'momentum' and card.momentum_na)}</tr>"
-        for k, v in card.dimensions.items()
-    )
-    body = f"""
-<p class="lede">
-  Final {_score(card.final_score)}
-  · Chair {_score(card.chair.score)}
-  · Trend {_score(card.trend.score)}
-  · Community {_score(card.community.score)}
-  · Contributor {_score(card.contributor.score)}
-  · {_e(card.chair.consensus)} ({_e(card.chair.disagreement)} disagreement, spread {card.chair.spread:.1f})
-</p>
-<p class="muted">{_e(card.chair.justification)}</p>
-{why_yes}{why_not}
-<table class="dims">{dims}</table>
-<p><strong>Main risk:</strong> {_e(card.chair.main_risk)}</p>
-<p><strong>P0 scores</strong> Opportunity {_score(card.p0_opportunity)}
- / Explosion {_score(card.p0_explosion)}
- / Contribution {_score(card.p0_contribution)}
- {"· Explosion N/A until v7" if card.momentum_na else ""}</p>
-<p><strong>Suggested contribution:</strong> {_e(card.suggested_contribution or "See open issues after Enter.")}</p>
-<p class="actions">Human: {_actions(card)}</p>
-"""
-    if dense:
-        body += _reviewer_block("Trend", card, "trend")
-        body += _reviewer_block("Community", card, "community")
-        body += _reviewer_block("Contributor", card, "contributor")
-    return f"""
-<article class="card" id="{_e(card.full_name)}">
-  <h3><a href="{_e(card.html_url or "#")}">{_e(card.full_name)}</a>
-  {stamp}
-  <span class="stars">{_e(card.stars)}★</span></h3>
-  {body}
-</article>
-"""
+    return str(v)
 
 
 def render_board_html(board: BoardDocument) -> str:
-    mode_class = "prov" if board.mode == "provisional" else "off"
-    pool_rows = []
-    for row in board.pool:
-        pool_rows.append(
-            f"""<tr>
-              <td>{row.rank:02d}</td>
-              <td><a href="#{_e(row.full_name)}">{_e(row.full_name)}</a></td>
-              <td>{_e(row.stars)}</td>
-              <td>{_e(row.growth_signal)}</td>
-              <td class="st-{_e(row.status)}">{_e(row.status)}</td>
-            </tr>
-            <tr class="detail"><td colspan="5">{_e(row.reason or row.lightweight_score)}</td></tr>"""
+    view = present_board(board)
+    preview = view["mode"] != "official"
+    mode_class = "prov" if preview else "off"
+    rows: list[str] = []
+    for card in view["candidates"]:
+        detail = card["detail"]
+        dims = "".join(
+            f"<tr><th>{_e(d['label'])}</th>"
+            f"<td>{_bar(d['value'])}</td></tr>"
+            + (
+                "".join(
+                    f"<tr class='ev'><td colspan='2'>{_e(line)}</td></tr>"
+                    for line in d["evidence"][:4]
+                )
+                if d["evidence"]
+                else ""
+            )
+            for d in detail["dimensions"]
         )
-    short = "".join(
-        f"<li><a href='#{_e(c.full_name)}'>{_e(c.full_name)}</a> "
-        f"lw {_score(c.lightweight_score)} · {_e('rejected' if c.vetoed else 'reviewed')}</li>"
-        for c in board.shortlist
-    )
-    deep = "".join(_card_html(c, dense=True) for c in board.deep)
-    top = "".join(
-        _card_html(c, dense=True) for c in (board.official or board.provisional)
-    )
+        reviewers = []
+        for rev in detail["reviewers"]:
+            rdims = "".join(
+                f"<li>{_e(d['label'])} "
+                f"{'N/A' if d['na'] else str(d['value']) + '/20'}</li>"
+                for d in rev["dimensions"]
+            )
+            reviewers.append(
+                f"<section class='reviewer'><h4>{_e(rev['label'])} · "
+                f"{_score(rev['score'])} / 100</h4>"
+                f"<p class='muted'>关注：{' · '.join(_e(x) for x in rev['focus'])}</p>"
+                f"<ul>{rdims}</ul></section>"
+            )
+        why = detail.get("why_selected") or detail.get("why_excluded") or []
+        why_title = (
+            "为什么推荐" if detail.get("why_selected") else "为什么没有进入 Top 5"
+        )
+        why_html = "".join(f"<li>{_e(x)}</li>" for x in why)
+        gh = _e(card["html_url"])
+        disagree = detail["disagreement"]
+        chair = detail["chair"]
+        rows.append(
+            f"""
+<details class="row" id="{_e(card["full_name"])}">
+  <summary>
+    <span class="rk">#{card["rank"]}</span>
+    <span class="name">{_e(card["full_name"])}</span>
+    <span class="final">{_score(card["final_score"])}</span>
+    <span class="mini">趋势 {_score(card["trend"])} · 社区 {_score(card["community"])} · 贡献 {_score(card["contributor"])}</span>
+    <span class="head">{_e(card["headline"])}</span>
+    <span class="st">{_e(card["status_zh"])}</span>
+  </summary>
+  <div class="drawer">
+    <p><strong>当前排名：</strong>#{card["rank"]}
+       · <strong>最终综合评分：</strong>{_score(card["final_score"])}
+       · <span class="stamp">{_e(card["rank_kind_zh"])}</span>
+       {" · 不是正式预测" if card["not_official"] else ""}</p>
+    <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
+       Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
+       · Open Issues {_e(card["open_issues"])}</p>
+    <h4>五维评分</h4>
+    <table class="dims">{dims}</table>
+    <h4>三个独立评审视角</h4>
+    {"".join(reviewers)}
+    <h4>评审分歧：{_e(disagree["level_zh"])}</h4>
+    <p>趋势 {_score(disagree["trend"])} · 社区 {_score(disagree["community"])} · 贡献 {_score(disagree["contributor"])}</p>
+    <p>{_e(disagree["explain"])}</p>
+    <h4>主审</h4>
+    <p>趋势 {_score(card["trend"])} · 社区 {_score(card["community"])} · 贡献 {_score(card["contributor"])} · 主审 {_score(card["chair"])}。{_e(chair["weight_note"])}</p>
+    <p>{_e(chair["judgment"])}</p>
+    <h4>{_e(why_title)}</h4>
+    <ul>{why_html}</ul>
+    <p><strong>风险：</strong>{_e(chair["main_risk"])}</p>
+  </div>
+</details>
+"""
+        )
     generated = datetime.now(UTC).strftime("%Y-%m-%dT%H:%MZ")
+    counts = view["counts"]
+    body = "".join(rows) or "<p>今日没有候选。空 Top 5 是成功。</p>"
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<title>Foreshadow Daily Board · {_e(board.date)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>伏笔 · 今日机会榜 · {_e(view["date"])}</title>
 <style>
 :root {{
-  --paper: #f3efe4;
-  --ink: #1c1712;
-  --rule: #c9b89a;
-  --stamp: #9b1d1d;
-  --ok: #1f4d3a;
-  --muted: #6b6258;
+  --ink: #1a140c;
+  --paper: #f3ead4;
+  --rule: #cbb890;
+  --cinnabar: #b8392a;
+  --jade: #2f5d45;
+  --muted: #6d6254;
 }}
 * {{ box-sizing: border-box; }}
 body {{
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 16px/1.45 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  font: 16px/1.5 "Songti SC", "STSong", "Iowan Old Style", Palatino, serif;
 }}
-header.mast {{
+header {{
+  padding: 1.6rem 7vw 1rem;
   border-bottom: 3px double var(--ink);
-  padding: 1.5rem 8vw 1rem;
 }}
-header.mast h1 {{
-  font-size: 1.6rem;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  margin: 0 0 .4rem;
+.brand {{ letter-spacing: .28em; font-size: .78rem; }}
+h1 {{ margin: .2rem 0 .4rem; font-size: 1.8rem; }}
+.mode.prov {{ color: var(--cinnabar); font-weight: 700; }}
+.mode.off {{ color: var(--jade); font-weight: 700; }}
+.counts {{ display: flex; gap: 1.4rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }}
+.counts b {{ display: block; font-size: 1.45rem; }}
+main {{ padding: 1rem 7vw 4rem; }}
+.row {{
+  border-bottom: 1px solid var(--rule);
+  padding: .2rem 0;
 }}
-.counts {{ display: flex; gap: 1.5rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }}
-.counts b {{ display: block; font-size: 1.6rem; }}
+.row summary {{
+  display: grid;
+  grid-template-columns: 3rem 1fr 3.2rem;
+  gap: .15rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  padding: .7rem 0;
+}}
+.row summary::-webkit-details-marker {{ display: none; }}
+.rk {{ font-weight: 700; color: var(--cinnabar); }}
+.final {{ font-variant-numeric: tabular-nums; font-size: 1.3rem; text-align: right; }}
+.name {{ font-size: 1.05rem; }}
+.mini, .head, .st {{ grid-column: 2; color: var(--muted); font-size: .88rem; }}
+.st {{ color: var(--ink); }}
+.drawer {{ padding: 0 0 1.2rem 3rem; max-width: 52rem; }}
+.na {{ color: var(--cinnabar); font-style: italic; }}
 .stamp {{
   display: inline-block;
-  margin-left: .5rem;
-  padding: .05rem .4rem;
-  border: 2px solid var(--stamp);
-  color: var(--stamp);
-  font-size: .7rem;
-  letter-spacing: .14em;
-  transform: rotate(-6deg);
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  padding: 0 .35rem;
+  font-size: .75rem;
+  letter-spacing: .12em;
 }}
-.stamp-bad {{ border-color: var(--ink); color: var(--ink); }}
-.{mode_class} .mode {{ color: var(--stamp); font-weight: 700; }}
-main {{ padding: 1rem 8vw 4rem; }}
-section.block {{
-  border-top: 1px solid var(--rule);
-  padding: 1.2rem 0;
+.{mode_class} .stamp {{ border-color: {"var(--cinnabar)" if preview else "var(--jade)"}; color: {"var(--cinnabar)" if preview else "var(--jade)"}; }}
+.gh {{
+  display: inline-block;
+  border-bottom: 1px solid var(--ink);
+  text-decoration: none;
+  color: inherit;
 }}
-table {{ width: 100%; border-collapse: collapse; font-size: .92rem; }}
-th, td {{ text-align: left; padding: .25rem .4rem; border-bottom: 1px solid var(--rule); vertical-align: top; }}
-.na {{ color: var(--stamp); font-style: italic; }}
-.st-shortlisted {{ color: var(--ok); }}
-.st-rejected {{ color: var(--stamp); }}
-.muted {{ color: var(--muted); font-size: .88rem; }}
-.card {{
-  border: 1px solid var(--ink);
-  padding: 1rem 1.1rem;
-  margin: 1rem 0;
-  background: #faf7ef;
-}}
-.card h3 {{ margin: 0 0 .4rem; }}
-.cols {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .8rem; }}
-.reviewer {{ margin-top: 1rem; padding-top: .6rem; border-top: 1px dashed var(--rule); }}
-.exclude {{ border-left: 3px solid var(--stamp); padding-left: .6rem; }}
-code {{
-  font: 12px/1.3 ui-monospace, "SF Mono", Menlo, monospace;
-  background: #ece6d8;
-  padding: .1rem .3rem;
-}}
-a {{ color: inherit; }}
-details.pool table tr.detail {{ display: none; color: var(--muted); font-size: .85rem; }}
-details.pool[open] tr.detail {{ display: table-row; }}
-footer {{ padding: 1rem 8vw 3rem; color: var(--muted); font-size: .85rem; }}
+.bar {{ letter-spacing: -.05em; font-size: .85rem; }}
+.muted {{ color: var(--muted); }}
+table.dims th {{ text-align: left; padding: .2rem .6rem .2rem 0; }}
+footer {{ padding: 1rem 7vw 3rem; color: var(--muted); font-size: .85rem; }}
 @media (max-width: 800px) {{
-  .cols {{ grid-template-columns: 1fr; }}
-  header.mast, main, footer {{ padding-left: 1rem; padding-right: 1rem; }}
+  header, main, footer {{ padding-left: 1rem; padding-right: 1rem; }}
+  .drawer {{ padding-left: 0; }}
 }}
 </style>
 </head>
 <body class="{mode_class}">
-<header class="mast">
-  <h1>Foreshadow · Daily Board</h1>
-  <p>{_e(board.date)} · <span class="mode">{_e(board.mode.upper())}</span>
-     · {_e(board.mode_reason)}</p>
+<header>
+  <div class="brand">FORESHADOW · 伏笔</div>
+  <h1>今日机会审查</h1>
+  <p>{_e(view["date"])} · <span class="mode {mode_class}">{_e(view["mode_zh"])}｜{_e(view["mode_reason_zh"])}</span>
+     {" · 不是正式预测" if preview else ""}</p>
   <div class="counts">
-    <div><b>{board.discovered}</b> Discovered</div>
-    <div><b>{board.shortlisted}</b> Shortlisted</div>
-    <div><b>{board.deep_reviewed}</b> Deep reviewed</div>
-    <div><b>{board.official_top5}</b> Official Top 5</div>
-    <div><b>{board.provisional_count}</b> Provisional seats</div>
+    <div><b>{counts["discovered"]}</b>发现项目</div>
+    <div><b>{counts["shortlisted"]}</b>候选项目</div>
+    <div><b>{counts["deep_reviewed"]}</b>深度评审</div>
+    <div><b>{counts["official_top5"]}</b>正式 Top 5</div>
+    <div><b>{counts["provisional"]}</b>预览候选</div>
   </div>
-  <p class="muted">Generated from {_e(board.generated_from)} · snapshot-days {board.snapshot_days}
-     · {generated} UTC. Auditability is evidence, not hidden chain-of-thought.</p>
+  <p class="muted">默认按综合评分从高到低。展开一行才看详情。静态导出不含登录状态。</p>
 </header>
 <main>
-<section class="block">
-  <h2>Official vs provisional</h2>
-  <p>Official Top 5 still requires P0 <code>v7</code> plus Opportunity ≥ 55 and Explosion ≥ 35.
-     Today official = <strong>{board.official_top5}</strong>.
-     Provisional ranking exists so you can audit the funnel without inventing history.</p>
-</section>
-<section class="block">
-  <h2>Final {("Official Top 5" if board.official else "Provisional ranking")}</h2>
-  {top or "<p>None. Empty Top 5 is valid.</p>"}
-</section>
-<section class="block">
-  <h2>Deep reviewed (Chair + three reviewers)</h2>
-  {deep or "<p>None.</p>"}
-</section>
-<section class="block">
-  <h2>Shortlist</h2>
-  <ol>{short}</ol>
-</section>
-<section class="block">
-  <h2>Candidate pool</h2>
-  <details class="pool" open>
-    <summary>All {board.discovered} discovered rows (click a name to jump)</summary>
-    <table>
-      <thead><tr><th>#</th><th>Repository</th><th>Stars</th><th>Growth</th><th>Status</th></tr></thead>
-      <tbody>{"".join(pool_rows)}</tbody>
-    </table>
-  </details>
-</section>
+<h2>今日候选榜</h2>
+{body}
 </main>
-<footer>
-  Human review stays on the CLI. Copy an action command from a card.
-  Dogfood snapshots are not modified by Preview.
-</footer>
+<footer>生成于 {generated} UTC · 快照天数 {board.snapshot_days} · 交互式工作台请运行 <code>foreshadow board</code></footer>
 </body>
 </html>
 """

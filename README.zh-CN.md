@@ -21,6 +21,19 @@ P0 已在分支 `p0-implementation` 实现（`0.1.0`）。尚未打 tag，也未
 - We only GET public GitHub.
 - This is not trending.
 
+## 今日机会榜
+
+```bash
+uv sync --group dev
+FORESHADOW_HOME=… uv run foreshadow board --preview
+```
+
+浏览器打开 **http://127.0.0.1:8765/**（仅本机）。先注册/登录，默认按综合评分从高到低看列表；点一行才展开详情。点「感兴趣」会写入与 CLI `foreshadow review` 同一套 `reviews` 表，按用户隔离。
+
+静态导出：`foreshadow board --preview --export-html`。
+
+当前仍是预览模式：本地快照还不足 v7，正式 Top 5 为空是成功，不是故障。
+
 ## 开发
 
 ```bash

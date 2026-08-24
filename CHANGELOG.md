@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - P1 Preview Audit Board (`foreshadow board [--preview] [--date]`). Funnel discovered → 20 → 3 independent reviewers → 10 → Chair → ≤5. Official Top 5 still requires P0 `v7`. Preview writes `preview/YYYY-MM-DD/` and does not insert snapshots or invent history.
+- Interactive Chinese Review Board on localhost (`foreshadow board` → http://127.0.0.1:8765/). List + drawer, sort/filter, GitHub outbound link, per-user register/login, reviews isolated by `user_id`. Static HTML remains available via `--export-html`. P0 thresholds, v7, and snapshots are unchanged.
 
 ## [0.1.0] - 2026-08-24
 

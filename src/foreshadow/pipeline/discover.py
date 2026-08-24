@@ -412,16 +412,18 @@ def identity_ids(
 def load_watchlist(
     conn: sqlite3.Connection, today: date, scoring: Any
 ) -> list[WatchlistEntry]:
+    from foreshadow.reviews import _latest_join
+
+    join_sql, join_params = _latest_join(conn, None)
     rows = conn.execute(
-        """
+        f"""
         SELECT r.id, r.node_id, r.full_name, v.action, v.created_at
         FROM reviews v
-        JOIN (
-            SELECT repo_id, MAX(id) AS id FROM reviews GROUP BY repo_id
-        ) last ON last.id = v.id
+        {join_sql}
         JOIN repos r ON r.id = v.repo_id
         ORDER BY v.created_at DESC, v.id DESC
-        """
+        """,
+        join_params,
     ).fetchall()
     out: list[WatchlistEntry] = []
     skip_days = int(getattr(scoring, "later_skip_days", 14))

@@ -1,0 +1,542 @@
+"""Inlined Chinese Review Board SPA. No frontend build step."""
+
+from __future__ import annotations
+
+APP_HTML = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>伏笔 · 今日机会榜</title>
+<style>
+:root {
+  --ink: #f3ead4;
+  --ink-dim: #b7aa93;
+  --night: #12100c;
+  --night-2: #1b1711;
+  --rule: rgba(214, 186, 122, .28);
+  --cinnabar: #e24a32;
+  --cinnabar-dim: #9a2f22;
+  --jade: #7ea586;
+  --gold: #d6ba7a;
+  --paper: #f4ead3;
+  --paper-ink: #1a140c;
+  --paper-muted: #6d6254;
+  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", "Iowan Old Style", Palatino, serif;
+  --font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Songti SC", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(226,74,50,.16), transparent 50%),
+    radial-gradient(900px 400px at 100% 0%, rgba(214,186,122,.08), transparent 45%),
+    var(--night);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  letter-spacing: .01em;
+}
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed; inset: 0;
+  opacity: .07;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><filter id='n'><feTurbulence baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+a { color: inherit; }
+button, input, select { font: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 1.4rem 1.5rem 4rem; }
+.brand {
+  font-family: var(--font-display);
+  letter-spacing: .42em;
+  font-size: .72rem;
+  color: var(--gold);
+}
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
+.mast h1 { font-size: 2.1rem; margin: .25rem 0 .3rem; letter-spacing: .08em; }
+.date { color: var(--ink-dim); }
+.ribbon {
+  display: inline-flex; align-items: center; gap: .6rem;
+  margin: .7rem 0 1rem;
+  padding: .35rem .7rem;
+  border: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  letter-spacing: .18em;
+  font-size: .78rem;
+  transform: rotate(-1.2deg);
+  background: rgba(226,74,50,.08);
+}
+.ribbon.official {
+  border-color: var(--jade); color: var(--jade);
+  background: rgba(126,165,134,.1);
+  transform: none;
+}
+.counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0,1fr));
+  gap: .8rem;
+  margin: 1.1rem 0 1.4rem;
+}
+.counts div {
+  border-top: 1px solid var(--rule);
+  padding-top: .45rem;
+  color: var(--ink-dim);
+  font-size: .78rem;
+}
+.counts b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: .6rem;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+.toolbar label { color: var(--ink-dim); font-size: .82rem; }
+select {
+  background: var(--night-2);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  padding: .35rem .5rem;
+}
+.list { border-top: 1px solid var(--rule); }
+.row {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0,1fr) 4.2rem;
+  gap: .25rem 1rem;
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  align-items: start;
+}
+.row:hover { background: rgba(243,234,212,.03); }
+.row.active { background: rgba(226,74,50,.07); }
+.rk {
+  font-family: var(--font-display);
+  color: var(--cinnabar);
+  font-size: 1.15rem;
+}
+.nm { font-size: 1.05rem; word-break: break-all; }
+.final {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  line-height: 1;
+}
+.sub { grid-column: 2; color: var(--ink-dim); font-size: .86rem; }
+.sub b { color: var(--ink); font-weight: 500; }
+.gh-mini {
+  margin-left: .6rem;
+  font-size: .78rem;
+  color: var(--gold);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(214,186,122,.5);
+}
+.auth {
+  max-width: 26rem;
+  margin: 3rem auto;
+  background: var(--paper);
+  color: var(--paper-ink);
+  padding: 1.6rem 1.5rem 1.8rem;
+  box-shadow: 8px 16px 0 rgba(0,0,0,.35);
+}
+.auth h2 { margin: 0 0 .8rem; }
+.auth input {
+  width: 100%;
+  margin: .25rem 0 .7rem;
+  padding: .55rem .6rem;
+  border: 1px solid #cbb890;
+  background: #faf6ea;
+}
+.auth .rowbtns { display: flex; gap: .5rem; }
+.auth button, .btn {
+  border: 1px solid currentColor;
+  background: transparent;
+  padding: .4rem .75rem;
+  cursor: pointer;
+}
+.auth button.primary, .btn.primary {
+  background: var(--paper-ink);
+  color: var(--paper);
+  border-color: var(--paper-ink);
+}
+.err { color: var(--cinnabar-dim); min-height: 1.2rem; }
+.who {
+  display: flex; justify-content: space-between; align-items: baseline;
+  color: var(--ink-dim); font-size: .85rem; margin-bottom: .4rem;
+}
+.who button { color: var(--gold); background: none; border: 0; cursor: pointer; }
+.drawer-bg {
+  position: fixed; inset: 0;
+  background: rgba(8,6,4,.55);
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s ease;
+}
+.drawer-bg.on { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 100%);
+  background: var(--paper);
+  color: var(--paper-ink);
+  transform: translateX(104%);
+  transition: transform .22s ease;
+  overflow: auto;
+  padding: 1.3rem 1.35rem 3rem;
+  box-shadow: -16px 0 40px rgba(0,0,0,.4);
+}
+.drawer.on { transform: translateX(0); }
+.drawer h2 { margin: .2rem 0 .15rem; font-size: 1.35rem; word-break: break-all; }
+.close {
+  float: right; border: 0; background: none; cursor: pointer; font-size: 1.2rem;
+}
+.pill {
+  display: inline-block;
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  padding: 0 .4rem;
+  font-size: .72rem;
+  letter-spacing: .14em;
+  margin-left: .35rem;
+}
+.pill.ok { border-color: #2f5d45; color: #2f5d45; }
+.meta { color: var(--paper-muted); font-size: .88rem; }
+.gh {
+  display: inline-block;
+  margin: .7rem 0 1rem;
+  padding: .35rem .7rem;
+  background: var(--paper-ink);
+  color: var(--paper);
+  text-decoration: none;
+  letter-spacing: .08em;
+}
+.dim { margin: .35rem 0 .7rem; }
+.dim .lab { display: flex; justify-content: space-between; }
+.track {
+  height: .55rem;
+  background: #e3d6b6;
+  margin-top: .2rem;
+  overflow: hidden;
+}
+.fill { height: 100%; background: var(--cinnabar-dim); }
+.fill.na { width: 0; }
+.ev { margin: .2rem 0 .8rem 0; padding-left: 1rem; color: var(--paper-muted); font-size: .88rem; }
+.rev {
+  border-top: 1px dashed #cbb890;
+  padding: .8rem 0 .2rem;
+}
+.rev h3 { margin: 0 0 .25rem; }
+.focus { color: var(--paper-muted); font-size: .82rem; }
+.decide label {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  margin: .25rem .7rem .25rem 0;
+  cursor: pointer;
+}
+.empty { color: var(--ink-dim); padding: 2rem 0; }
+@media (max-width: 900px) {
+  .counts { grid-template-columns: repeat(2, 1fr); }
+  .wrap { padding: 1rem 1rem 5rem; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const $ = (sel, el=document) => el.querySelector(sel);
+const state = {
+  user: null,
+  board: null,
+  sort: "final_score",
+  filter: "all",
+  open: null,
+  auth: "login",
+  error: "",
+  busy: false,
+};
+
+async function api(path, opts={}) {
+  const res = await fetch(path, {
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", ...(opts.headers||{}) },
+    ...opts,
+  });
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch {}
+  if (!res.ok) {
+    const err = new Error(data.error || ("HTTP " + res.status));
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  }[c]));
+}
+function n(v) { return v == null ? "N/A" : String(v); }
+
+function applySortFilter(cands) {
+  let rows = cands.slice();
+  const f = state.filter;
+  if (f === "top20") rows = rows.slice(0, 20);
+  if (f === "top10") rows = rows.filter(c => c.rank && c.rank <= 10);
+  if (f === "top5") rows = rows.filter(c => c.status === "official" || c.status === "preview_top");
+  if (f === "excluded") rows = rows.filter(c => c.status !== "official" && c.status !== "preview_top");
+  if (f === "high") rows = rows.filter(c => c.detail && c.detail.disagreement.level === "HIGH");
+  const key = state.sort;
+  rows.sort((a,b) => {
+    const av = key === "rank" ? (a.rank||999) : -(a[key] ?? -1);
+    const bv = key === "rank" ? (b.rank||999) : -(b[key] ?? -1);
+    if (av !== bv) return av - bv;
+    return (a.rank||0) - (b.rank||0);
+  });
+  return rows;
+}
+
+function bar(val, max=20) {
+  if (val == null) return `<div class="track"><div class="fill na"></div></div>`;
+  const pct = Math.max(0, Math.min(100, (val/max)*100));
+  return `<div class="track"><div class="fill" style="width:${pct}%"></div></div>`;
+}
+
+function authView() {
+  const t = state.auth === "register";
+  return `
+  <header class="mast">
+    <div class="brand">FORESHADOW · 伏笔</div>
+    <h1>今日机会审查</h1>
+    <p class="date">人审工作台。先登录，再看今日候选榜。</p>
+  </header>
+  <form class="auth" onsubmit="return submitAuth(event)">
+    <h2>${t ? "注册" : "登录"}</h2>
+    ${t ? `<label>用户名</label><input name="username" autocomplete="username" required>` : `<label>用户名或邮箱</label><input name="username" autocomplete="username" required>`}
+    ${t ? `<label>邮箱</label><input name="email" type="email" autocomplete="email" required>` : ""}
+    <label>密码</label><input name="password" type="password" autocomplete="${t?"new-password":"current-password"}" required minlength="8">
+    <p class="err">${esc(state.error)}</p>
+    <div class="rowbtns">
+      <button class="primary" type="submit">${t ? "注册并进入" : "登录"}</button>
+      <button type="button" onclick="state.auth='${t?"login":"register"}';state.error='';render()">${t ? "已有账号" : "注册"}</button>
+    </div>
+  </form>`;
+}
+
+function header(board) {
+  const preview = board.mode !== "official";
+  const c = board.counts;
+  return `
+  <div class="who">
+    <span>${esc(state.user.username)}</span>
+    <button type="button" onclick="logout()">退出</button>
+  </div>
+  <header class="mast">
+    <div class="brand">FORESHADOW · 伏笔</div>
+    <h1>今日机会审查</h1>
+    <p class="date">${esc(board.date)}</p>
+    <div class="ribbon ${preview ? "" : "official"}">
+      ${preview ? "预览模式｜历史不足 v7｜不是正式预测" : "正式模式｜v7 历史完整"}
+    </div>
+    <div class="counts">
+      <div><b>${c.discovered}</b>发现项目</div>
+      <div><b>${c.shortlisted}</b>候选项目</div>
+      <div><b>${c.deep_reviewed}</b>深度评审</div>
+      <div><b>${c.official_top5}</b>正式 Top 5</div>
+      <div><b>${c.provisional}</b>预览候选</div>
+    </div>
+  </header>`;
+}
+
+function listView(board) {
+  const rows = applySortFilter(board.candidates || []);
+  if (!rows.length) return `<p class="empty">今日没有可展示的候选。空 Top 5 是成功。</p>`;
+  return rows.map(c => `
+    <div class="row ${state.open===c.full_name?"active":""}" onclick="openCard('${esc(c.full_name)}')">
+      <div class="rk">#${esc(c.rank)}</div>
+      <div>
+        <div class="nm">${esc(c.full_name)}
+          <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
+        </div>
+      </div>
+      <div class="final">${n(c.final_score)}</div>
+      <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
+      <div></div>
+      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)}</div>
+    </div>`).join("");
+}
+
+function dimBlock(d) {
+  const val = d.na ? "N/A" : `${d.value} / ${d.max}`;
+  const ev = (d.evidence||[]).map(x => `<li>${esc(x)}</li>`).join("");
+  return `<div class="dim">
+    <div class="lab"><strong>${esc(d.label)}</strong><span>${val}</span></div>
+    ${bar(d.na ? null : d.value)}
+    ${d.na ? `<p class="meta">${esc(d.na_note)}</p>` : ""}
+    ${ev ? `<ul class="ev">${ev}</ul>` : ""}
+  </div>`;
+}
+
+function drawerView(card) {
+  if (!card) return "";
+  const d = card.detail;
+  const preview = card.not_official;
+  const whyTitle = d.why_selected ? "为什么推荐" : "为什么没有进入 Top 5";
+  const why = (d.why_selected || d.why_excluded || []).map(x => `<li>${esc(x)}</li>`).join("");
+  const revs = d.reviewers.map(r => `
+    <section class="rev">
+      <h3>${esc(r.label)}：${n(r.score)} / 100</h3>
+      <p class="focus">关注：${r.focus.map(esc).join(" · ")}</p>
+      ${r.dimensions.map(x => `<div class="lab"><span>${esc(x.label)}</span><span>${x.na?"N/A":x.value+"/20"}</span></div>${bar(x.na?null:x.value)}`).join("")}
+    </section>`).join("");
+  const dg = d.disagreement;
+  const ch = d.chair;
+  const actions = d.review_actions.map(a => `
+    <label><input type="radio" name="decision" value="${esc(a.id)}"
+      ${card.my_action===a.id?"checked":""}
+      onchange="saveReview('${esc(card.full_name)}','${esc(a.id)}')"> ${esc(a.label)}</label>`).join("");
+  return `
+  <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
+  <aside class="drawer ${state.open?"on":""}" role="dialog" aria-label="项目详情">
+    <button class="close" type="button" onclick="closeCard()">关闭</button>
+    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
+    <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
+    <p><strong>最终综合评分：</strong>${n(card.final_score)}
+      <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
+    <p class="meta">
+      Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
+      · Open Issues ${n(card.open_issues)}<br/>
+      最近活动 ${n(card.last_pushed_at)} · 最近 Release ${n(card.last_release)}
+      · 首次发现 ${n(card.first_seen_at)}
+    </p>
+    <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
+    <h3>五维评分</h3>
+    ${d.dimensions.map(dimBlock).join("")}
+    <h3>三个独立评审视角</h3>
+    ${revs}
+    <h3>评审分歧：${esc(dg.level_zh)}</h3>
+    <p>趋势 ${n(dg.trend)} · 社区 ${n(dg.community)} · 贡献 ${n(dg.contributor)}</p>
+    <p>${esc(dg.explain)}</p>
+    <h3>最终综合评分：${n(card.final_score)}</h3>
+    <p>趋势评审 ${n(card.trend)} · 社区评审 ${n(card.community)} · 贡献评审 ${n(card.contributor)} · 主审 ${n(card.chair)}</p>
+    <p class="meta">${esc(ch.weight_note)}</p>
+    <p><strong>综合判断：</strong>${esc(ch.judgment)}</p>
+    <h3>${esc(whyTitle)}</h3>
+    <ul>${why}</ul>
+    <p><strong>风险：</strong>${esc(ch.main_risk)}</p>
+    <h3>我的决定</h3>
+    <div class="decide">${actions}</div>
+  </aside>`;
+}
+
+function boardView() {
+  const b = state.board;
+  return `
+  ${header(b)}
+  <div class="toolbar">
+    <label>排序
+      <select onchange="state.sort=this.value;render()">
+        <option value="final_score" ${state.sort==="final_score"?"selected":""}>综合评分</option>
+        <option value="trend" ${state.sort==="trend"?"selected":""}>趋势评分</option>
+        <option value="community" ${state.sort==="community"?"selected":""}>社区评分</option>
+        <option value="contributor" ${state.sort==="contributor"?"selected":""}>贡献评分</option>
+        <option value="rank" ${state.sort==="rank"?"selected":""}>排名</option>
+      </select>
+    </label>
+    <label>筛选
+      <select onchange="state.filter=this.value;render()">
+        <option value="all" ${state.filter==="all"?"selected":""}>全部</option>
+        <option value="top20" ${state.filter==="top20"?"selected":""}>Top 20</option>
+        <option value="top10" ${state.filter==="top10"?"selected":""}>Top 10</option>
+        <option value="top5" ${state.filter==="top5"?"selected":""}>Top 5</option>
+        <option value="excluded" ${state.filter==="excluded"?"selected":""}>未入选</option>
+        <option value="high" ${state.filter==="high"?"selected":""}>高分歧</option>
+      </select>
+    </label>
+    <span class="date">当前按${state.sort==="final_score"?"综合评分":"所选指标"}排序</span>
+  </div>
+  <h2>今日候选榜</h2>
+  <div class="list">${listView(b)}</div>
+  ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
+  `;
+}
+
+function render() {
+  const root = document.getElementById("app");
+  if (!state.user) root.innerHTML = authView();
+  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…</p>`;
+  else root.innerHTML = boardView();
+}
+
+async function boot() {
+  try {
+    const me = await api("/api/me");
+    state.user = me.user;
+    if (state.user) await loadBoard();
+  } catch (e) {
+    state.user = null;
+  }
+  render();
+}
+
+async function loadBoard() {
+  state.board = await api("/api/board");
+}
+
+async function submitAuth(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const body = Object.fromEntries(fd.entries());
+  state.error = "";
+  try {
+    const path = state.auth === "register" ? "/api/register" : "/api/login";
+    const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+    state.user = data.user;
+    await loadBoard();
+  } catch (e) {
+    state.error = e.message;
+  }
+  render();
+  return false;
+}
+
+async function logout() {
+  await api("/api/logout", { method: "POST", body: "{}" });
+  state.user = null;
+  state.board = null;
+  state.open = null;
+  render();
+}
+
+function openCard(name) { state.open = name; render(); }
+function closeCard() { state.open = null; render(); }
+
+async function saveReview(repo, action) {
+  try {
+    await api("/api/review", { method: "POST", body: JSON.stringify({ repo, action }) });
+    const card = (state.board.candidates||[]).find(c => c.full_name === repo);
+    if (card) { card.my_action = action; }
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeCard();
+});
+boot();
+</script>
+</body>
+</html>
+"""
+
+
+def render_app_html() -> str:
+    return APP_HTML

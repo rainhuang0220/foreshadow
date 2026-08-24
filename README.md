@@ -58,10 +58,22 @@ foreshadow report [--date YYYY-MM-DD] [--json]
 foreshadow show <owner/repo>
 foreshadow review <owner/repo> <action> [-m note]
 foreshadow watchlist [action]
-foreshadow board [--preview] [--date YYYY-MM-DD] [--no-open]
+foreshadow board [--preview] [--date YYYY-MM-DD] [--no-open] [--export-html] [--port 8765]
 ```
 
-`board --preview` opens the Audit Board from **real** snapshots. Missing `v7` shows as N/A / PROVISIONAL. It does not write fake history. Official Top 5 stays empty until ~7 days of snapshots exist.
+### Daily Review Board (interactive)
+
+```bash
+uv run foreshadow board --preview --no-open
+```
+
+Then open **http://127.0.0.1:8765/** in a browser (the command also opens a tab unless `--no-open`).
+
+The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: five dimensions, three reviewers, disagreement, Chair, evidence, GitHub link, and your review action. Review actions persist per user and share the same `reviews` table as `foreshadow review owner/repo interested`.
+
+`--export-html` still writes a static Chinese list (accordion) under `preview/YYYY-MM-DD/` or `reports/`. It is an export, not the product.
+
+`board --preview` reads **real** snapshots. Missing `v7` shows as N/A / 预览模式. It does not write fake history. Official Top 5 stays empty until ~7 days of snapshots exist.
 
 ## Development
 

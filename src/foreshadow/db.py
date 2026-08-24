@@ -6,7 +6,12 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+MIGRATIONS: tuple[tuple[int, str], ...] = (
+    (1, "001_init.sql"),
+    (2, "002_users.sql"),
+)
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -21,18 +26,29 @@ def connect(path: Path) -> sqlite3.Connection:
 
 
 def migrate(conn: sqlite3.Connection) -> None:
-    if _version_applied(conn, SCHEMA_VERSION):
-        return
-    sql = (
-        importlib.resources.files("foreshadow")
-        .joinpath("sql/001_init.sql")
-        .read_text(encoding="utf-8")
-    )
-    conn.executescript(sql)
-    conn.execute(
-        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-        (SCHEMA_VERSION, datetime.now(UTC).isoformat()),
-    )
+    for version, filename in MIGRATIONS:
+        if _version_applied(conn, version):
+            continue
+        sql = (
+            importlib.resources.files("foreshadow")
+            .joinpath(f"sql/{filename}")
+            .read_text(encoding="utf-8")
+        )
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            (version, datetime.now(UTC).isoformat()),
+        )
+        conn.commit()
+        if version == 2:
+            _backfill_review_users(conn)
+
+
+def _backfill_review_users(conn: sqlite3.Connection) -> None:
+    from foreshadow.auth import ensure_local_user
+
+    uid = ensure_local_user(conn)
+    conn.execute("UPDATE reviews SET user_id=? WHERE user_id IS NULL", (uid,))
     conn.commit()
 
 

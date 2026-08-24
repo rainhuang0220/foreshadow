@@ -34,7 +34,6 @@ from foreshadow.pipeline.report import (
 )
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import select_top
-from foreshadow.reviews import stance_blocks_top5
 
 __all__ = [
     "RunResult",
@@ -236,12 +235,16 @@ def show_repo(ref: str) -> str | None:
         """,
         (repo_id,),
     ).fetchall()
+    from foreshadow.auth import ensure_local_user
+
+    op_id = ensure_local_user(conn)
     reviews = conn.execute(
         """
         SELECT created_at, action, note FROM reviews
-        WHERE repo_id=? ORDER BY id DESC
+        WHERE repo_id=? AND (user_id=? OR user_id IS NULL)
+        ORDER BY id DESC
         """,
-        (repo_id,),
+        (repo_id, op_id),
     ).fetchall()
     entry_row = conn.execute(
         """
@@ -577,13 +580,9 @@ def _insert_score(
 def _review_blocked(
     conn: sqlite3.Connection, repo_id: int, today: date, scoring: Any
 ) -> bool:
-    row = conn.execute(
-        """
-        SELECT action, created_at FROM reviews
-        WHERE repo_id=? ORDER BY id DESC LIMIT 1
-        """,
-        (repo_id,),
-    ).fetchone()
+    from foreshadow.reviews import operator_latest_review, stance_blocks_top5
+
+    row = operator_latest_review(conn, repo_id)
     if row is None:
         return False
     action, created = row
@@ -622,19 +621,21 @@ def _watchlist_appendix(
 
 
 def _active_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    from foreshadow.reviews import _latest_join
+
+    join_sql, join_params = _latest_join(conn, None)
     rows = conn.execute(
-        """
+        f"""
         SELECT r.full_name, v.action, v.created_at,
                e.stars_at_entry, e.entered_at
         FROM reviews v
-        JOIN (
-            SELECT repo_id, MAX(id) AS id FROM reviews GROUP BY repo_id
-        ) last ON last.id = v.id
+        {join_sql}
         JOIN repos r ON r.id = v.repo_id
         LEFT JOIN entries e ON e.repo_id = r.id
         WHERE v.action IN ('enter', 'investigate')
         ORDER BY v.created_at DESC
-        """
+        """,
+        join_params,
     ).fetchall()
     out: list[dict[str, Any]] = []
     for full_name, action, created, stars_e, entered in rows:

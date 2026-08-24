@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood running + P1 Preview Audit Board on `p0-implementation` |
+| **Current Phase** | P0 dogfood running + P1 interactive Chinese Review Board on `p0-implementation` |
 | **Current Goal** | Keep 7-day dogfood (2026-08-24 → 2026-08-31 UTC). P1 board is Preview/PROVISIONAL until v7 exists. **Do not merge to main** until post-run review. Do not change scoring thresholds. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
@@ -21,6 +21,7 @@
 - Implementation plan: [`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`](docs/superpowers/plans/2026-08-24-foreshadow-p0.md) (Tasks 1–11).
 - Tasks 1–11 on `p0-implementation`: skeleton through 0.1.0 hygiene (GET-only client, scores, Top 5 / empty OK, v7 required, human review, optional LLM narrative).
 - P1 Preview Audit Board: 120→20→3 reviewers→10→Chair, HTML Daily Board, official Top 5 still 0 without v7. Preview does not insert snapshots.
+- P1 round 2: localhost Chinese list+drawer Board, register/login, per-user reviews. P0 thresholds unchanged.
 
 ## In Progress
 

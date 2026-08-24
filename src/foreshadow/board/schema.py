@@ -86,6 +86,15 @@ class BoardCard(BaseModel):
     owner: str
     html_url: str | None = None
     stars: int | None = None
+    forks: int | None = None
+    contributors: int | None = None
+    open_issues: int | None = None
+    last_pushed_at: str | None = None
+    last_release: str | None = None
+    first_seen_at: str | None = None
+    description: str | None = None
+    language: str | None = None
+    list_rank: int | None = None
     official_eligible: bool
     lightweight_score: float | None = None
     trend: ReviewerResult

@@ -47,12 +47,16 @@ def apply_review(
     note: str | None,
     clock: Clock,
     settings: Settings | None = None,
+    user_id: int | None = None,
 ) -> None:
     action_n = (action or "").strip().lower()
     if action_n not in ACTIONS:
         raise ReviewError(f"unknown action: {action} ({', '.join(ACTIONS)})")
     clock = clock or Clock()
     settings = settings or load_config()
+    from foreshadow.auth import ensure_local_user, is_operator_user
+
+    uid = user_id if user_id is not None else ensure_local_user(conn)
     today = clock.today()
     local = _resolve_local(conn, repo_ref)
     unseen = local is None
@@ -69,36 +73,43 @@ def apply_review(
 
     run_id = _today_run_id(conn, today.isoformat())
     scored: ScoredRepo | None = None
+    operator = is_operator_user(conn, uid)
     if action_n == "enter" or unseen:
         scored = _score_snapshot(conn, repo_id, clock, settings.scoring)
-        if action_n == "enter" and run_id is not None and scored is not None:
+        if (
+            action_n == "enter"
+            and operator
+            and run_id is not None
+            and scored is not None
+        ):
             _upsert_score(conn, run_id, repo_id, scored, clock.now().isoformat())
-    if action_n == "enter":
+    if action_n == "enter" and operator:
         _upsert_entry(conn, repo_id, scored, note, clock, run_id)
     conn.execute(
-        "INSERT INTO reviews(repo_id, action, note, run_id, created_at) VALUES (?,?,?,?,?)",
-        (repo_id, action_n, note, run_id, clock.now().isoformat()),
+        """
+        INSERT INTO reviews(repo_id, action, note, run_id, created_at, user_id)
+        VALUES (?,?,?,?,?,?)
+        """,
+        (repo_id, action_n, note, run_id, clock.now().isoformat(), uid),
     )
     conn.commit()
 
 
 def current_stances(
-    conn: sqlite3.Connection, action: str | None
+    conn: sqlite3.Connection, action: str | None, user_id: int | None = None
 ) -> list[dict[str, Any]]:
     action_n = (action or "").strip().lower() or None
     if action_n is not None and action_n not in ACTIONS:
         raise ReviewError(f"unknown action: {action} ({', '.join(ACTIONS)})")
-    sql = """
+    join_sql, params = _latest_join(conn, user_id)
+    sql = f"""
         SELECT r.full_name, v.action, v.note, v.created_at, r.id,
                e.stars_at_entry, e.contributors_at_entry, e.entered_at
         FROM reviews v
-        JOIN (
-            SELECT repo_id, MAX(id) AS id FROM reviews GROUP BY repo_id
-        ) last ON last.id = v.id
+        {join_sql}
         JOIN repos r ON r.id = v.repo_id
         LEFT JOIN entries e ON e.repo_id = r.id
     """
-    params: list[Any] = []
     if action_n:
         sql += " WHERE v.action=?"
         params.append(action_n)
@@ -172,6 +183,58 @@ def needs_hydrate(
     action_n = (action or "").strip().lower()
     local = _resolve_local(conn, repo_ref)
     return _needs_hydrate(conn, local, action_n, clock.today())
+
+
+def latest_action_map(
+    conn: sqlite3.Connection, user_id: int | None = None
+) -> dict[str, str]:
+    """full_name -> current action for one user (CLI operator if user_id is None)."""
+    rows = current_stances(conn, action=None, user_id=user_id)
+    return {str(row["full_name"]): str(row["action"]) for row in rows}
+
+
+def _latest_join(
+    conn: sqlite3.Connection, user_id: int | None
+) -> tuple[str, list[Any]]:
+    from foreshadow.auth import ensure_local_user, is_operator_user
+
+    uid = user_id if user_id is not None else ensure_local_user(conn)
+    if user_id is None or is_operator_user(conn, uid):
+        sql = """
+        JOIN (
+            SELECT repo_id, MAX(id) AS id FROM reviews
+            WHERE user_id = ? OR user_id IS NULL
+            GROUP BY repo_id
+        ) last ON last.id = v.id
+        """
+        return sql, [uid]
+    sql = """
+        JOIN (
+            SELECT repo_id, MAX(id) AS id FROM reviews
+            WHERE user_id = ?
+            GROUP BY repo_id
+        ) last ON last.id = v.id
+        """
+    return sql, [uid]
+
+
+def operator_latest_review(
+    conn: sqlite3.Connection, repo_id: int
+) -> tuple[str, str] | None:
+    from foreshadow.auth import ensure_local_user
+
+    uid = ensure_local_user(conn)
+    row = conn.execute(
+        """
+        SELECT action, created_at FROM reviews
+        WHERE repo_id=? AND (user_id=? OR user_id IS NULL)
+        ORDER BY id DESC LIMIT 1
+        """,
+        (repo_id, uid),
+    ).fetchone()
+    if row is None:
+        return None
+    return str(row[0]), str(row[1])
 
 
 def stance_blocks_top5(
