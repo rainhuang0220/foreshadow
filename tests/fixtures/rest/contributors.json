@@ -1,0 +1,25 @@
+[
+  {
+    "login": "alice",
+    "id": 1,
+    "type": "User",
+    "contributions": 40
+  },
+  {
+    "login": "bob",
+    "id": 2,
+    "type": "User",
+    "contributions": 12
+  },
+  {
+    "login": "dependabot[bot]",
+    "id": 3,
+    "type": "Bot",
+    "contributions": 8
+  },
+  {
+    "name": "Anon",
+    "type": "Anonymous",
+    "contributions": 2
+  }
+]
