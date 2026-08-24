@@ -5,14 +5,12 @@
 - [x] Owner review of [`docs/p0-architecture.md`](docs/p0-architecture.md)
 - [x] Confirm: Python 3.12; GitHub remote `rainhuang0220/foreshadow`; `gh auth token` fallback
 - [x] Write P0 implementation plan
-- [x] Execute plan Task 1 — repo skeleton (MIT, uv, ruff, CI, README)
-- [ ] Execute plan Task 2 — config, paths, clock, models, SQLite v1
+- [x] Execute plan Tasks 1–11 — P0 on branch `p0-implementation` (`0.1.0`, not tagged / not on PyPI)
+- [ ] Use the tool for ~one week of real daily runs before P1
 
-## P0 implementation (do not start before the plan)
+## P0 implementation
 
-See spec **PR Plan**: 1 → 2 → (3a → 3b ∥ 4) → 5 → 6 → 7 → 9, optional 8.
-
-PR 3b (worked examples 12.A/B/C + cold-start) is the product merge blocker.
+Plan Tasks 1–11 complete on `p0-implementation`. Version is `0.1.0` in tree only — no git tag, no PyPI/Homebrew publish unless the owner asks.
 
 ## Explicitly not now
 
@@ -23,3 +21,4 @@ PR 3b (worked examples 12.A/B/C + cold-start) is the product merge blocker.
 - Stargazer listing / star-history reconstruction
 - ML ranker
 - Padding Top 5
+- Tagging / publishing 0.1.0 to PyPI

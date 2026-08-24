@@ -10,7 +10,7 @@ Foreshadow 不是 trending。它是一个本地、可解释的短名单：每天
 
 ## 现状
 
-P0 骨架（`0.0.0`）。可安装，`foreshadow --help` 可用；业务流水线尚未实现。
+P0 已在分支 `p0-implementation` 实现（`0.1.0`）。尚未打 tag，也未发布到 PyPI。GET-only；空 Top 5 合法；Top 5 需约 7 天快照（`v7`）；需人工 review。
 
 ## 必读约定（与英文 README 一致）
 

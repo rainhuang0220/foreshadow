@@ -4,11 +4,11 @@ Find what the future has already foreshadowed.
 
 Foreshadow is not trending. It is a local, explainable short-list of repos you might still be able to help, produced at most once a day, with you as the final decision maker.
 
-**Status:** P0 skeleton (`0.0.0`). Application pipeline is not implemented yet. Install and `foreshadow --help` work; `run` / `report` / `show` / `review` / `watchlist` raise `NotImplementedError` until later tasks land.
+**Status:** P0 implemented (`0.1.0`) on branch `p0-implementation`. Not tagged and not published to PyPI. GET-only radar; empty Top 5 is OK; Top 5 needs ~7 daily snapshots (`v7`); human review required.
 
 中文简介见 [`README.zh-CN.md`](README.zh-CN.md)。English README is the source of truth.
 
-## What it will do
+## What it does
 
 A local CLI that, at most once per UTC day:
 
@@ -50,7 +50,7 @@ uv sync --group dev
 uv run foreshadow --help
 ```
 
-## Commands (stubs)
+## Commands
 
 ```text
 foreshadow run [--force] [--date YYYY-MM-DD] [--llm]

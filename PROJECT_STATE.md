@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 — skeleton in progress; **pipeline not implemented** |
-| **Current Goal** | Finish Task 1 then continue the P0 plan (`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`) |
+| **Current Phase** | P0 — implemented on branch `p0-implementation`; **not tagged / not on PyPI** |
+| **Current Goal** | Use the tool for a week of real daily runs before starting P1 |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
-| **Package** | `foreshadow-radar` `0.0.0` (CLI stubs only) |
+| **Package** | `foreshadow-radar` `0.1.0` (local / branch only) |
 | **Date** | 2026-08-24 |
 
 ## Completed
@@ -19,11 +19,11 @@
 - Spec copied to `docs/p0-architecture.md`.
 - Owner locked: Python 3.12 only (no Go in P0, no dual stack); remote `rainhuang0220/foreshadow`; token `GITHUB_TOKEN` → `GH_TOKEN` → `gh auth token`.
 - Implementation plan: [`docs/superpowers/plans/2026-08-24-foreshadow-p0.md`](docs/superpowers/plans/2026-08-24-foreshadow-p0.md) (Tasks 1–11).
-- Task 1 repo skeleton: `pyproject.toml`, package import `foreshadow`, `foreshadow --help`, MIT, README caveats, CI.
+- Tasks 1–11 on `p0-implementation`: skeleton through 0.1.0 hygiene (GET-only client, scores, Top 5 / empty OK, v7 required, human review, optional LLM narrative).
 
 ## In Progress
 
-- P0 implementation via plan tasks (Task 1 landing).
+- None in code. Real-world daily use before P1.
 
 ## Blocked
 
@@ -31,11 +31,11 @@
 
 ## Next Action
 
-Execute Task 2 (config, paths, clock, models, SQLite v1). Do not skip ahead.
+Run `foreshadow run` daily for about a week. Do **not** tag a release or publish to PyPI unless the owner asks. Do not start P1 until then.
 
 ## Known Bugs
 
-None in code beyond intentional `NotImplementedError` stubs. Spec risks are listed in `docs/p0-architecture.md` § Risks.
+See deferred minors in `.superpowers/sdd/2026-08-24-foreshadow-p0/progress.md`. Spec risks are listed in `docs/p0-architecture.md` § Risks.
 
 ## Architecture Decisions
 

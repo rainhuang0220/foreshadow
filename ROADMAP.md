@@ -1,12 +1,12 @@
 # ROADMAP
 
-## P0 — GitHub Opportunity Radar (current)
+## P0 — GitHub Opportunity Radar (implemented, not released)
 
 **Goal:** Every UTC day, discover a shortlist of emerging public GitHub repos, score them explainably, emit **at most 5** cards (empty is success), and record a human review. No GitHub writes. No dashboard. No ML.
 
-**Done:** P0 technical specification (`docs/p0-architecture.md`).
+**Done on branch `p0-implementation`:** package `foreshadow-radar` `0.1.0` — GET-only radar, empty Top 5 OK, `v7` required for Top 5, human review / Enter / watchlist, optional LLM narrative. Spec: `docs/p0-architecture.md`.
 
-**Not done:** implementation (PR 1 → PR 9 in the spec).
+**Not done:** git tag, PyPI / Homebrew publish. Do not start P1 until after about a week of real daily use.
 
 P0 success: `GITHUB_TOKEN` + `foreshadow run` produces a markdown Top 5 (or honest empty list) with component scores, evidence, confidence, and risk; `foreshadow review` records Watch / Interested / Reject / Investigate / Enter / Later; same-day re-run does not duplicate reviews; CI never talks to `api.github.com`.
 
