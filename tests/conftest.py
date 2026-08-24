@@ -29,3 +29,31 @@ def tmp_home(tmp_path, monkeypatch):
 @pytest.fixture
 def frozen_clock():
     return Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC))
+
+
+@pytest.fixture
+def fake_github(tmp_home, monkeypatch):
+    from fakes import FakeGitHub, repo_node
+
+    monkeypatch.setenv("HOME", str(tmp_home))
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken_not_a_real_secret")
+    monkeypatch.delenv("FORESHADOW_CONFIG", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    memkit = repo_node("R_memkit", "acme/memkit")
+    other = repo_node("R_other", "acme/other")
+    gh = FakeGitHub(
+        nodes={"R_memkit": memkit, "R_other": other},
+        search_nodes=[memkit, other],
+        contributors={
+            "acme/memkit": [
+                {"login": "alice", "type": "User"},
+                {"login": "bob", "type": "User"},
+            ],
+            "acme/other": [{"login": "carol", "type": "User"}],
+        },
+    )
+    monkeypatch.setattr(
+        "foreshadow.github.client.GitHubClient",
+        lambda *a, **k: gh,
+    )
+    return gh

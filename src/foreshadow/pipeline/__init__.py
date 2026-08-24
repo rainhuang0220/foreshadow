@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,7 @@ from foreshadow.pipeline.report import (
 )
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import select_top
+from foreshadow.reviews import stance_blocks_top5
 
 __all__ = [
     "RunResult",
@@ -568,18 +569,7 @@ def _review_blocked(
     if row is None:
         return False
     action, created = row
-    day = _parse_day(created)
-    cooldown = int(getattr(scoring, "reject_cooldown_days", 90))
-    later = int(getattr(scoring, "later_skip_days", 14))
-    if action == "enter":
-        return True
-    if (
-        action == "reject"
-        and day is not None
-        and today < day + timedelta(days=cooldown)
-    ):
-        return True
-    return action == "later" and day is not None and today < day + timedelta(days=later)
+    return stance_blocks_top5(action, created, today, scoring)
 
 
 def _watchlist_appendix(
@@ -700,16 +690,3 @@ def _as_dict(raw: Any) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
-
-
-def _parse_day(value: str | None) -> date | None:
-    if not value:
-        return None
-    text = str(value).replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(text).date()
-    except ValueError:
-        try:
-            return date.fromisoformat(text[:10])
-        except ValueError:
-            return None

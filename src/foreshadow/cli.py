@@ -9,6 +9,13 @@ from foreshadow.clock import Clock
 from foreshadow.db import connect, migrate
 from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline import run_pipeline, show_repo
+from foreshadow.reviews import (
+    ACTIONS,
+    ReviewError,
+    apply_review,
+    current_stances,
+    format_stances,
+)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -60,13 +67,63 @@ def show(repo: str) -> None:
 
 
 @app.command()
-def review(repo: str, action: str, m: str | None = None) -> None:
-    raise NotImplementedError
+def review(
+    repo: str,
+    action: str,
+    m: str | None = typer.Option(None, "-m", help="Note"),
+) -> None:
+    action_n = action.strip().lower()
+    if action_n not in ACTIONS:
+        print(f"unknown action: {action} ({', '.join(ACTIONS)})", file=sys.stderr)
+        raise SystemExit(2)
+    clock = Clock()
+    conn = connect(resolve_data_dir() / "foreshadow.sqlite3")
+    migrate(conn)
+    from foreshadow.config import load_config
+    from foreshadow.github.client import GitHubClient, resolve_token
+
+    settings = load_config()
+    client = GitHubClient(
+        token=resolve_token(),
+        settings=settings.github,
+        clock=clock,
+    )
+    try:
+        apply_review(conn, client, repo, action_n, m, clock)
+    except ReviewError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+    except Exception as exc:
+        from foreshadow.github.client import redact
+
+        print(redact(str(exc)), file=sys.stderr)
+        raise SystemExit(1) from exc
+    finally:
+        if hasattr(client, "close"):
+            client.close()
+    sys.stdout.write(f"recorded {action_n} for {repo}\n")
 
 
 @app.command()
-def watchlist(action: str | None = None) -> None:
-    raise NotImplementedError
+def watchlist(
+    action: str | None = typer.Option(None, "--action", help="Filter by stance"),
+) -> None:
+    action_n = action.strip().lower() if action else None
+    if action_n is not None and action_n not in ACTIONS:
+        print(f"unknown action: {action} ({', '.join(ACTIONS)})", file=sys.stderr)
+        raise SystemExit(2)
+    db_path = resolve_data_dir() / "foreshadow.sqlite3"
+    if not db_path.is_file():
+        sys.stdout.write("no reviews\n")
+        return
+    conn = connect(db_path)
+    migrate(conn)
+    try:
+        rows = current_stances(conn, action=action_n)
+    except ReviewError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+    sys.stdout.write(format_stances(rows, action=action_n))
 
 
 def _clock(date_str: str | None) -> Clock:
