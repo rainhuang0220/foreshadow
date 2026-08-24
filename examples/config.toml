@@ -1,0 +1,49 @@
+# examples/config.toml  — also the documented user schema
+
+[discovery]
+star_min = 50                 # search hint, NOT a hard gate; templates {star_min}
+star_max = 8000               # search hint; templates {star_max}
+pushed_within_days = 45       # templates {pushed45} = today − this
+max_candidates = 120          # union of watchlist + search; watchlist is inside this cap
+max_deep_hydrate = 30
+max_watchlist_deep = 20       # Phase B reserved for rankable watchlist only (watch/interested/investigate); enter does not consume
+per_page = 25                 # GraphQL search first:N; do not paginate to 1000
+exclude_forks = true          # drop forks in discovery. H2 ALWAYS vetoes Top 5 even if false
+exclude_archived = true
+# Hydrate/pre-rank language bonus only. NEVER a cartesian product of search × languages.
+# Empty = no language bonus. Queries rust_sys / compiler_os already embed language:Rust.
+languages = ["Python", "Rust", "TypeScript", "Go", "C++"]
+
+[scoring]
+# Locked product weights in **points** that MUST sum to 100.
+# `momentum_weight = 0.20` is invalid (exit 2). Tests pin these defaults.
+momentum_weight = 20
+real_user_weight = 15
+gap_weight = 15
+contribution_opp_weight = 20
+early_entry_weight = 15
+direction_fit_weight = 10
+maintainer_weight = 5
+min_opportunity = 55
+min_explosion = 35
+reject_cooldown_days = 90
+later_skip_days = 14
+max_per_owner = 2             # diversity in Top 5
+window_slack_days = 1         # nearest snapshot ≤ t-N within this slack; else NA
+
+[github]
+api_url = "https://api.github.com"
+graphql_url = "https://api.github.com/graphql"
+api_version = "2026-03-10"
+timeout_seconds = 30
+budget_graphql_points = 800
+budget_rest = 400
+max_retries = 3
+search_spacing_ms = 2000
+
+[llm]
+enabled = false
+provider = "openai"           # openai | anthropic | xai | custom
+model = ""
+base_url = ""                 # custom only
+max_calls_per_run = 5         # one OpenAI-compatible call per selected card (≤5 cards)

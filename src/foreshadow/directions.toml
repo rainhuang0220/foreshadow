@@ -1,0 +1,55 @@
+# Packaged Direction Fit bags. Each table is one bag from spec § Direction Fit:
+# LLM, Agent, MCP, RAG/memory, world-model, eval/tooling, AI infra,
+# Rust/systems, RISC-V, compiler/OS.
+# topics / keywords / languages drawn from that catalog plus the default
+# search-query terms (metrics §5.1 is not vendored in-repo).
+
+[llm]
+topics = ["llm", "gguf", "llama", "ollama", "ggml", "local-llm"]
+keywords = ["llm", "gguf", "ggml", "llama.cpp", "ollama", "large language model"]
+languages = ["Python", "C++", "Rust"]
+
+[agent]
+topics = ["agents", "agent", "multi-agent", "autogen"]
+keywords = ["multi-agent", "tool use", "agent", "agents"]
+languages = ["Python", "TypeScript"]
+
+[mcp]
+topics = ["mcp", "model-context-protocol"]
+keywords = ["mcp", "model context protocol"]
+languages = ["Python", "TypeScript", "Go", "Rust"]
+
+[rag_memory]
+topics = ["rag", "memory", "llm", "embeddings"]
+keywords = ["rag", "long-term memory", "embedding", "memory", "llm"]
+languages = ["Python", "TypeScript"]
+
+[world_model]
+topics = ["world-model", "world-models", "model-based-rl", "simulation"]
+keywords = ["world model", "world-model", "model-based", "dreamer", "mu-zero"]
+languages = ["Python"]
+
+[eval_tooling]
+topics = ["evaluation", "evals", "prompt-engineering", "benchmark"]
+keywords = ["evaluation", "evals", "prompt engineering", "benchmark"]
+languages = ["Python", "TypeScript"]
+
+[ai_infra]
+topics = ["cuda", "inference", "gpu", "mlops"]
+keywords = ["cuda", "kv-cache", "tensor rt", "rocm", "vllm", "mlx", "candle", "inference engine"]
+languages = ["Python", "C++", "Rust"]
+
+[rust_systems]
+topics = ["embedded", "no-std", "rtos", "firmware"]
+keywords = ["embedded", "no_std", "no-std", "rtos"]
+languages = ["Rust"]
+
+[riscv]
+topics = ["riscv", "risc-v", "opensbi"]
+keywords = ["riscv", "risc-v", "opensbi"]
+languages = ["C", "C++", "Rust"]
+
+[compiler_os]
+topics = ["compiler", "llvm", "osdev", "operating-system"]
+keywords = ["compiler", "llvm", "osdev", "operating system"]
+languages = ["Rust", "C", "C++"]
