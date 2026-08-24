@@ -235,7 +235,8 @@ def is_readme_only_tree(names: list[str]) -> bool:
     if any(base.lower() in SOURCE_DIRS for base in bases):
         return False
     source_files = [base for base in bases if _is_source_file(base)]
-    if len(source_files) >= 2:
+    # 12.C README+app.py is not H3; meta-only trees have 0 source files.
+    if source_files:
         return False
     for base in bases:
         if _is_source_file(base) or _is_meta_name(base):

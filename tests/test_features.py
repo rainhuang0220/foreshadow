@@ -50,6 +50,8 @@ def test_install_verb():
 def test_gemfile_only_is_not_h3():
     assert is_readme_only_tree(["README.md", "Gemfile"]) is False
     assert is_readme_only_tree(["README.md", "LICENSE", ".gitignore"]) is True
+    # 12.C tree (README + one app.py) is not H3
+    assert is_readme_only_tree(["README.md", "app.py"]) is False
 
 
 def test_v7_exact_beats_slack_neighbor():
@@ -186,7 +188,8 @@ def test_screenshot_only_html_images():
 
 def test_tree_source_dir_and_single_file():
     assert is_readme_only_tree(["README.md", "src"]) is False
-    assert is_readme_only_tree(["README.md", "hello.py"]) is True
+    # 12.C README + app.py is not H3; any source file disqualifies README-only
+    assert is_readme_only_tree(["README.md", "hello.py"]) is False
     assert is_readme_only_tree(["README.md", "a.py", "b.rs"]) is False
     assert is_readme_only_tree(["README.md", "COPYING", ".gitattributes"]) is True
 
