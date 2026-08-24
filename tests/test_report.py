@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from fakes import FakeGitHub, repo_node
+from fakes import FakeGitHub, repo_node, seed_repo, seed_review
 from foreshadow.cli import app
 from foreshadow.config import Settings
-from foreshadow.db import connect
+from foreshadow.db import connect, migrate
 from foreshadow.models import ReportJSON
 from foreshadow.pipeline import run_pipeline
 from foreshadow.pipeline.report import (
@@ -479,6 +479,78 @@ def test_keyboard_interrupt_after_hydrate_does_not_skip(
     _crash_after_hydrate(
         tmp_home, tmp_path, frozen_clock, monkeypatch, KeyboardInterrupt()
     )
+
+
+def test_failed_and_not_found_are_not_scored_as_today(
+    tmp_home, tmp_path, frozen_clock, monkeypatch
+):
+    isolate(tmp_home, tmp_path, monkeypatch)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    ok = repo_node("R_ok", "acme/ok", stargazerCount=120)
+    fail = repo_node("R_fail", "acme/fail", stargazerCount=900)
+    gone = repo_node("R_gone", "acme/gone", stargazerCount=400)
+    rid_fail = seed_repo(conn, "R_fail", "acme/fail")
+    rid_gone = seed_repo(conn, "R_gone", "acme/gone")
+    seed_review(conn, rid_fail, "watch", "2026-08-23T00:00:00+00:00")
+    seed_review(conn, rid_gone, "watch", "2026-08-23T00:00:01+00:00")
+    from foreshadow.pipeline.snapshot import upsert_snapshot
+
+    prior = {
+        "stars": 900,
+        "forks": 10,
+        "open_issues": 1,
+        "open_prs": 0,
+        "last_pushed_at": "2026-08-20T00:00:00Z",
+        "created_at": "2026-05-01T00:00:00Z",
+        "captured_at": "2026-08-23T00:05:00+00:00",
+        "topics_json": "[]",
+        "features_json": "{}",
+    }
+    upsert_snapshot(conn, rid_fail, "2026-08-23", prior)
+    upsert_snapshot(conn, rid_gone, "2026-08-23", {**prior, "stars": 400})
+    conn.commit()
+    gh = FakeGitHub(
+        nodes={"R_ok": ok, "R_fail": fail, "R_gone": gone},
+        search_nodes=[ok],
+        fail_ids={"R_fail"},
+        missing={"R_gone"},
+    )
+    result = run_pipeline(clock=frozen_clock, force=False, llm=False, client=gh)
+    assert result.status == "degraded"
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    names = {
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT r.full_name FROM scores s
+            JOIN repos r ON r.id = s.repo_id
+            """
+        )
+    }
+    assert "acme/ok" in names
+    assert "acme/fail" not in names
+    assert not any(n.startswith("acme/gone") for n in names)
+    statuses = {
+        row[0]: row[1]
+        for row in conn.execute(
+            """
+            SELECT r.node_id, c.hydrate_status
+            FROM candidates c JOIN repos r ON r.id = c.repo_id
+            """
+        )
+    }
+    assert statuses["R_fail"] == "failed"
+    assert statuses["R_gone"] == "not_found"
+    assert statuses["R_ok"] in {"ok", "incomplete"}
+    today_fail = conn.execute(
+        """
+        SELECT stars FROM snapshots
+        WHERE repo_id=? AND snapshot_date='2026-08-24'
+        """,
+        (rid_fail,),
+    ).fetchone()
+    assert today_fail is None
 
 
 def test_cli_run_redacts_exception_token(tmp_home, tmp_path, monkeypatch):

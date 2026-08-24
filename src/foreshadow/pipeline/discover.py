@@ -663,13 +663,11 @@ def discover_hydrate_snapshot(
         has_phase_a = (
             bool(view.graphql) and view.graphql.get("stargazerCount") is not None
         )
-        if view.repo_id is None:
-            continue
-        if view.hydrate_status == "not_found" and not has_phase_a:
+        if view.repo_id is None or not has_phase_a:
             continue
         feat = features_json(view.features)
         payload = payload_from_graphql(
-            view.graphql or {},
+            view.graphql,
             captured_at=now,
             created_at=view.created_at,
             features_json=feat,
@@ -679,12 +677,6 @@ def discover_hydrate_snapshot(
             contributor_censored=view.contributor_censored,
             unique_committers_30d=view.unique_committers_30d,
         )
-        if not view.graphql:
-            payload["stars"] = view.stargazerCount or None
-            payload["last_pushed_at"] = (
-                view.pushed_at.isoformat() if view.pushed_at else None
-            )
-            payload["created_at"] = view.created_at
         upsert_snapshot(conn, view.repo_id, today, payload)
     health["hydrate_failed"] = failed
     health["budget_used"] = int(getattr(client, "graphql_used", 0) or 0)

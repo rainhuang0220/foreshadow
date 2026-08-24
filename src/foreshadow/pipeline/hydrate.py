@@ -816,12 +816,14 @@ def build_features_blob(
     readme_text = ""
     if isinstance(readme_obj, dict):
         readme_text = str(readme_obj.get("text") or "")[:README_CHARS]
-    sample = repo.get("issuesOpenSample") or {}
+    sample = repo.get("issuesOpenSample")
     nodes = sample.get("nodes") if isinstance(sample, dict) else None
-    nodes = nodes if isinstance(nodes, list) else []
-    closed = repo.get("issuesClosedSample") or {}
+    open_sample_landed = isinstance(nodes, list)
+    nodes = nodes if open_sample_landed else []
+    closed = repo.get("issuesClosedSample")
     closed_nodes = closed.get("nodes") if isinstance(closed, dict) else None
-    closed_nodes = closed_nodes if isinstance(closed_nodes, list) else []
+    closed_sample_landed = isinstance(closed_nodes, list)
+    closed_nodes = closed_nodes if closed_sample_landed else []
 
     bots: list[str] = []
     authors: set[str] = set()
@@ -981,19 +983,19 @@ def build_features_blob(
         help_titles = _cap_titles(help_titles, 2048)
 
     return FeaturesBlob(
-        u_issue=len(authors) if nodes else None,
-        u_issue_ext=len(authors_ext) if nodes else None,
-        issue_sample_n=n_sample if nodes or i_open is not None else None,
+        u_issue=len(authors) if open_sample_landed else None,
+        u_issue_ext=len(authors_ext) if open_sample_landed else None,
+        issue_sample_n=n_sample if open_sample_landed else None,
         i_open=i_open,
-        bug_n=bug_n if nodes else None,
-        talk_n=talk_n if nodes else None,
-        usage_closed_n=usage_closed_n if closed_nodes or closed else None,
-        help_n=help_n if nodes else None,
-        unassigned_help=unassigned_help if nodes else None,
+        bug_n=bug_n if open_sample_landed else None,
+        talk_n=talk_n if open_sample_landed else None,
+        usage_closed_n=usage_closed_n if closed_sample_landed else None,
+        help_n=help_n if open_sample_landed else None,
+        unassigned_help=unassigned_help if open_sample_landed else None,
         repeat_clusters=_repeat_clusters(
             [str(i.get("title") or "") for i in nodes if isinstance(i, dict)]
         )
-        if nodes
+        if open_sample_landed
         else None,
         maint_touch=maint_touch,
         health_percentage=health_f,

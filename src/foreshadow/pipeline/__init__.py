@@ -320,9 +320,13 @@ def _run(
     scored_rows: list[tuple[int, ScoredRepo, dict[str, Any]]] = []
     blocked = 0
     pool: list[ScoredRepo] = []
-    for repo_id, _status, _name in cand_rows:
+    for repo_id, status, _name in cand_rows:
+        if status not in {"ok", "incomplete"}:
+            continue
         data = load_score_input(conn, repo_id)
         if data is None:
+            continue
+        if not _has_today_snapshot(data, today_s):
             continue
         scored = score_repo(data, clock=clock, scoring=settings.scoring, bags=bags)
         scored_rows.append((repo_id, scored, data))
@@ -439,6 +443,13 @@ def _run(
         wrote_config=wrote_config,
     )
     return result
+
+
+def _has_today_snapshot(data: dict[str, Any], today_s: str) -> bool:
+    return any(
+        str(snap.get("date") or "")[:10] == today_s
+        for snap in data.get("snapshots") or []
+    )
 
 
 def load_score_input(conn: sqlite3.Connection, repo_id: int) -> dict[str, Any] | None:
@@ -594,6 +605,8 @@ def _watchlist_appendix(
         if entry.full_name in selected_names or entry.action == "enter":
             continue
         scored = by_name.get(entry.full_name)
+        if scored is not None and scored.breakdown.vetoed:
+            continue
         item: dict[str, Any] = {
             "full_name": entry.full_name,
             "action": entry.action,

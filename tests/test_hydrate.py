@@ -1,14 +1,30 @@
 import json
+from datetime import date
 
 from fakes import FakeGitHub, repo_node, seed_repo, seed_review
 from foreshadow.config import Settings
 from foreshadow.db import connect, migrate
 from foreshadow.github.rest import fetch_contributors
 from foreshadow.pipeline.discover import discover_hydrate_snapshot
+from foreshadow.pipeline.features import SnapshotPoint, star_velocity
 from foreshadow.pipeline.h_rules import evaluate_h
-from foreshadow.pipeline.hydrate import unique_committers_30d
+from foreshadow.pipeline.hydrate import build_features_blob, unique_committers_30d
 from foreshadow.pipeline.score import score_repo
 from foreshadow.pipeline.snapshot import payload_from_graphql, upsert_snapshot
+
+
+def _star_payload(stars: int, forks: int = 10, captured_at: str = "") -> dict:
+    return {
+        "stars": stars,
+        "forks": forks,
+        "open_issues": 1,
+        "open_prs": 0,
+        "last_pushed_at": "2026-08-20T00:00:00Z",
+        "created_at": "2026-05-01T00:00:00Z",
+        "captured_at": captured_at or "2026-08-24T00:05:00+00:00",
+        "topics_json": "[]",
+        "features_json": "{}",
+    }
 
 
 def test_open_issues_count_not_stored(tmp_home, frozen_clock):
@@ -226,3 +242,138 @@ def test_phase_b_404_keeps_phase_a_snapshot(tmp_home, frozen_clock):
         "SELECT hydrate_status FROM candidates WHERE repo_id=?", (rid,)
     ).fetchone()[0]
     assert status in {"not_found", "incomplete"}
+
+
+def test_failed_phase_a_does_not_upsert_null_star_row(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node("R_fail", "acme/fail", stargazerCount=900)
+    rid = seed_repo(conn, "R_fail", "acme/fail")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    upsert_snapshot(conn, rid, "2026-08-16", _star_payload(200, 18))
+    upsert_snapshot(conn, rid, "2026-08-23", _star_payload(850, 80))
+    conn.commit()
+    gh = FakeGitHub(nodes={"R_fail": node}, fail_ids={"R_fail"})
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    today = conn.execute(
+        """
+        SELECT stars FROM snapshots
+        WHERE repo_id=? AND snapshot_date='2026-08-24'
+        """,
+        (rid,),
+    ).fetchone()
+    assert today is None
+    nulls = conn.execute(
+        "SELECT snapshot_date FROM snapshots WHERE repo_id=? AND stars IS NULL",
+        (rid,),
+    ).fetchall()
+    assert nulls == []
+    status = conn.execute(
+        "SELECT hydrate_status FROM candidates WHERE repo_id=?", (rid,)
+    ).fetchone()[0]
+    assert status == "failed"
+
+
+def test_failed_phase_a_keeps_today_stars_v7_slack(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node("R_x", "acme/x", stargazerCount=900)
+    rid = seed_repo(conn, "R_x", "acme/x")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    upsert_snapshot(conn, rid, "2026-08-16", _star_payload(200, 18))
+    upsert_snapshot(conn, rid, "2026-08-24", _star_payload(900, 85))
+    conn.commit()
+    gh = FakeGitHub(nodes={"R_x": node}, fail_ids={"R_x"})
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    row = conn.execute(
+        """
+        SELECT stars FROM snapshots
+        WHERE repo_id=? AND snapshot_date='2026-08-24'
+        """,
+        (rid,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == 900
+    rows = conn.execute(
+        """
+        SELECT snapshot_date, stars, forks FROM snapshots
+        WHERE repo_id=? ORDER BY snapshot_date
+        """,
+        (rid,),
+    ).fetchall()
+    assert not any(r[1] is None for r in rows)
+    snaps = [
+        SnapshotPoint(date.fromisoformat(str(r[0])), r[1], r[2], None) for r in rows
+    ]
+    v, src = star_velocity(snaps, date(2026, 8, 24), 7, slack_days=1)
+    assert src == "nearest-1d"
+    assert v == (900 - 200) / 7
+
+
+def test_empty_phase_b_issue_sample_is_zero_not_na(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node(
+        "R_empty",
+        "acme/emptyiss",
+        issuesOpen={"totalCount": 0},
+        issuesClosed={"totalCount": 0},
+        issuesOpenSample={"totalCount": 0, "nodes": []},
+        issuesClosedSample={"nodes": []},
+    )
+    rid = seed_repo(conn, "R_empty", "acme/emptyiss")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    conn.commit()
+    gh = FakeGitHub(nodes={"R_empty": node})
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    feat = json.loads(
+        conn.execute(
+            "SELECT features_json FROM snapshots WHERE repo_id=?", (rid,)
+        ).fetchone()[0]
+        or "{}"
+    )
+    assert feat.get("help_n") == 0
+    assert feat.get("u_issue") == 0
+    assert feat.get("u_issue_ext") == 0
+    assert feat.get("bug_n") == 0
+    assert feat.get("talk_n") == 0
+    assert feat.get("repeat_clusters") == 0
+    assert feat.get("unassigned_help") == 0
+    assert feat.get("issue_sample_n") == 0
+    scored = score_repo(
+        {
+            "owner": "acme",
+            "name": "emptyiss",
+            "full_name": "acme/emptyiss",
+            "S": 100,
+            "F": 10,
+            "C": 1,
+            "has_issues": True,
+            "created_at": "2026-05-01T00:00:00Z",
+            "features": feat,
+            "snapshots": [{"date": "2026-08-24", "stars": 100, "forks": 10}],
+        },
+        clock=frozen_clock,
+    )
+    assert scored.breakdown.contribution_opp.value is not None
+
+
+def test_missing_phase_b_issue_sample_stays_na():
+    repo = repo_node("R_a", "acme/a")
+    del repo["issuesOpenSample"]
+    del repo["issuesClosedSample"]
+    rest = {
+        "contents": [
+            {"name": "README.md", "type": "file"},
+            {"name": "src", "type": "dir"},
+            {"name": "pyproject.toml", "type": "file"},
+        ],
+        "workflows": {"total_count": 1, "workflows": [{"name": "ci"}]},
+        "community": {"health_percentage": 70, "files": {"contributing": None}},
+    }
+    blob = build_features_blob(repo, rest)
+    assert blob.help_n is None
+    assert blob.u_issue is None
+    assert blob.repeat_clusters is None
+    assert blob.bug_n is None
+    assert blob.issue_sample_n is None
