@@ -129,6 +129,68 @@ class LLMSettings(BaseModel):
     max_calls_per_run: int = 5
 
 
+class ReviewerWeightSettings(BaseModel):
+    """Five-dimension weights in points; must sum to 100."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    momentum: int = 20
+    real_users: int = 20
+    contributor_gap: int = 20
+    contribution_opportunity: int = 20
+    early_entry: int = 20
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "momentum": self.momentum,
+            "real_users": self.real_users,
+            "contributor_gap": self.contributor_gap,
+            "contribution_opportunity": self.contribution_opportunity,
+            "early_entry": self.early_entry,
+        }
+
+
+class BoardSettings(BaseModel):
+    """P1 Audit Board. Does not change P0 official scoring thresholds."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    shortlist_n: int = 20
+    deep_review_n: int = 10
+    final_n: int = 5
+    chair_blend: float = 0.40
+    trend_blend: float = 0.20
+    community_blend: float = 0.20
+    contributor_blend: float = 0.20
+    trend: ReviewerWeightSettings = Field(
+        default_factory=lambda: ReviewerWeightSettings(
+            momentum=35,
+            real_users=15,
+            contributor_gap=10,
+            contribution_opportunity=15,
+            early_entry=25,
+        )
+    )
+    community: ReviewerWeightSettings = Field(
+        default_factory=lambda: ReviewerWeightSettings(
+            momentum=10,
+            real_users=30,
+            contributor_gap=30,
+            contribution_opportunity=15,
+            early_entry=15,
+        )
+    )
+    contributor: ReviewerWeightSettings = Field(
+        default_factory=lambda: ReviewerWeightSettings(
+            momentum=10,
+            real_users=15,
+            contributor_gap=15,
+            contribution_opportunity=40,
+            early_entry=20,
+        )
+    )
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -136,6 +198,7 @@ class Settings(BaseModel):
     scoring: ScoringSettings = Field(default_factory=ScoringSettings)
     github: GitHubSettings = Field(default_factory=GitHubSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    board: BoardSettings = Field(default_factory=BoardSettings)
 
 
 def user_config_path() -> Path:

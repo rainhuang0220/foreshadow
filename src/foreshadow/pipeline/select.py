@@ -13,6 +13,15 @@ _EXCEPTIONAL = frozenset(
 )
 
 
+def is_official_eligible(
+    row: ScoredRepo,
+    min_opportunity: float = 55,
+    min_explosion: float = 35,
+) -> bool:
+    """P0 Top 5 gate. Thresholds stay at the caller defaults (55 / 35)."""
+    return _eligible(row, min_opportunity, min_explosion)
+
+
 def select_top(
     rows: Sequence[ScoredRepo],
     *,
@@ -20,7 +29,9 @@ def select_top(
     min_explosion: float = 35,
     max_per_owner: int = 2,
 ) -> list[ScoredRepo]:
-    pool = [row for row in rows if _eligible(row, min_opportunity, min_explosion)]
+    pool = [
+        row for row in rows if is_official_eligible(row, min_opportunity, min_explosion)
+    ]
     pool.sort(
         key=lambda row: (
             -(row.breakdown.opportunity.value or 0.0),

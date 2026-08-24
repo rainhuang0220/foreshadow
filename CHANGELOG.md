@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- P1 Preview Audit Board (`foreshadow board [--preview] [--date]`). Funnel discovered → 20 → 3 independent reviewers → 10 → Chair → ≤5. Official Top 5 still requires P0 `v7`. Preview writes `preview/YYYY-MM-DD/` and does not insert snapshots or invent history.
+
 ## [0.1.0] - 2026-08-24
 
 P0 implemented on branch `p0-implementation`. Not tagged and not published to PyPI.

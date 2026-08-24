@@ -115,6 +115,43 @@ def review(
 
 
 @app.command()
+def board(
+    date: str | None = None,
+    preview: bool = False,
+    no_open: bool = typer.Option(False, "--no-open"),
+) -> None:
+    """Open the Daily Audit Board. --preview never writes snapshots."""
+    from foreshadow.board.pipeline import build_board_from_db, write_board
+
+    db_path = resolve_data_dir() / "foreshadow.sqlite3"
+    if not db_path.is_file():
+        print("no database — run `foreshadow run` first", file=sys.stderr)
+        raise SystemExit(2)
+    clock = _clock(date)
+    day = date or clock.today().isoformat()
+    if not date:
+        resolved = _resolve_report_date(clock, None)
+        if resolved:
+            day = resolved
+    doc, before, after = build_board_from_db(date=day, preview=preview, clock=clock)
+    if before != after:
+        print("board run mutated snapshots — aborting", file=sys.stderr)
+        raise SystemExit(1)
+    _json_path, html_path = write_board(doc, preview=preview)
+    sys.stdout.write(
+        f"Foreshadow board {doc.date}  mode={doc.mode}  "
+        f"discovered={doc.discovered} shortlisted={doc.shortlisted} "
+        f"deep={doc.deep_reviewed} official={doc.official_top5} "
+        f"provisional={doc.provisional_count}\n"
+        f"{html_path}\n"
+    )
+    if not no_open:
+        import webbrowser
+
+        webbrowser.open(html_path.resolve().as_uri())
+
+
+@app.command()
 def watchlist(
     action: str | None = typer.Option(None, "--action", help="Filter by stance"),
 ) -> None:

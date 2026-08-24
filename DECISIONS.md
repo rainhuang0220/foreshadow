@@ -23,4 +23,8 @@ Locked in the P0 spec (`docs/p0-architecture.md`). Reopen only with a written re
 | K17 | Fake growth = H1–H10 + P1–P8 | Not a separate architecture veto table. |
 | K18 | Stop contributor pagination early | Thresholds are at C=25/80/500, not page 5. |
 
+| P1-B1 | Preview Audit Board is separate from official ranking | Official Top 5 still requires v7 + P0 thresholds. Preview labels N/A / PROVISIONAL and must not write snapshots. |
+| P1-B2 | Three weighted reviewers + Chair, config `[board]` | Trend/Community/Contributor weights differ. Chair 40/20/20/20 with explicit override. Not a silent average. |
+| P1-B3 | Reviewers are deterministic evidence engines | CLI cannot spawn Grok subagents. Parallel ThreadPool. LLM narrative remains optional and cannot change numbers. |
+
 **Invariants:** no GitHub writes; max 5; no padding; no commit-count KPI; NA ≠ 0; empty Top 5 is success.

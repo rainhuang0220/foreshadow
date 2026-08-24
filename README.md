@@ -58,7 +58,10 @@ foreshadow report [--date YYYY-MM-DD] [--json]
 foreshadow show <owner/repo>
 foreshadow review <owner/repo> <action> [-m note]
 foreshadow watchlist [action]
+foreshadow board [--preview] [--date YYYY-MM-DD] [--no-open]
 ```
+
+`board --preview` opens the Audit Board from **real** snapshots. Missing `v7` shows as N/A / PROVISIONAL. It does not write fake history. Official Top 5 stays empty until ~7 days of snapshots exist.
 
 ## Development
 
