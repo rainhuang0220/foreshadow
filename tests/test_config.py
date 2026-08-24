@@ -3,8 +3,11 @@ import pytest
 from foreshadow.config import load_config
 
 
-def test_default_weights_sum_to_100():
-    s = load_config()
+def test_default_weights_sum_to_100(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("# isolated defaults\n")
+    monkeypatch.setenv("FORESHADOW_CONFIG", str(cfg))
+    s = load_config(cwd=tmp_path)
     w = s.scoring
     assert (
         w.momentum_weight
@@ -16,6 +19,13 @@ def test_default_weights_sum_to_100():
         + w.maintainer_weight
         == 100
     )
+    assert w.momentum_weight == 20
+    assert w.real_user_weight == 15
+    assert w.gap_weight == 15
+    assert w.contribution_opp_weight == 20
+    assert w.early_entry_weight == 15
+    assert w.direction_fit_weight == 10
+    assert w.maintainer_weight == 5
 
 
 def test_fractional_weights_exit_2(tmp_path, monkeypatch):
@@ -25,7 +35,7 @@ def test_fractional_weights_exit_2(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("FORESHADOW_CONFIG", str(cfg))
     with pytest.raises(SystemExit) as ei:
-        load_config()
+        load_config(cwd=tmp_path)
     assert ei.value.code == 2
 
 
