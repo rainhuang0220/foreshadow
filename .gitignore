@@ -5,6 +5,7 @@
 dist/
 data/
 reports/
+dogfood/local/
 *.sqlite3
 __pycache__/
 .ruff_cache/

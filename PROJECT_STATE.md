@@ -4,7 +4,7 @@
 |---|---|
 | **Product** | Foreshadow (伏笔) |
 | **Current Phase** | P0 — implemented on branch `p0-implementation`; **not tagged / not on PyPI** |
-| **Current Goal** | Use the tool for a week of real daily runs before starting P1 |
+| **Current Goal** | 7-day real dogfood on `p0-implementation` (2026-08-24 → 2026-08-31 UTC). **Do not merge to main** until post-run review. Do not change scoring thresholds. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
 | **Package** | `foreshadow-radar` `0.1.0` (local / branch only) |
@@ -23,15 +23,15 @@
 
 ## In Progress
 
-- None in code. Real-world daily use before P1.
+- 7-day dogfood: `./scripts/dogfood-run.sh` (logs in `dogfood/local/`, gitignored). Empty Top 5 is success.
 
 ## Blocked
 
-- None.
+- Merge to `main` blocked until post-run review on/after 2026-08-31 UTC.
 
 ## Next Action
 
-Run `foreshadow run` daily for about a week. Do **not** tag a release or publish to PyPI unless the owner asks. Do not start P1 until then.
+Keep the worktree. Run the dogfood script daily. Do **not** change `min_opportunity` / `min_explosion`. Do **not** fabricate snapshots. After 7 calendar days, review `dogfood/local/JOURNAL.md` and decide merge.
 
 ## Known Bugs
 
