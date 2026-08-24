@@ -604,13 +604,15 @@ def discover_hydrate_snapshot(
                 owner, name = _split_fn(view.full_name)
             body, err = hydrate_b_node(client, view.node_id, force=force)
             if err is not None:
-                if view.hydrate_status != "not_found":
-                    view.hydrate_status = (
-                        "failed" if err.reason != "http_404" else "not_found"
-                    )
+                if err.reason == "http_404" or (err.status in {404, 410, 451}):
+                    view.hydrate_status = "incomplete" if view.graphql else "not_found"
+                elif view.hydrate_status != "not_found":
+                    view.hydrate_status = "failed"
                 continue
             repo = extract_repo(body)
             if repo is None:
+                if view.graphql:
+                    view.hydrate_status = "incomplete"
                 continue
             if graphql_marks_incomplete(body or {}):
                 view.hydrate_status = "incomplete"
@@ -623,14 +625,21 @@ def discover_hydrate_snapshot(
                 client, owner, name, clock, is_fork=view.is_fork
             )
             view.features = build_features_blob(repo, rest)
-            c_rows = rest.get("contributors") or []
-            total, ident, anon, censored = census_contributors(c_rows)
-            view.contributor_count = total
-            view.contributor_identified = ident
-            view.contributor_anon = anon
-            view.contributor_censored = censored
-            view.unique_committers_30d = unique_committers_30d(
-                rest.get("commits") or []
+            c_rows = rest.get("contributors")
+            if c_rows is None:
+                view.contributor_count = None
+                view.contributor_identified = None
+                view.contributor_anon = None
+                view.contributor_censored = None
+            else:
+                total, ident, anon, censored = census_contributors(c_rows)
+                view.contributor_count = total
+                view.contributor_identified = ident
+                view.contributor_anon = anon
+                view.contributor_censored = censored
+            commits = rest.get("commits")
+            view.unique_committers_30d = (
+                None if commits is None else unique_committers_30d(commits)
             )
             live = from_graphql(
                 repo, repo_id=view.repo_id, hydrate_status=view.hydrate_status
@@ -651,7 +660,12 @@ def discover_hydrate_snapshot(
             "UPDATE candidates SET hydrate_status=? WHERE run_id=? AND repo_id=?",
             (view.hydrate_status, run_id, view.repo_id),
         )
-        if view.hydrate_status == "not_found" or view.repo_id is None:
+        has_phase_a = (
+            bool(view.graphql) and view.graphql.get("stargazerCount") is not None
+        )
+        if view.repo_id is None:
+            continue
+        if view.hydrate_status == "not_found" and not has_phase_a:
             continue
         feat = features_json(view.features)
         payload = payload_from_graphql(

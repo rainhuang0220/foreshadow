@@ -764,11 +764,11 @@ def hydrate_phase_b_rest(
     is_fork: bool = False,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
-        "contributors": [],
-        "commits": [],
-        "contents": [],
-        "workflows": {},
-        "community": {},
+        "contributors": None,
+        "commits": None,
+        "contents": None,
+        "workflows": None,
+        "community": None,
     }
     try:
         out["contributors"] = fetch_contributors(client, owner, name)
@@ -891,43 +891,67 @@ def build_features_blob(
         ):
             usage_closed_n += 1
 
-    contents = rest.get("contents") if isinstance(rest.get("contents"), list) else []
-    tree_names = [
-        str(item.get("name"))
-        for item in contents
-        if isinstance(item, dict) and item.get("name")
-    ]
-    workflows = rest.get("workflows") if isinstance(rest.get("workflows"), dict) else {}
-    wf_list = workflows.get("workflows")
-    wf_count = workflows.get("total_count")
-    try:
-        n_wf = (
-            int(wf_count)
-            if wf_count is not None
-            else (len(wf_list) if isinstance(wf_list, list) else 0)
-        )
-    except (TypeError, ValueError):
-        n_wf = len(wf_list) if isinstance(wf_list, list) else 0
-    has_workflows = n_wf > 0
-    gap_ci = 0 if has_workflows or ".github/workflows" in tree_names else 1
-    lower_names = {n.lower() for n in tree_names}
-    has_test_dir = bool(lower_names & TEST_DIRS)
-    has_test_file = any(
-        n.endswith((".spec.ts", ".spec.js", ".spec.py", "_test.py")) or "_test." in n
-        for n in lower_names
+    contents_raw = rest.get("contents")
+    contents_known = isinstance(contents_raw, list)
+    contents = contents_raw if contents_known else []
+    tree_names = (
+        [
+            str(item.get("name"))
+            for item in contents
+            if isinstance(item, dict) and item.get("name")
+        ]
+        if contents_known
+        else None
     )
-    gap_tests = 0 if has_test_dir or has_test_file else 1
-    community = rest.get("community") if isinstance(rest.get("community"), dict) else {}
-    files = community.get("files") if isinstance(community.get("files"), dict) else {}
+    names_for_tree = tree_names or []
+    workflows = (
+        rest.get("workflows") if isinstance(rest.get("workflows"), dict) else None
+    )
+    if workflows is None:
+        has_workflows = None
+        gap_ci = None
+    else:
+        wf_list = workflows.get("workflows")
+        wf_count = workflows.get("total_count")
+        try:
+            n_wf = (
+                int(wf_count)
+                if wf_count is not None
+                else (len(wf_list) if isinstance(wf_list, list) else 0)
+            )
+        except (TypeError, ValueError):
+            n_wf = len(wf_list) if isinstance(wf_list, list) else 0
+        has_workflows = n_wf > 0
+        gap_ci = 0 if has_workflows or ".github/workflows" in names_for_tree else 1
+    if tree_names is None:
+        gap_tests = None
+    else:
+        lower_names = {n.lower() for n in tree_names}
+        has_test_dir = bool(lower_names & TEST_DIRS)
+        has_test_file = any(
+            n.endswith((".spec.ts", ".spec.js", ".spec.py", "_test.py"))
+            or "_test." in n
+            for n in lower_names
+        )
+        gap_tests = 0 if has_test_dir or has_test_file else 1
+    community = (
+        rest.get("community") if isinstance(rest.get("community"), dict) else None
+    )
+    files = community.get("files") if isinstance(community, dict) else {}
     contributing = files.get("contributing") if isinstance(files, dict) else None
     gql_contrib = repo.get("contributing")
     has_contrib = contributing is not None or gql_contrib is not None
     has_docs = any(
         n.lower() in {"docs", "doc"} or n.lower().startswith("contributing")
-        for n in tree_names
+        for n in names_for_tree
     )
-    gap_docs = 0 if has_contrib or has_docs else 1
-    health = community.get("health_percentage")
+    if has_contrib or has_docs:
+        gap_docs = 0
+    elif tree_names is None:
+        gap_docs = None
+    else:
+        gap_docs = 1
+    health = community.get("health_percentage") if isinstance(community, dict) else None
     try:
         health_f = float(health) if health is not None else None
     except (TypeError, ValueError):
@@ -980,7 +1004,7 @@ def build_features_blob(
         gap_ci=gap_ci,
         gap_tests=gap_tests,
         gap_docs=gap_docs,
-        gap_tests_scope="root_only",
+        gap_tests_scope="root_only" if gap_tests is not None else None,
         tree_kind=tree_kind,
         tree_names=tree_names or None,
         has_workflows=has_workflows,

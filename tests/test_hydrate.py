@@ -1,9 +1,13 @@
+import json
+
 from fakes import FakeGitHub, repo_node, seed_repo, seed_review
 from foreshadow.config import Settings
 from foreshadow.db import connect, migrate
 from foreshadow.github.rest import fetch_contributors
 from foreshadow.pipeline.discover import discover_hydrate_snapshot
+from foreshadow.pipeline.h_rules import evaluate_h
 from foreshadow.pipeline.hydrate import unique_committers_30d
+from foreshadow.pipeline.score import score_repo
 from foreshadow.pipeline.snapshot import payload_from_graphql, upsert_snapshot
 
 
@@ -112,3 +116,113 @@ def test_contributor_pagination_stops_early():
     rows = fetch_contributors(gh, "acme", "c")
     assert len(rows) == 80
     assert gh.contributor_requests == [("acme/c", 1)]
+
+
+def test_rest_errors_do_not_zero_fill(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node(
+        "R_x",
+        "acme/x",
+        stargazerCount=6000,
+        forkCount=10,
+        createdAt="2026-07-20T00:00:00Z",
+    )
+    rid = seed_repo(conn, "R_x", "acme/x", created_at="2026-07-20T00:00:00Z")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    conn.commit()
+    gh = FakeGitHub(
+        nodes={"R_x": node},
+        rest_status={
+            ("acme/x", "contributors"): 403,
+            ("acme/x", "commits"): 500,
+            ("acme/x", "contents"): 500,
+            ("acme/x", "workflows"): 403,
+        },
+    )
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    row = conn.execute(
+        """
+        SELECT contributor_count, unique_committers_30d, features_json, stars
+        FROM snapshots WHERE repo_id=?
+        """,
+        (rid,),
+    ).fetchone()
+    assert row[3] == 6000
+    assert row[0] is None
+    assert row[1] is None
+    feat = json.loads(row[2] or "{}")
+    assert feat.get("gap_tests") is None
+    assert feat.get("gap_ci") is None
+    assert feat.get("tree_names") is None
+    h = evaluate_h(
+        {
+            "age_days": 35,
+            "S": 6000,
+            "fork_star": 10 / 6000,
+            "U_commit_30d": row[1],
+            "C": row[0],
+            "features": feat,
+            "tree_names": feat.get("tree_names"),
+        }
+    )
+    assert "H6" not in h.fired
+    scored = score_repo(
+        {
+            "owner": "acme",
+            "full_name": "acme/x",
+            "S": 6000,
+            "F": 10,
+            "C": row[0],
+            "U_commit_30d": row[1],
+            "age_days": 35,
+            "created_at": "2026-07-20",
+            "features": feat,
+            "snapshots": [{"date": "2026-08-24", "stars": 6000, "forks": 10}],
+        },
+        clock=frozen_clock,
+    )
+    assert "contributor_starved" not in scored.breakdown.flags
+
+
+def test_contributors_204_is_c_zero(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node("R_z", "acme/z")
+    rid = seed_repo(conn, "R_z", "acme/z")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    conn.commit()
+    gh = FakeGitHub(nodes={"R_z": node}, rest_status={("acme/z", "contributors"): 204})
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    c = conn.execute(
+        "SELECT contributor_count FROM snapshots WHERE repo_id=?", (rid,)
+    ).fetchone()[0]
+    assert c == 0
+
+
+def test_phase_b_404_keeps_phase_a_snapshot(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    node = repo_node("R_b", "acme/b", stargazerCount=42, forkCount=7)
+    rid = seed_repo(conn, "R_b", "acme/b")
+    seed_review(conn, rid, "watch", "2026-08-23T00:00:00+00:00")
+    conn.commit()
+    gh = FakeGitHub(nodes={"R_b": node}, b_missing={"R_b"})
+    discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    row = conn.execute(
+        """
+        SELECT stars, forks, open_issues, contributor_count, features_json
+        FROM snapshots WHERE repo_id=? AND snapshot_date='2026-08-24'
+        """,
+        (rid,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == 42
+    assert row[1] == 7
+    assert row[2] == 4
+    assert row[3] is None
+    assert row[4] in ("{}", None)
+    status = conn.execute(
+        "SELECT hydrate_status FROM candidates WHERE repo_id=?", (rid,)
+    ).fetchone()[0]
+    assert status in {"not_found", "incomplete"}

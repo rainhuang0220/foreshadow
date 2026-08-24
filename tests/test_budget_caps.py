@@ -1,9 +1,14 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import httpx
+import pytest
+
 from fakes import FakeGitHub, repo_node, review_time, seed_repo, seed_review
 from foreshadow.config import Settings
 from foreshadow.db import connect, migrate
+from foreshadow.github.client import GitHubClient, GitHubError
+from foreshadow.github.queries import HYDRATE_A_NODE, SEARCH_REPOS
 from foreshadow.pipeline.discover import (
     cap_candidates,
     discover_hydrate_snapshot,
@@ -177,3 +182,63 @@ def test_rankable_50_phase_b_invariants():
     w_ids = {c.node_id for c in watch}
     assert len(phase_b) == 30
     assert len(b_ids & w_ids) >= 20
+
+
+def test_hydrate_a_node_not_blocked_by_budget(respx_mock):
+    repo = {
+        "id": "R_1",
+        "nameWithOwner": "a/b",
+        "stargazerCount": 10,
+        "forkCount": 1,
+        "isFork": False,
+        "isArchived": False,
+        "isDisabled": False,
+        "isEmpty": False,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "issuesOpen": {"totalCount": 2},
+        "prsOpen": {"totalCount": 1},
+    }
+    route = respx_mock.post("https://api.github.com/graphql").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "rateLimit": {
+                        "cost": 1,
+                        "remaining": 10,
+                        "limit": 5000,
+                        "resetAt": "2026-08-24T01:00:00Z",
+                    },
+                    "node": repo,
+                }
+            },
+        )
+    )
+    c = GitHubClient(token="x", sleep=lambda _: None)
+    c.graphql_used = 800
+    c.graphql_remaining = 10
+    body = c.graphql(HYDRATE_A_NODE, {"id": "R_1"})
+    assert body["data"]["node"]["stargazerCount"] == 10
+    assert route.call_count == 1
+    with pytest.raises(GitHubError) as ei:
+        c.graphql(SEARCH_REPOS, {"q": "x", "n": 1})
+    assert ei.value.reason == "budget"
+    assert route.call_count == 1
+
+
+def test_phase_a_finishes_capped_when_budget_exhausted(tmp_home, frozen_clock):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    search = [
+        repo_node(f"R_s_{i}", f"find/s{i}", stargazerCount=80 + i) for i in range(5)
+    ]
+    gh = FakeGitHub(nodes={n["id"]: n for n in search}, search_nodes=search)
+    gh.budget_graphql_points = 92
+    result = discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
+    assert gh.hydrate_a_calls == 5
+    assert result.source_health["budget_abort"] is True
+    stars = conn.execute(
+        "SELECT COUNT(*) FROM snapshots WHERE stars IS NOT NULL"
+    ).fetchone()[0]
+    assert stars == 5
+    assert gh.hydrate_b_calls == 0

@@ -167,7 +167,9 @@ class FakeGitHub:
     graphql_network_calls: int = 0
     nodes: dict[str, dict[str, Any]] = field(default_factory=dict)
     missing: set[str] = field(default_factory=set)
+    b_missing: set[str] = field(default_factory=set)
     fail_ids: set[str] = field(default_factory=set)
+    rest_status: dict[tuple[str, str], int] = field(default_factory=dict)
     search_nodes: list[dict[str, Any]] = field(default_factory=list)
     search_pages: list[list[dict[str, Any]]] | None = None
     search_total_override: int | None = None
@@ -210,6 +212,13 @@ class FakeGitHub:
         skip_cache = force or self.force
         if not skip_cache and cache_key in self._cache:
             return self._cache[cache_key]
+        if self.should_stop() and op != "HydrateANode":
+            raise GitHubError(
+                "budget",
+                "GraphQL/REST budget exhausted",
+                retryable=False,
+                source=op,
+            )
         self.graphql_network_calls += 1
         self.graphql_used += 1
         if self.graphql_remaining is not None:
@@ -285,6 +294,16 @@ class FakeGitHub:
                     status=500,
                     source=op,
                 )
+            if op in {"HydrateBNode", "HydrateB", "HydrateBStripped"} and (
+                nid in self.b_missing
+            ):
+                raise GitHubError(
+                    "http_404",
+                    "Not Found",
+                    retryable=False,
+                    status=404,
+                    source=op,
+                )
             if nid is None or nid in self.missing or str(nid) not in self.nodes:
                 raise GitHubError(
                     "http_404",
@@ -327,6 +346,29 @@ class FakeGitHub:
             return FakeResponse(404, {"message": "Not Found"})
         full = f"{parts[1]}/{parts[2]}"
         rest = parts[3:]
+        kind = None
+        if rest[:1] == ["contributors"]:
+            kind = "contributors"
+        elif rest[:1] == ["commits"]:
+            kind = "commits"
+        elif rest[:1] == ["contents"]:
+            kind = "contents"
+        elif rest[:2] == ["actions", "workflows"]:
+            kind = "workflows"
+        elif rest[:2] == ["community", "profile"]:
+            kind = "community"
+        status = self.rest_status.get((full, kind)) if kind else None
+        if status in {403, 404, 410, 451, 500, 502, 503}:
+            reason = "http_5xx" if status >= 500 else "http_404"
+            raise GitHubError(
+                reason,
+                "rest error",
+                retryable=status >= 500,
+                status=status,
+                source=f"/repos/{full}",
+            )
+        if status == 204:
+            return FakeResponse(204)
         if rest[:1] == ["contributors"]:
             page = int(params.get("page") or 1)
             self.contributor_requests.append((full, page))

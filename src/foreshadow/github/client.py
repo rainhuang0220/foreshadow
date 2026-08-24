@@ -354,7 +354,7 @@ class GitHubClient:
             hit = self.cache.get_graphql(key)
             if hit is not None:
                 return hit
-        if self.should_stop():
+        if self.should_stop() and operation_name(document) != "HydrateANode":
             self._fail(
                 "budget",
                 "GraphQL/REST budget exhausted",
