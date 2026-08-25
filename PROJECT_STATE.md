@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D + PR-V + PR-H + PR-A + S1 Preview landed**. Official scoring still **v1**. Next: S2 maintainer / more Evidence coverage. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 through **S2 Access + S3 Strategy + Entry Mission + S4 gates + S5 events + S6 portfolio**. Official still **v1**. |
 | **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not cut over Official to v2. |
 | **Scoring version** | **Official v1**. Preview **v2** dual-written; never Official. |
 | **Discovery version** | **v2 recall** (14 queries, pools A/B/C, exposure quotas, no star pre-rank). Official scoring still v1. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |

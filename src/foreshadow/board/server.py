@@ -167,6 +167,20 @@ class BoardHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if path == "/api/portfolio":
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.mission import portfolio
+
+            conn = self.state.db()
+            try:
+                payload = portfolio(conn, int(user["id"]))
+            finally:
+                conn.close()
+            self._send(*_json_bytes(payload))
+            return
         if path == "/api/missions":
             user = self._user()
             if user is None:

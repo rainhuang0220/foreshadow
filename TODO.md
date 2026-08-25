@@ -21,6 +21,9 @@
 - [x] **S1 Preview** Earlyness × Evidence × Opportunity Window (`docs/opportunity-engine-v2-s1-report.md`)
 - [x] **S2** Community Access Score (`docs/opportunity-engine-v2-s2-report.md`)
 - [x] **S3** Contribution Strategy + Entry Mission (local only; remote blocked)
+- [x] **S4** Remote GitHub actions blocked pending approval
+- [x] **S5** contribution_events log
+- [x] **S6** /api/portfolio counts
 - [ ] PR-S3…S5 scoring / preview
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 

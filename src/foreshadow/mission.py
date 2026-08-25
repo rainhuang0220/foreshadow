@@ -250,7 +250,89 @@ def create_for_user(
     dest = prepare_local_dir(data_dir, full_name)
     mission.local_path = str(dest)
     persist_mission(conn, mission, user_id=user_id, repo_id=repo_id)
+    record_event(
+        conn,
+        user_id=user_id,
+        mission_id=mission.id,
+        full_name=full_name,
+        event="entered",
+        detail={"path": mission.strategy.path},
+    )
     return mission
+
+
+ALLOWED = {
+    "MISSION_READY": {"LOCAL_SETUP", "INVESTIGATING", "ABANDONED"},
+    "LOCAL_SETUP": {"WAITING_USER_APPROVAL", "DRAFT_READY", "ABANDONED", "BLOCKED"},
+    "WAITING_USER_APPROVAL": {"ABANDONED", "BLOCKED", "WAITING_MAINTAINER"},
+    "DRAFT_READY": {"WAITING_USER_APPROVAL", "ABANDONED"},
+    "INVESTIGATING": {"MISSION_READY", "ABANDONED"},
+}
+
+
+def transition(
+    conn: sqlite3.Connection, mission_id: int, user_id: int, dest: Status
+) -> Status:
+    row = conn.execute(
+        "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
+        (mission_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError("mission not found")
+    cur = str(row[0])
+    if dest not in ALLOWED.get(cur, set()):
+        raise ValueError(f"cannot {cur} -> {dest}")
+    set_status(conn, mission_id, user_id, dest)
+    return dest
+
+
+def record_event(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    mission_id: int | None,
+    full_name: str,
+    event: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO contribution_events(
+          user_id, mission_id, full_name, event, detail_json, created_at
+        ) VALUES (?,?,?,?,?,?)
+        """,
+        (
+            user_id,
+            mission_id,
+            full_name,
+            event,
+            json.dumps(detail or {}, ensure_ascii=False),
+            datetime.now(UTC).isoformat(),
+        ),
+    )
+    conn.commit()
+
+
+def portfolio(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
+    missions = list_missions(conn, user_id)
+    by_status: dict[str, int] = {}
+    for row in missions:
+        st = str(row.get("status") or "")
+        by_status[st] = by_status.get(st, 0) + 1
+    ev = conn.execute(
+        "SELECT event, COUNT(*) FROM contribution_events WHERE user_id=? GROUP BY 1",
+        (user_id,),
+    ).fetchall()
+    return {
+        "missions": len(missions),
+        "by_status": by_status,
+        "events": {str(k): int(v) for k, v in ev},
+        "entered": by_status.get("MISSION_READY", 0)
+        + by_status.get("LOCAL_SETUP", 0)
+        + by_status.get("WAITING_USER_APPROVAL", 0),
+        "merged": by_status.get("MERGED", 0),
+        "note": "Portfolio tracks our missions. It does not scrape third-party GitHub.",
+    }
 
 
 def refuse_remote_action(action: str) -> dict[str, Any]:

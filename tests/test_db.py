@@ -52,6 +52,12 @@ def test_sql_packaged():
         .read_text()
     )
     assert "CREATE TABLE entry_missions" in v4
+    v5 = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/005_learning.sql")
+        .read_text()
+    )
+    assert "CREATE TABLE contribution_events" in v5
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):

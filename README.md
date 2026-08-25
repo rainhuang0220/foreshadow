@@ -59,6 +59,7 @@ foreshadow show <owner/repo>
 foreshadow review <owner/repo> <action> [-m note]
 foreshadow watchlist [action]
 foreshadow board [--preview] [--date YYYY-MM-DD] [--no-open] [--export-html] [--port 8765]
+foreshadow enter <owner/repo>
 ```
 
 ### Daily Review Board (interactive)

@@ -171,6 +171,35 @@ def board(
 
 
 @app.command()
+def enter(
+    repo: str = typer.Argument(..., help="owner/repo"),
+) -> None:
+    """Create a local Entry Mission. Never posts to GitHub."""
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.mission import create_for_user
+
+    if "/" not in repo:
+        print("need owner/repo", file=sys.stderr)
+        raise SystemExit(2)
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = ensure_local_user(conn)
+        mission = create_for_user(
+            conn, user_id=uid, full_name=repo, data_dir=resolve_data_dir()
+        )
+    finally:
+        conn.close()
+    sys.stdout.write(
+        f"entry mission {mission.id} {mission.full_name} "
+        f"path={mission.strategy.path} status={mission.status}\n"
+        f"{mission.strategy.summary_zh}\n"
+        "remote GitHub writes are blocked until you approve them.\n"
+    )
+
+
+@app.command()
 def watchlist(
     action: str | None = typer.Option(None, "--action", help="Filter by stance"),
 ) -> None:

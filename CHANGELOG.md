@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Engine 2.0 S1 Preview: Earlyness × Evidence × Opportunity Window, lifecycle stage, experimental pool. Stars are a weak evidence term only. Official v1 / 55 / 35 / v7 unchanged. Report: [`docs/opportunity-engine-v2-s1-report.md`](docs/opportunity-engine-v2-s1-report.md).
 - Engine 2.0 S2 Community Access: Access Score from external PR merge/review, maintainer TTR, onboarding. Not Contributor Gap. Board 进入通道.
 - Engine 2.0 S3 + Entry Mission: per-repo entry path (Issue / 复现 / 文档 / 讨论…). Board **开始进入** writes `entry_missions`. No automatic GitHub writes.
+- Engine 2.0 S4–S6: mission status transitions, contribution_events, `/api/portfolio`, CLI `foreshadow enter`. Remote GitHub writes still refused.
 
 ### Changed
 

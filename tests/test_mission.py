@@ -32,6 +32,22 @@ def test_refuse_remote_never_posts():
         assert "远程" in out["error"]
 
 
+def test_transition_and_portfolio(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    from foreshadow.mission import portfolio, record_event, transition
+
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    record_event(conn, user_id=uid, mission_id=mid, full_name="acme/toy", event="local_setup")
+    port = portfolio(conn, uid)
+    assert port["missions"] == 1
+    assert port["by_status"].get("LOCAL_SETUP") == 1
+    assert port["events"].get("local_setup") == 1
+
+
 def test_persist_mission(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
