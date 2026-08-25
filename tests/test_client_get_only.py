@@ -19,7 +19,9 @@ from foreshadow.github.queries import (
 )
 from foreshadow.github.rest import (
     content_exists,
+    fetch_closed_pulls,
     fetch_contributors,
+    fetch_issue,
     fetch_root_contents,
 )
 
@@ -373,3 +375,30 @@ def test_same_day_cache_uses_clock(respx_mock):
     clock._now = datetime(2026, 8, 25, 0, 5, tzinfo=UTC)
     c.graphql(doc, {"n": 1})
     assert route.call_count == 2
+
+
+def test_issue_and_pulls_are_get_only(respx_mock):
+    issue_url = "https://api.github.com/repos/acme/toy/issues/73"
+    pulls_url = "https://api.github.com/repos/acme/toy/pulls"
+    respx_mock.get(issue_url).mock(
+        return_value=httpx.Response(
+            200, json={"number": 73, "title": "crash", "body": "x"}
+        )
+    )
+    respx_mock.get(pulls_url).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "merged_at": "2026-08-01T00:00:00Z",
+                    "author_association": "CONTRIBUTOR",
+                }
+            ],
+        )
+    )
+    c = GitHubClient(token="x")
+    issue = fetch_issue(c, "acme", "toy", 73)
+    pulls = fetch_closed_pulls(c, "acme", "toy")
+    assert issue and issue["number"] == 73
+    assert len(pulls) == 1
+    assert all(call.request.method == "GET" for call in respx_mock.calls)
