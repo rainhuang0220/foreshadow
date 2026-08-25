@@ -607,7 +607,7 @@ function missionView(m) {
 function render() {
   const root = document.getElementById("app");
   if (!state.user) root.innerHTML = authView();
-  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…</p>`;
+  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…${state.error ? "<br/>" + esc(state.error) : ""}</p>`;
   else root.innerHTML = boardView();
 }
 
@@ -623,8 +623,13 @@ async function boot() {
 }
 
 async function loadBoard() {
-  state.board = await api("/api/board");
-  try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+  try {
+    state.board = await api("/api/board");
+    try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+  } catch (e) {
+    state.error = e.message || String(e);
+    throw e;
+  }
 }
 
 async function submitAuth(ev) {
