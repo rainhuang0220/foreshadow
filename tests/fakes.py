@@ -180,6 +180,7 @@ class FakeGitHub:
     contributor_requests: list[tuple[str, int]] = field(default_factory=list)
     commits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     contents: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    pulls: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     workflows: dict[str, dict[str, Any]] = field(default_factory=dict)
     community: dict[str, dict[str, Any]] = field(default_factory=dict)
     source_failures: list[Any] = field(default_factory=list)
@@ -382,6 +383,8 @@ class FakeGitHub:
             return FakeResponse(200, self.commits.get(full, []))
         if rest[:1] == ["releases"]:
             return FakeResponse(200, [])
+        if rest[:1] == ["pulls"]:
+            return FakeResponse(200, self.pulls.get(full, []))
         if rest[:1] == ["contents"]:
             extra = "/".join(rest[1:])
             listing = self.contents.get(

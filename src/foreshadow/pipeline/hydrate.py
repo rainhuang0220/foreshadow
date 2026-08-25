@@ -15,6 +15,7 @@ from foreshadow.github.client import GitHubError, graphql_marks_incomplete
 from foreshadow.github.queries import HYDRATE_A_NODE, HYDRATE_B_NODE
 from foreshadow.github.rest import (
     content_exists,
+    fetch_closed_pulls,
     fetch_commits,
     fetch_community_profile,
     fetch_contributors,
@@ -1023,11 +1024,12 @@ def hydrate_medium_rest(
     name: str,
     clock: Clock,
 ) -> dict[str, Any]:
-    """Contributors + recent commits + releases. No issue/PR GraphQL sample."""
+    """Contributors + recent commits + releases + one closed-PR page."""
     out: dict[str, Any] = {
         "contributors": None,
         "commits": None,
         "releases": None,
+        "pulls": None,
     }
     try:
         out["contributors"] = fetch_contributors(client, owner, name)
@@ -1043,6 +1045,10 @@ def hydrate_medium_rest(
         out["releases"] = fetch_releases(client, owner, name)
     except GitHubError:
         pass
+    try:
+        out["pulls"] = fetch_closed_pulls(client, owner, name)
+    except GitHubError:
+        out["pulls"] = None
     return out
 
 
@@ -1392,6 +1398,9 @@ def build_medium_features_blob(
         rest.get("releases") if isinstance(rest.get("releases"), list) else None,
         now_dt,
     )
+    pr_n, pr_ext, pr_rate, pr_rev, pr_rev_rate = _pr_acceptance_from_pulls(
+        rest.get("pulls")
+    )
     blob = FeaturesBlob(
         phase="M",
         commits_7d=activity["commits_7d"],
@@ -1402,6 +1411,11 @@ def build_medium_features_blob(
         issues_created_30d=None,
         prs_created_7d=None,
         prs_created_30d=None,
+        pr_merged_sample_n=pr_n,
+        pr_external_merged_n=pr_ext,
+        pr_accept_rate=pr_rate,
+        pr_reviewed_n=pr_rev,
+        pr_review_rate=pr_rev_rate,
     )
     blob.data_completeness = classify_data_completeness(blob, contributor_count)
     return blob
@@ -1432,6 +1446,31 @@ def _pr_acceptance(
         if rc > 0:
             reviewed += 1
     return n, ext, ext / n, reviewed, reviewed / n
+
+
+def _pr_acceptance_from_pulls(
+    rows: object,
+) -> tuple[int | None, int | None, float | None, int | None, float | None]:
+    """REST closed-PR page. Review rate stays UNKNOWN (no extra review calls)."""
+    if not isinstance(rows, list):
+        return None, None, None, None, None
+    if not rows:
+        return 0, None, None, None, None
+    merged: list[Mapping[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        if row.get("merged_at") or row.get("merged") is True:
+            merged.append(row)
+    n = len(merged)
+    if n == 0:
+        return 0, None, None, None, None
+    ext = 0
+    for pr in merged:
+        assoc = str(pr.get("author_association") or pr.get("authorAssociation") or "")
+        if assoc in EXT_ASSOC or assoc in {"FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"}:
+            ext += 1
+    return n, ext, ext / n, None, None
 
 
 def _label_names(issue: Mapping[str, Any]) -> set[str]:

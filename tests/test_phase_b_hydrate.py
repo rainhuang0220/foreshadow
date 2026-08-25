@@ -6,6 +6,7 @@ from foreshadow.models import FeaturesBlob
 from foreshadow.pipeline.direction import load_direction_bags
 from foreshadow.pipeline.hydrate import (
     _pr_acceptance,
+    _pr_acceptance_from_pulls,
     classify_data_completeness,
     medium_shortlist,
     phase_b_shortlist,
@@ -155,6 +156,24 @@ def test_pr_acceptance_empty_sample_is_unknown():
     assert rate == 0.5
     assert rev == 1
     assert rrate == 0.5
+
+
+def test_rest_closed_pulls_sample_unknown_review():
+    n, ext, rate, rev, rrate = _pr_acceptance_from_pulls(None)
+    assert n is None and rate is None and rev is None
+    n, ext, rate, rev, rrate = _pr_acceptance_from_pulls([])
+    assert n == 0 and rate is None
+    n, ext, rate, rev, rrate = _pr_acceptance_from_pulls(
+        [
+            {"merged_at": "2026-08-01T00:00:00Z", "author_association": "CONTRIBUTOR"},
+            {"merged_at": "2026-08-02T00:00:00Z", "author_association": "OWNER"},
+            {"merged_at": None, "author_association": "CONTRIBUTOR"},
+        ]
+    )
+    assert n == 2
+    assert ext == 1
+    assert rate == 0.5
+    assert rev is None and rrate is None
 
 
 def test_activity_counts_are_not_star_growth(frozen_clock):

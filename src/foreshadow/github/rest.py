@@ -117,6 +117,20 @@ def fetch_community_profile(
     return body if isinstance(body, dict) else {}
 
 
+def fetch_closed_pulls(
+    client: GitHubClient, owner: str, repo: str, *, per_page: int = 10
+) -> list[dict[str, Any]]:
+    """One page of recently closed PRs. GET only. Used for medium-tier Access."""
+    resp = client.get(
+        f"/repos/{owner}/{repo}/pulls",
+        params={"state": "closed", "per_page": per_page, "page": 1},
+    )
+    if resp.status_code == 204:
+        return []
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
+
+
 def fetch_releases(
     client: GitHubClient, owner: str, repo: str, *, per_page: int = 10
 ) -> list[dict[str, Any]]:
