@@ -244,6 +244,31 @@ def outcome(
     )
 
 
+@app.command()
+def sample_access() -> None:
+    """GET closed PRs for medium-tier snapshots. Does not change official v1 scores."""
+    from foreshadow.config import load_config
+    from foreshadow.github.client import GitHubClient, resolve_token
+    from foreshadow.pipeline.access_sample import sample_medium_access
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    if not path.is_file():
+        print("no database — run `foreshadow run` first", file=sys.stderr)
+        raise SystemExit(2)
+    conn = connect(path)
+    migrate(conn)
+    try:
+        client = GitHubClient(resolve_token(), settings=load_config().github)
+        out = sample_medium_access(conn, client)
+    finally:
+        conn.close()
+    sys.stdout.write(
+        f"medium access sample updated={out['updated']} "
+        f"skipped={out['skipped']} failed={out['failed']}\n"
+        f"{out['note']}\n"
+    )
+
+
 @app.command("missions")
 def missions_cmd() -> None:
     """List local Entry Missions. Never talks to GitHub."""

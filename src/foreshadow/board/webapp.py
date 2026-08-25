@@ -721,7 +721,9 @@ async function saveReview(repo, action) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeCard();
+  if (e.key !== "Escape") return;
+  if (state.mission) { state.mission = null; render(); return; }
+  closeCard();
 });
 boot();
 </script>

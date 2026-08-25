@@ -131,6 +131,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "开始进入" in page.text
         assert "查看任务" in page.text
         assert "暂停扫描" in page.text
+        assert "Escape" in page.text
         assert "/api/mission" in page.text
         assert "正在准备本地环境" in page.text
         assert "clone.error" in page.text or "cloneErr" in page.text

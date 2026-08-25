@@ -29,5 +29,6 @@ def test_help_lists_commands():
         "enter",
         "outcome",
         "missions",
+        "sample-access",
     ):
         assert name in result.stdout
