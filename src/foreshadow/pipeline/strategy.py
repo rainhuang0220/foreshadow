@@ -40,7 +40,7 @@ PATH_ZH = {
     "FEATURE": "新功能需先对齐 roadmap / Issue",
     "PERFORMANCE": "性能方向：测量 → Issue → 再优化",
     "TEST": "从补测试开始，风险较低",
-    "TOOLING": "工具链 / CI 辅助，先小补丁",
+    "TOOLING": "先看 CI / 工作流，再讨论最小改动",
     "RESEARCH": "先阅读与调研，不要急着提 PR",
 }
 

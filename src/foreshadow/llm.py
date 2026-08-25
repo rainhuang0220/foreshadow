@@ -38,7 +38,8 @@ _SYSTEM = (
     "GitHub repo card. Reply with JSON only: "
     '{"why_now":"...","contribution":["..."]}. '
     "Do not change scores. Never say will explode, next LangChain, or guaranteed. "
-    "Explosion is a rule on relative growth, not a forecast."
+    "Explosion is a rule on relative growth, not a forecast. "
+    "Do not tell the user to open a PR, add CONTRIBUTING.md, or add CI as the first action."
 )
 
 
