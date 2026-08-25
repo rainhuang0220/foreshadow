@@ -19,10 +19,13 @@ from foreshadow.board.schema import BoardCard, BoardDocument, PoolRow
 from foreshadow.clock import Clock
 from foreshadow.config import BoardSettings, ScoringSettings, Settings, load_config
 from foreshadow.db import connect, migrate
+from foreshadow.models import FeaturesBlob
 from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline import load_score_input
 from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.direction import load_direction_bags
+from foreshadow.pipeline.hydrate import parse_dt
+from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import is_official_eligible
 from foreshadow.reviews import ACTIONS
@@ -105,6 +108,16 @@ def _card(
         commits_30d=_int_or_none(extra_meta.get("commits_30d")),
         releases_30d=_int_or_none(extra_meta.get("releases_30d")),
         recent_contributors_7d=_int_or_none(extra_meta.get("recent_contributors_7d")),
+        s1_stage=extra_meta.get("s1_stage"),
+        s1_earlyness=_float_or_none(extra_meta.get("s1_earlyness")),
+        s1_evidence=_float_or_none(extra_meta.get("s1_evidence")),
+        s1_window=_float_or_none(extra_meta.get("s1_window")),
+        s1_pool=extra_meta.get("s1_pool"),
+        s1_quadrant=extra_meta.get("s1_quadrant"),
+        s1_earlyness_plus=list(extra_meta.get("s1_earlyness_plus") or []),
+        s1_earlyness_minus=list(extra_meta.get("s1_earlyness_minus") or []),
+        s1_evidence_plus=list(extra_meta.get("s1_evidence_plus") or []),
+        s1_evidence_minus=list(extra_meta.get("s1_evidence_minus") or []),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -343,8 +356,28 @@ def load_scored_from_db(
         row = score_repo(data, clock=clock, scoring=settings.scoring, bags=bags)
         scored.append(row)
         features = data.get("features") or {}
-        act = compute_activity(
-            features if isinstance(features, dict) else {}, settings.scoring
+        feat_map = features if isinstance(features, dict) else {}
+        act = compute_activity(feat_map, settings.scoring)
+        blob = FeaturesBlob.model_validate(feat_map) if feat_map else FeaturesBlob()
+        now_d = clock.now().date()
+        age_days = data.get("age_days")
+        if age_days is None:
+            created = parse_dt(data.get("created_at"))
+            if created is not None:
+                age_days = max((now_d - created.date()).days, 1)
+        pushed_age_days = data.get("pushed_age_days")
+        if pushed_age_days is None:
+            pushed = parse_dt(data.get("pushed_at"))
+            if pushed is not None:
+                pushed_age_days = max((now_d - pushed.date()).days, 0)
+        s1 = compute_s1(
+            age_days=age_days,
+            contributors=data.get("C"),
+            stars=data.get("S"),
+            pushed_age_days=pushed_age_days,
+            unique_issue_authors=data.get("U_issue") or feat_map.get("u_issue"),
+            feat=blob,
+            activity=act,
         )
         extras[full_name] = {
             "html_url": html_url or data.get("html_url"),
@@ -372,6 +405,16 @@ def load_scored_from_db(
             "commits_30d": act.commits_30d,
             "releases_30d": act.releases_30d,
             "recent_contributors_7d": act.recent_contributors_7d,
+            "s1_stage": s1.stage,
+            "s1_earlyness": s1.earlyness,
+            "s1_evidence": s1.evidence,
+            "s1_window": s1.window,
+            "s1_pool": s1.pool,
+            "s1_quadrant": s1.quadrant,
+            "s1_earlyness_plus": s1.earlyness_plus,
+            "s1_earlyness_minus": s1.earlyness_minus,
+            "s1_evidence_plus": s1.evidence_plus,
+            "s1_evidence_minus": s1.evidence_minus,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days

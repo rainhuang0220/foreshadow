@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Real 2026-08-25 PR-D dogfood experiment report: [`docs/opportunity-engine-v2-real-experiment.md`](docs/opportunity-engine-v2-real-experiment.md). Official Top 5 still 0.
 - Engine 2.0 hydration (PR-H): Phase B seats allocated by pool (default A15/B10/C5), medium REST tier (30), merged-PR acceptance sample, maintainer first-response hours, activity raw counts. `data_completeness` HIGH/MEDIUM/LOW on the Preview Board. Report: [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md). Official `score.py` / `select.py` / 55 / 35 / local v7 unchanged.
 - Engine 2.0 Activity Momentum Preview (PR-A): v2-only 0–100 AM + VERY_LOW…VERY_HIGH, Board 活跃度 evidence. Not star growth, not `windows.v7`. Report: [`docs/opportunity-engine-v2-activity-report.md`](docs/opportunity-engine-v2-activity-report.md).
+- Engine 2.0 S1 Preview: Earlyness × Evidence × Opportunity Window, lifecycle stage, experimental pool. Stars are a weak evidence term only. Official v1 / 55 / 35 / v7 unchanged. Report: [`docs/opportunity-engine-v2-s1-report.md`](docs/opportunity-engine-v2-s1-report.md).
 
 ### Changed
 

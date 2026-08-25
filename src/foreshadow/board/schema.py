@@ -119,6 +119,16 @@ class BoardCard(BaseModel):
     commits_30d: int | None = None
     releases_30d: int | None = None
     recent_contributors_7d: int | None = None
+    s1_stage: str | None = None
+    s1_earlyness: float | None = None
+    s1_evidence: float | None = None
+    s1_window: float | None = None
+    s1_pool: str | None = None
+    s1_quadrant: str | None = None
+    s1_earlyness_plus: list[str] = Field(default_factory=list)
+    s1_earlyness_minus: list[str] = Field(default_factory=list)
+    s1_evidence_plus: list[str] = Field(default_factory=list)
+    s1_evidence_minus: list[str] = Field(default_factory=list)
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None

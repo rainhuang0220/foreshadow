@@ -15,6 +15,7 @@ from foreshadow.models import ComponentScore, FeaturesBlob, ScoreBreakdown
 from foreshadow.pipeline.activity import ACTIVITY_NOTE, compute_activity
 from foreshadow.pipeline.features import clip, clip01
 from foreshadow.pipeline.h_rules import apply_penalties, evaluate_h
+from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import (
     ScoredRepo,
     _as_dict,
@@ -61,7 +62,22 @@ def score_repo_v2(
     real_user = _real_user(ctx, feat)
     gap = _gap_access(ctx, feat)
     contribution_opp = _contribution_ixnfa(ctx, feat, direction)
-    early_entry = _entry_window(ctx, real_user)
+    s1 = compute_s1(
+        age_days=ctx.age_days,
+        contributors=ctx.C,
+        stars=ctx.S,
+        pushed_age_days=ctx.pushed_age_days,
+        unique_issue_authors=ctx.U_issue,
+        feat=feat,
+        activity=activity,
+    )
+    early_entry = ComponentScore(
+        value=s1.window,
+        confidence=s1.confidence,
+        missing=list(s1.missing),
+        weight=15.0,
+        why=s1.why,
+    )
     maintainer = _maintainer_v2(ctx, feat)
 
     components = {
@@ -93,6 +109,9 @@ def score_repo_v2(
         flags.append("bus_factor")
     if h.tree_missing:
         flags.append("tree_missing")
+    flags.append(f"s1_{s1.stage.lower()}")
+    if s1.pool == "experimental":
+        flags.append("s1_experimental_pool")
 
     breakdown = ScoreBreakdown(
         opportunity=opportunity,
@@ -170,6 +189,7 @@ def score_repo_v2(
         "h_fired": list(h.fired),
         "flags": list(breakdown.flags),
         "known_bias": {"discovery_recency_bias": True},
+        "s1": s1.as_dict(),
     }
     return ScoredRepo(
         owner=ctx.owner,

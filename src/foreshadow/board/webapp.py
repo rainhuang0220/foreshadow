@@ -369,7 +369,7 @@ function listView(board) {
       <div class="final">${n(c.final_score)}</div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
       <div></div>
-      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 数据完整度 ${esc(c.data_completeness_zh || "低")} · 置信度 ${esc(c.p0_confidence_zh || "低")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
+      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 早期 ${n(c.s1_earlyness)} · 证据 ${n(c.s1_evidence)} · 窗口 ${n(c.s1_window)} · ${esc(c.s1_pool_zh || "")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
     </div>`).join("");
 }
 
@@ -414,6 +414,13 @@ function drawerView(card) {
     <p class="meta">活跃度：${esc(card.activity_class_zh || "未知")}${card.activity_momentum != null ? "　" + n(card.activity_momentum) + " / 100" : ""}</p>
     <p class="meta">近 7 天提交：${n(card.commits_7d)} · 近 30 天提交：${n(card.commits_30d)} · 近 30 天 Release：${n(card.releases_30d)} · 近 7 天贡献者：${n(card.recent_contributors_7d)}${card.activity_concentration != null ? " · 活动集中度：" + n(card.activity_concentration) : ""}</p>
     <p class="meta">${esc(card.activity_note || "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
+    <p class="meta">阶段：${esc(card.s1_stage || "—")} · ${esc(card.s1_pool_zh || "")}</p>
+    <p class="meta">早期程度：${n(card.s1_earlyness)} · 证据强度：${n(card.s1_evidence)} · 机会窗口：${n(card.s1_window)}</p>
+    <p class="meta">早期加分：${esc((card.s1_earlyness_plus || []).join("；") || "—")}</p>
+    <p class="meta">早期扣分：${esc((card.s1_earlyness_minus || []).join("；") || "—")}</p>
+    <p class="meta">证据加分：${esc((card.s1_evidence_plus || []).join("；") || "—")}</p>
+    <p class="meta">证据不足：${esc((card.s1_evidence_minus || []).join("；") || "—")}</p>
+    <p class="meta">Star 只是规模观察，不是区间门槛，也不是否决。</p>
     <p class="meta">
       Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
       · Open Issues ${n(card.open_issues)}<br/>

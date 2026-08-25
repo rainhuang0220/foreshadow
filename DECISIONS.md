@@ -85,4 +85,14 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | A3 | When v7 is NA and AM is known, v2 fills the existing momentum slot. No new WEIGHT_KEYS. |
 | A4 | `activity_concentration = c7 / max(c30, 1)` is explainable evidence, not acceleration. |
 | A5 | Board shows 活跃度 + four raw counts + disclaimer 不代表 Star 增长. |
-| A6 | Next after this report: S1 Entry Window (lightweight UNKNOWN youth), not more AM tuning. |
+| A6 | Next after Activity: S1 Earlyness × Evidence, not more AM tuning. |
+
+## S1 Preview (2026-08-26)
+
+| ID | Decision |
+|---|---|
+| S1-1 | Earlyness is age + uncrowded **C** + access + living AM. Not 1/stars. |
+| S1-2 | Evidence is a 100-point drop-NA mix. Stars ≤4 points. UNKNOWN omitted, not “bad”. |
+| S1-3 | Opportunity Window = 75×√(E×Ev)+25×access. Gold needs both. Replaces v2 `entry_window` only. |
+| S1-4 | Experimental pool (thin evidence + young/tiny) is ranked after main in v2 `pool_rank`. Not a star veto. |
+| S1-5 | Stage is not a star table. Official v1 untouched. |

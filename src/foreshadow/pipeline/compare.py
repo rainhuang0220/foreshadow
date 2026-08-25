@@ -41,6 +41,24 @@ def assign_pool_ranks(
     return ranks
 
 
+def pool_rank_key_v2(scored: ScoredRepo, data: dict[str, Any]) -> tuple:
+    """Main S1 pool ranks above experimental. Stars still tie-break only."""
+    s1 = (scored.evidence or {}).get("s1") or {}
+    main = 1 if s1.get("pool") == "main" else 0
+    return (main,) + pool_rank_key(scored, data)
+
+
+def assign_pool_ranks_v2(
+    items: Sequence[tuple[ScoredRepo, dict[str, Any]]],
+) -> dict[str, int]:
+    ordered = sorted(items, key=lambda it: pool_rank_key_v2(it[0], it[1]), reverse=True)
+    ranks: dict[str, int] = {}
+    for i, (scored, data) in enumerate(ordered, start=1):
+        key = str(data.get("node_id") or scored.full_name)
+        ranks[key] = i
+    return ranks
+
+
 def rank_delta(v1_rank: int | None, v2_rank: int | None) -> int | None:
     """Positive means the repo moved up under v2 (v1 #34 → v2 #5 is +29)."""
     if v1_rank is None or v2_rank is None:

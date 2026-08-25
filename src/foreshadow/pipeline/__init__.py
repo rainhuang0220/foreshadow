@@ -20,7 +20,12 @@ from foreshadow.config import (
 from foreshadow.db import connect, migrate
 from foreshadow.models import ReportJSON
 from foreshadow.paths import resolve_data_dir
-from foreshadow.pipeline.compare import assign_pool_ranks, identity_key, rank_delta
+from foreshadow.pipeline.compare import (
+    assign_pool_ranks,
+    assign_pool_ranks_v2,
+    identity_key,
+    rank_delta,
+)
 from foreshadow.pipeline.discover import (
     discover_hydrate_snapshot,
     is_degraded,
@@ -350,7 +355,7 @@ def _run(
 
     now_iso = clock.now().isoformat()
     v1_ranks = assign_pool_ranks([(s, d) for _, s, d in scored_rows])
-    v2_ranks = assign_pool_ranks([(s, d) for _, s, d in scored_v2_rows])
+    v2_ranks = assign_pool_ranks_v2([(s, d) for _, s, d in scored_v2_rows])
     for repo_id, scored, data in scored_rows:
         key = identity_key(scored, data)
         _insert_score(

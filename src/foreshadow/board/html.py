@@ -100,6 +100,14 @@ def render_board_html(board: BoardDocument) -> str:
        · 近 30 天 Release：{_score(card.get("releases_30d"))} · 近 7 天贡献者：{_score(card.get("recent_contributors_7d"))}
        · 活动集中度：{_score(card.get("activity_concentration"))}</p>
     <p class="muted">{_e(card.get("activity_note") or "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
+    <p>阶段：{_e(card.get("s1_stage") or "—")} · {_e(card.get("s1_pool_zh") or "")}</p>
+    <p>早期程度：{_score(card.get("s1_earlyness"))} · 证据强度：{_score(card.get("s1_evidence"))}
+       · 机会窗口：{_score(card.get("s1_window"))}</p>
+    <p>早期加分：{_e("；".join(card.get("s1_earlyness_plus") or []) or "—")}</p>
+    <p>早期扣分：{_e("；".join(card.get("s1_earlyness_minus") or []) or "—")}</p>
+    <p>证据加分：{_e("；".join(card.get("s1_evidence_plus") or []) or "—")}</p>
+    <p>证据不足：{_e("；".join(card.get("s1_evidence_minus") or []) or "—")}</p>
+    <p class="muted">Star 只是规模观察，不是区间门槛，也不是否决。</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
        · Open Issues {_e(card["open_issues"])}</p>

@@ -221,7 +221,9 @@ def test_unknown_is_not_zero(frozen_clock):
     assert v1.breakdown.gap.value is None
     assert v2.breakdown.gap.value is None
     assert v1.breakdown.early_entry.value is None
-    assert v2.breakdown.early_entry.value is None
+    # S1 may score a low window from known age/stars; missing C is listed, not filled as 0 crowding.
+    assert "C" in (v2.evidence.get("s1") or {}).get("missing", [])
+    assert (v2.breakdown.early_entry.value or 0) < 20
     assert v2.evidence["star_growth"] is None
     assert v2.breakdown.momentum.value is None or v2.breakdown.explosion.value is None
 

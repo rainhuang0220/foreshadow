@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PR-D + PR-V + PR-H + PR-A in tree. **No `score.py` change.** Next: S1. |
+| **Status** | PR-D + PR-V + PR-H + PR-A + S1 Preview in tree. **No `score.py` change.** |
 | **Date** | 2026-08-25 |
 | **Official scoring** | **v1** until dual-write + counterexamples + owner cutover |
 | **Charter** | [`opportunity-engine-v2-audit.md`](opportunity-engine-v2-audit.md) + DECISIONS E2-0…E2-22 |
@@ -43,8 +43,8 @@ PR-D   Discovery multi-pool + pre_rank without stars     ← in tree
 PR-V   score_version dual-write (schema 003)             ← in tree; official still v1
 PR-H   Hydration expansion (pool Phase B + medium + PR sample)
 PR-A   Activity Momentum Preview (v2 only; not v7)
+PR-S1  Earlyness × Evidence × Opportunity Window         ← in tree; Preview only
 PR-T   Counterexample tests (red until formulas)
-PR-S1  Entry Window (replace late/late_10x)              ← next
 PR-S2  Maintainer / Community (TTR, activity)
 PR-S3  Contributor Access (PR sample; separate from Gap)
 PR-S4  Contribution Opportunity (I×N×F×A) + Entry Strategy copy
