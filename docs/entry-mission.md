@@ -22,6 +22,7 @@ FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview
 ```bash
 FORESHADOW_HOME=dogfood/local/home uv run foreshadow enter owner/repo
 FORESHADOW_HOME=dogfood/local/home uv run foreshadow outcome owner/repo --event maintainer_replied
+FORESHADOW_HOME=dogfood/local/home uv run foreshadow missions
 ```
 
 ## 本地会做的

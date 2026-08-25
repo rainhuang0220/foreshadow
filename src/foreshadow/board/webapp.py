@@ -582,6 +582,7 @@ function missionView(m) {
       <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
     </p>
     <p>
+      <p class="meta">要改草稿：编辑本地 ISSUE_DRAFT.md。点「草稿可以」只记账，仍不会发送。</p>
       <button type="button" onclick="markEvent(${id}, 'draft_approved')">草稿可以，仍不要发送</button>
       <button type="button" onclick="markEvent(${id}, 'maintainer_replied')">维护者已回复</button>
       <button type="button" onclick="markEvent(${id}, 'pr_merged')">我看到已被合并</button>
