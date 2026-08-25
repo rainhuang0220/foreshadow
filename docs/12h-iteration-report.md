@@ -64,7 +64,11 @@ CLI equivalent: `FORESHADOW_HOME=dogfood/local/home uv run foreshadow enter owne
 - Local PR draft / patch attach still later
 - Official v2 cutover (not this window)
 
-Checkpoint notes: Board now shows `strategy_why`, open issues carry `#N`, `ISSUE_DRAFT.md` is rewritten after GET, list refreshes to **查看任务** after 开始进入. Tests: **318 passed**.
+Checkpoint notes: Board now shows `strategy_why`, open issues carry `#N`, `ISSUE_DRAFT.md` is rewritten after GET, list refreshes to **查看任务** after 开始进入.
+
+Replay of `recommend_entry` on the 2026-08-25 120 (no GitHub writes): ISSUE 41 / DISCUSSION 69 / REPRODUCTION 6 / TEST 2 / BUG_FIX 2 / direct PR 0. Lightweight 60 → DISCUSSION; medium 30 → ISSUE; Phase B mixed. Docs/tests/CI paths now require known merge rate.
+
+Tests: **322 passed**.
 
 ## Top remaining bottlenecks
 1. Access UNKNOWN on 90/120 until the next dogfood hydrate

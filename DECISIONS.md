@@ -114,6 +114,7 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | S3-3 | Remote GitHub mutations require explicit approval and are refused by default. |
 | S3-4 | Default contributor skills are Python / docs / tests. Hard languages (Rust/C/C++/CUDA) do not get a core-rewrite entry. |
 | S3-5 | Long-term contributor potential is explainable (access × evidence × stage) and NA when unknown. |
+| S3-6 | DOCUMENTATION / TEST / TOOLING require a known external merge rate and Access not LOW. UNKNOWN acceptance is Issue/Discussion, never “Add CONTRIBUTING.md”. |
 
 ## S4 / S5 / S6
 
