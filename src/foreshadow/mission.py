@@ -475,6 +475,7 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
         f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n"
         f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n"
+        f"CONTRIBUTING 目录：{'；'.join(inspect.get('contributing_headings') or []) or '未知'}\n"
     )
     cited = extra.get("cited_issue") or {}
     if cited.get("number"):
@@ -566,13 +567,19 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
         (p for p in entries if p.is_file() and p.name.lower().startswith("readme")),
         None,
     )
+    contrib = next(
+        (p for p in entries if p.is_file() and p.name.lower() == "contributing.md"),
+        None,
+    )
     headings = _markdown_headings(readme) if readme else []
+    contrib_headings = _markdown_headings(contrib) if contrib else []
     return {
         "has_readme": any(n.startswith("readme") for n in names),
         "has_contributing": "contributing.md" in names,
         "has_tests": bool({"tests", "test", "spec"} & names),
         "top_entries": top,
         "readme_headings": headings[:12],
+        "contributing_headings": contrib_headings[:8],
     }
 
 

@@ -377,3 +377,23 @@ def test_missing_phase_b_issue_sample_stays_na():
     assert blob.repeat_clusters is None
     assert blob.bug_n is None
     assert blob.issue_sample_n is None
+
+
+def test_open_issue_titles_include_number():
+    repo = repo_node("R_num", "acme/num")
+    repo["issuesOpenSample"] = {
+        "totalCount": 1,
+        "nodes": [
+            {
+                "number": 12,
+                "title": "crash on eviction",
+                "author": {"login": "bob"},
+                "authorAssociation": "NONE",
+                "labels": {"nodes": []},
+                "comments": {"totalCount": 0, "nodes": []},
+                "assignees": {"totalCount": 0},
+            }
+        ],
+    }
+    blob = build_features_blob(repo, {"contents": [], "workflows": {}, "community": {}})
+    assert blob.open_issue_titles == ["#12 crash on eviction"]
