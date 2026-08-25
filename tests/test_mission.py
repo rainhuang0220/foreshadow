@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from foreshadow.mission import (
     prepare_local_dir,
     refuse_remote_action,
     setup_local_environment,
+    write_issue_draft,
 )
 from foreshadow.models import FeaturesBlob
 
@@ -29,6 +31,30 @@ def test_build_mission_waits_for_user():
     assert m.status == "MISSION_READY"
     assert m.strategy.allows_direct_pr is False
     assert m.strategy.steps_zh
+
+
+def test_issue_draft_is_local_and_not_a_pr(tmp_path):
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    path = write_issue_draft(tmp_path, m)
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "ISSUE_DRAFT.md"
+    assert "等待你的确认" in text
+    assert "#73" in text
+    assert "复现" in text
+    assert "不是 Pull Request" in text
+    src = inspect.getsource(write_issue_draft)
+    assert "GitHubClient" not in src
+    assert "api.github.com" not in src
 
 
 def test_refuse_remote_never_posts():

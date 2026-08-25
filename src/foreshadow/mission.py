@@ -692,6 +692,13 @@ def write_fork_note(dest: Path, full_name: str) -> Path:
     return path
 
 
+def _draft_title(mission: Mission) -> str:
+    for line in [*mission.why_now, *mission.strategy.why]:
+        if "建议先看：" in line:
+            return line.split("建议先看：", 1)[1].strip()
+    return f"{mission.full_name}: {mission.strategy.summary_zh}"
+
+
 def write_issue_draft(
     dest: Path,
     mission: Mission,
@@ -705,7 +712,13 @@ def write_issue_draft(
         "REPRODUCTION": "复现说明草稿",
         "DOCUMENTATION": "文档缺口说明草稿",
         "TEST": "测试缺口说明草稿",
-        "BUG_FIX": "修复说明草稿（先沟通）",
+        "TOOLING": "工具链说明草稿（先讨论）",
+        "BUG_FIX": "Bug 说明草稿（先沟通，不是 PR）",
+        "FEATURE": "功能范围草稿（先 Issue）",
+        "BENCHMARK": "测量说明草稿",
+        "PERFORMANCE": "性能问题草稿（先数字）",
+        "INTEGRATION": "集成方案讨论草稿",
+        "RESEARCH": "调研提问草稿",
     }.get(mission.strategy.path, "Issue 草稿")
     cited = cited or {}
     issue_block = ""
@@ -717,11 +730,12 @@ def write_issue_draft(
     path.write_text(
         f"# {kind}\n\n"
         f"项目：{mission.full_name}\n"
-        f"标题：{mission.strategy.summary_zh}\n\n"
+        f"标题：{_draft_title(mission)}\n\n"
         f"{issue_block}"
         f"## 为什么写这份草稿\n{why}\n\n"
         f"## 建议怎么说\n{steps}\n\n"
-        "这只是本地草稿。等待你的确认才能发到 GitHub。\n"
+        "这只是本地草稿，不是 Pull Request。\n"
+        "等待你的确认才能发到 GitHub。\n"
         "Foreshadow 不会自动 post Issue / Discussion / PR。\n",
         encoding="utf-8",
     )
