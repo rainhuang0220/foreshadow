@@ -1,10 +1,17 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
 from foreshadow.db import connect, migrate
 from foreshadow.mission import (
     REMOTE_ACTIONS,
     build_mission,
+    clone_public_repo,
     persist_mission,
     prepare_local_dir,
     refuse_remote_action,
+    setup_local_environment,
 )
 from foreshadow.models import FeaturesBlob
 
@@ -61,3 +68,98 @@ def test_persist_mission(tmp_home):
     row = conn.execute("SELECT status, entry_path FROM entry_missions WHERE id=?", (mid,)).fetchone()
     assert row[0] == "MISSION_READY"
     assert row[1] == "DOCUMENTATION"
+
+
+def test_transition_cannot_jump_to_submitted(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    from foreshadow.mission import transition
+
+    with pytest.raises(ValueError, match="cannot"):
+        transition(conn, mid, uid, "SUBMITTED")
+
+
+def test_clone_url_rejects_injection(tmp_path):
+    for name in ("../etc/passwd", "a/b;rm", "https://evil.com/x", "a/../../b", "a/b.git\n"):
+        out = clone_public_repo(name, tmp_path)
+        assert out["ok"] is False
+        assert out["status"] in {"invalid", "no_git", "failed"}
+
+
+def test_clone_is_fail_soft_without_git(tmp_path, monkeypatch):
+    def boom(*_a, **_k):
+        raise FileNotFoundError("git")
+
+    out = clone_public_repo("acme/toy", tmp_path, runner=boom)
+    assert out["ok"] is False
+    assert out["status"] == "no_git"
+    assert not (tmp_path / "repo" / ".git").exists()
+
+
+def test_clone_reuses_existing_checkout(tmp_path):
+    dest = tmp_path / "work"
+    clone_dir = dest / "repo"
+    clone_dir.mkdir(parents=True)
+    (clone_dir / ".git").mkdir()
+    called = {"n": 0}
+
+    def runner(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("must not re-clone")
+
+    out = clone_public_repo("acme/toy", dest, runner=runner)
+    assert out["ok"] is True
+    assert out["status"] == "exists"
+    assert called["n"] == 0
+
+
+def test_clone_uses_depth_one_and_writes_tree(tmp_path):
+    seen: list[list[str]] = []
+
+    def runner(cmd, **_k):
+        seen.append(list(cmd))
+        dest = Path(cmd[-1])
+        dest.mkdir(parents=True)
+        (dest / ".git").mkdir()
+        (dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        (dest / "CONTRIBUTING.md").write_text("# c\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    dest = tmp_path / "work"
+    out = clone_public_repo("acme/toy", dest, runner=runner)
+    assert out["ok"] is True
+    assert out["status"] == "cloned"
+    assert seen[0][:4] == ["git", "clone", "--depth", "1"]
+    assert "--" in seen[0]
+    assert seen[0][-2] == "https://github.com/acme/toy.git"
+    assert (dest / "repo" / "README.md").is_file()
+
+
+def test_setup_local_clones_and_waits_for_user(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        clone_dest = Path(cmd[-1])
+        clone_dest.mkdir(parents=True)
+        (clone_dest / ".git").mkdir()
+        (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert out["clone"]["ok"] is True
+    assert out["mission"]["status"] == "WAITING_USER_APPROVAL"
+    assert out["mission"]["needs_user_approval"] is True
+    assert "远程" in (out["mission"].get("remote_blocked") or "")
+    assert (dest / "repo" / ".git").is_dir()
+    md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
+    assert "acme/toy" in md
+    assert "不会自动" in md

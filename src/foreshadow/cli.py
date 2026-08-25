@@ -189,11 +189,19 @@ def enter(
         mission = create_for_user(
             conn, user_id=uid, full_name=repo, data_dir=resolve_data_dir()
         )
+        from foreshadow.mission import setup_local_environment
+
+        setup = setup_local_environment(
+            conn, mission.id or 0, uid, resolve_data_dir()
+        )
+        mission_status = setup["mission"].get("status") or mission.status
+        clone_status = (setup.get("clone") or {}).get("status")
     finally:
         conn.close()
     sys.stdout.write(
         f"entry mission {mission.id} {mission.full_name} "
-        f"path={mission.strategy.path} status={mission.status}\n"
+        f"path={mission.strategy.path} status={mission_status} "
+        f"clone={clone_status}\n"
         f"{mission.strategy.summary_zh}\n"
         "remote GitHub writes are blocked until you approve them.\n"
     )

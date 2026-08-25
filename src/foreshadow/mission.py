@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import sqlite3
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,6 +41,24 @@ Status = Literal[
 REMOTE_ACTIONS = frozenset(
     {"post_issue", "post_discussion", "push_branch", "create_pr", "comment", "review", "merge"}
 )
+USER_EVENTS = frozenset(
+    {
+        "entered",
+        "local_setup",
+        "clone_ok",
+        "clone_failed",
+        "maintainer_replied",
+        "maintainer_silent",
+        "issue_accepted",
+        "pr_reviewed",
+        "pr_merged",
+        "pr_rejected",
+        "user_submitted",
+        "abandoned",
+    }
+)
+REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+CLONE_TIMEOUT_S = 120
 
 
 @dataclass
@@ -72,6 +93,13 @@ class Mission:
             "effort": self.strategy.effort,
             "needs_user_approval": self.needs_user_approval,
             "local_path": self.local_path,
+            "next_step_zh": next_step_zh(self.status),
+            "git_ops_zh": [
+                "git clone --depth 1（仅本地）",
+                "可在 clone 目录建本地分支",
+                "可本地 commit",
+                "不会 push / 开 Issue / 开 PR",
+            ],
             "remote_blocked": (
                 "等待你的确认才能执行任何远程 GitHub 操作。"
             ),
@@ -87,6 +115,7 @@ def build_mission(
     stars: float | None = None,
     pushed_age_days: int | None = None,
     unique_issue_authors: int | None = None,
+    language: str | None = None,
 ) -> Mission:
     feat = feat or FeaturesBlob()
     act = compute_activity(feat)
@@ -100,7 +129,7 @@ def build_mission(
         feat=feat,
         activity=act,
     )
-    strat = recommend_entry(feat, s1=s1, access=acc)
+    strat = recommend_entry(feat, s1=s1, access=acc, language=language)
     why = [
         f"阶段 {s1.stage}",
         *s1.earlyness_plus[:2],
@@ -152,6 +181,8 @@ def persist_mission(
     )
     conn.commit()
     mission.id = int(cur.lastrowid)
+    if mission.local_path:
+        write_mission_doc(Path(mission.local_path), mission)
     return mission.id
 
 
@@ -238,6 +269,9 @@ def create_for_user(
             p = parse_dt(data.get("pushed_at"))
             if p is not None:
                 pushed = max((datetime.now(UTC).date() - p.date()).days, 0)
+    language = None
+    if data and data.get("language"):
+        language = str(data.get("language"))
     mission = build_mission(
         full_name,
         feat=feat,
@@ -246,9 +280,11 @@ def create_for_user(
         stars=stars,
         pushed_age_days=pushed,
         unique_issue_authors=u_issue,
+        language=language,
     )
     dest = prepare_local_dir(data_dir, full_name)
     mission.local_path = str(dest)
+    write_mission_doc(dest, mission)
     persist_mission(conn, mission, user_id=user_id, repo_id=repo_id)
     record_event(
         conn,
@@ -264,9 +300,19 @@ def create_for_user(
 ALLOWED = {
     "MISSION_READY": {"LOCAL_SETUP", "INVESTIGATING", "ABANDONED"},
     "LOCAL_SETUP": {"WAITING_USER_APPROVAL", "DRAFT_READY", "ABANDONED", "BLOCKED"},
-    "WAITING_USER_APPROVAL": {"ABANDONED", "BLOCKED", "WAITING_MAINTAINER"},
+    "WAITING_USER_APPROVAL": {
+        "ABANDONED",
+        "BLOCKED",
+        "WAITING_MAINTAINER",
+        "DRAFT_READY",
+        "IMPLEMENTING",
+    },
     "DRAFT_READY": {"WAITING_USER_APPROVAL", "ABANDONED"},
     "INVESTIGATING": {"MISSION_READY", "ABANDONED"},
+    "IMPLEMENTING": {"DRAFT_READY", "WAITING_USER_APPROVAL", "ABANDONED", "BLOCKED"},
+    "WAITING_MAINTAINER": {"FOLLOW_UP", "ABANDONED", "BLOCKED", "REVIEWING"},
+    "REVIEWING": {"FOLLOW_UP", "MERGED", "ABANDONED", "BLOCKED"},
+    "FOLLOW_UP": {"ABANDONED", "MERGED"},
 }
 
 
@@ -345,15 +391,338 @@ def refuse_remote_action(action: str) -> dict[str, Any]:
     }
 
 
+def next_step_zh(status: str | None) -> str:
+    return {
+        "MISSION_READY": "准备本地环境（clone / 读文档），不要发 Issue 或 PR",
+        "LOCAL_SETUP": "看本地仓库与第一步，确认后再决定是否沟通",
+        "WAITING_USER_APPROVAL": "等待你的确认才能执行任何远程 GitHub 操作",
+        "DRAFT_READY": "草稿已在本地。远程发送仍需你确认",
+        "IMPLEMENTING": "在本地实现最小改动，不要 push",
+        "WAITING_MAINTAINER": "等待维护者。不要反复催促或自动评论",
+        "REVIEWING": "按反馈改本地补丁，再请你确认是否提交",
+        "SUBMITTED": "你已自行提交。Foreshadow 没有代发",
+        "MERGED": "记录后续跟进，而不是结束贡献",
+        "FOLLOW_UP": "看维护者的下一步，决定是否继续",
+        "ABANDONED": "任务已停止",
+        "BLOCKED": "被拦住了。先看原因，不要强行发 PR",
+        "INVESTIGATING": "继续阅读项目，再生成更具体的入口",
+    }.get(status or "", "先阅读推荐入口，再决定")
+
+
 def prepare_local_dir(root: Path, full_name: str) -> Path:
-    safe = full_name.replace("/", "__")
+    safe = _safe_repo_dir(full_name)
     dest = Path(root) / "work" / safe
     dest.mkdir(parents=True, exist_ok=True)
-    readme = dest / "FORESHADOW.md"
-    if not readme.exists():
-        readme.write_text(
-            f"# Entry Mission\n\n{full_name}\n\n"
-            "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n",
-            encoding="utf-8",
-        )
     return dest
+
+
+def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None = None) -> Path:
+    extra = extra or {}
+    steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+    why = "\n".join(f"- {w}" for w in mission.why_now)
+    clone = extra.get("clone") or {}
+    inspect = extra.get("inspect") or {}
+    text = (
+        f"# FORESHADOW ENTRY MISSION\n\n"
+        f"项目：{mission.full_name}\n\n"
+        f"为什么现在进入：\n{why or '- （待补充）'}\n\n"
+        f"阶段：{mission.stage or '—'}\n"
+        f"机会窗口：{mission.window}\n"
+        f"进入通道：{mission.access}\n"
+        f"推荐入口：{mission.strategy.summary_zh}（{mission.strategy.path}）\n"
+        f"难度：{mission.strategy.difficulty}\n"
+        f"预计：{mission.strategy.effort}\n"
+        f"状态：{mission.status}\n"
+        f"下一步：{next_step_zh(mission.status)}\n\n"
+        f"行动计划：\n{steps}\n\n"
+        f"本地 clone：{clone.get('status') or '尚未尝试'}\n"
+        f"README：{'有' if inspect.get('has_readme') else '未知'} · "
+        f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n\n"
+        "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
+        "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
+        "等待你的确认才能执行任何远程 GitHub 操作。\n"
+    )
+    path = dest / "FORESHADOW.md"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _safe_repo_dir(full_name: str) -> str:
+    return full_name.replace("/", "__").replace("..", "")
+
+
+def github_clone_url(full_name: str) -> str:
+    name = (full_name or "").strip()
+    if not REPO_NAME_RE.match(name) or ".." in name or name.endswith(".git"):
+        raise ValueError("invalid repo name")
+    return f"https://github.com/{name}.git"
+
+
+def clone_public_repo(
+    full_name: str,
+    dest: Path,
+    *,
+    runner: Any | None = None,
+    timeout: int = CLONE_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Local `git clone --depth 1` only. Never push. Fail-soft."""
+    try:
+        url = github_clone_url(full_name)
+    except ValueError as exc:
+        return {"ok": False, "status": "invalid", "error": str(exc), "path": None}
+    clone_dir = Path(dest) / "repo"
+    if (clone_dir / ".git").exists():
+        return {"ok": True, "status": "exists", "path": str(clone_dir), "error": None}
+    if runner is None and os.environ.get("FORESHADOW_SKIP_CLONE") == "1":
+        return {
+            "ok": False,
+            "status": "skipped",
+            "error": "clone skipped",
+            "path": None,
+        }
+    clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    run = runner or subprocess.run
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = ""
+    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN"):
+        env.pop(key, None)
+    cmd = ["git", "clone", "--depth", "1", "--", url, str(clone_dir)]
+    try:
+        completed = run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=env,
+        )
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "status": "no_git",
+            "error": "本机没有 git，已跳过 clone",
+            "path": None,
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "status": "timeout", "error": "clone timed out", "path": None}
+    code = getattr(completed, "returncode", 1)
+    if code != 0:
+        err = (getattr(completed, "stderr", None) or getattr(completed, "stdout", None) or "")[
+            :400
+        ]
+        return {"ok": False, "status": "failed", "error": err or "clone failed", "path": None}
+    return {"ok": True, "status": "cloned", "path": str(clone_dir), "error": None}
+
+
+def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
+    if clone_dir is None or not Path(clone_dir).is_dir():
+        return {"has_readme": False, "has_contributing": False, "has_tests": False}
+    names = {p.name.lower() for p in Path(clone_dir).iterdir()}
+    return {
+        "has_readme": any(n.startswith("readme") for n in names),
+        "has_contributing": "contributing.md" in names,
+        "has_tests": bool({"tests", "test", "spec"} & names),
+    }
+
+
+def load_mission_plan(
+    conn: sqlite3.Connection, mission_id: int, user_id: int
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, full_name, status, entry_path, difficulty, effort, plan_json,
+               local_path, created_at, updated_at
+        FROM entry_missions WHERE id=? AND user_id=?
+        """,
+        (mission_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        plan = json.loads(row[6] or "{}")
+    except json.JSONDecodeError:
+        plan = {}
+    plan.update(
+        {
+            "id": row[0],
+            "full_name": row[1],
+            "status": row[2],
+            "local_path": row[7],
+            "created_at": row[8],
+            "updated_at": row[9],
+            "needs_user_approval": True,
+            "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
+            "next_step_zh": next_step_zh(str(row[2])),
+        }
+    )
+    return plan
+
+
+def patch_mission_plan(
+    conn: sqlite3.Connection,
+    mission_id: int,
+    user_id: int,
+    patch: dict[str, Any],
+    *,
+    status: Status | None = None,
+    local_path: str | None = None,
+) -> dict[str, Any]:
+    plan = load_mission_plan(conn, mission_id, user_id)
+    if plan is None:
+        raise ValueError("mission not found")
+    plan.update(patch)
+    if status is not None:
+        plan["status"] = status
+        plan["next_step_zh"] = next_step_zh(status)
+    if local_path is not None:
+        plan["local_path"] = local_path
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        """
+        UPDATE entry_missions
+        SET status=?, local_path=?, plan_json=?, updated_at=?
+        WHERE id=? AND user_id=?
+        """,
+        (
+            plan["status"],
+            plan.get("local_path"),
+            json.dumps(plan, ensure_ascii=False),
+            now,
+            mission_id,
+            user_id,
+        ),
+    )
+    conn.commit()
+    return plan
+
+
+def setup_local_environment(
+    conn: sqlite3.Connection,
+    mission_id: int,
+    user_id: int,
+    data_dir: Path,
+    *,
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    plan = load_mission_plan(conn, mission_id, user_id)
+    if plan is None:
+        raise ValueError("mission not found")
+    full_name = str(plan.get("full_name") or "")
+    dest = prepare_local_dir(data_dir, full_name)
+    current = str(plan.get("status") or "MISSION_READY")
+    if current == "MISSION_READY":
+        transition(conn, mission_id, user_id, "LOCAL_SETUP")
+    clone = clone_public_repo(full_name, dest, runner=runner)
+    inspect = inspect_clone(Path(clone["path"]) if clone.get("path") else dest / "repo")
+    mission = Mission(
+        full_name=full_name,
+        status="WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP",
+        strategy=recommend_entry(FeaturesBlob()),
+        stage=plan.get("stage"),
+        earlyness=plan.get("earlyness"),
+        evidence=plan.get("evidence"),
+        window=plan.get("opportunity_window"),
+        access=plan.get("access"),
+        why_now=list(plan.get("why_now") or []),
+        needs_user_approval=True,
+        local_path=str(dest),
+        id=mission_id,
+    )
+    if isinstance(plan.get("strategy"), dict):
+        from foreshadow.pipeline.strategy import StrategyResult
+
+        raw = plan["strategy"]
+        try:
+            mission.strategy = StrategyResult(
+                path=raw.get("path") or "ISSUE",
+                summary_zh=raw.get("summary_zh") or "",
+                steps_zh=list(raw.get("steps_zh") or []),
+                difficulty=raw.get("difficulty") or "Medium",
+                effort=raw.get("effort") or "6h",
+                allows_direct_pr=bool(raw.get("allows_direct_pr")),
+                why=list(raw.get("why") or []),
+            )
+        except (TypeError, ValueError, KeyError):
+            pass
+    write_mission_doc(dest, mission, extra={"clone": clone, "inspect": inspect})
+    dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
+    after_setup = str(
+        conn.execute(
+            "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
+            (mission_id, user_id),
+        ).fetchone()[0]
+    )
+    if dest_status != after_setup and dest_status in ALLOWED.get(after_setup, set()):
+        transition(conn, mission_id, user_id, dest_status)
+    updated = patch_mission_plan(
+        conn,
+        mission_id,
+        user_id,
+        {
+            "clone": clone,
+            "inspect": inspect,
+            "needs_user_approval": True,
+            "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
+        },
+        status=None,
+        local_path=str(dest),
+    )
+    record_event(
+        conn,
+        user_id=user_id,
+        mission_id=mission_id,
+        full_name=full_name,
+        event="local_setup",
+        detail={"clone": clone.get("status"), "inspect": inspect},
+    )
+    record_event(
+        conn,
+        user_id=user_id,
+        mission_id=mission_id,
+        full_name=full_name,
+        event="clone_ok" if clone.get("ok") else "clone_failed",
+        detail={"clone": clone},
+    )
+    updated["clone"] = clone
+    updated["inspect"] = inspect
+    updated["needs_user_approval"] = True
+    return {"mission": updated, "clone": clone, "inspect": inspect}
+
+
+def record_user_event(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    mission_id: int,
+    event: str,
+) -> dict[str, Any]:
+    if event not in USER_EVENTS:
+        raise ValueError(f"unknown event {event}")
+    plan = load_mission_plan(conn, mission_id, user_id)
+    if plan is None:
+        raise ValueError("mission not found")
+    record_event(
+        conn,
+        user_id=user_id,
+        mission_id=mission_id,
+        full_name=str(plan.get("full_name") or ""),
+        event=event,
+        detail={},
+    )
+    status_map: dict[str, Status] = {
+        "abandoned": "ABANDONED",
+        "user_submitted": "WAITING_MAINTAINER",
+        "pr_merged": "MERGED",
+        "maintainer_replied": "WAITING_MAINTAINER",
+        "pr_rejected": "BLOCKED",
+    }
+    dest = status_map.get(event)
+    current = str(plan.get("status") or "")
+    if dest and dest in ALLOWED.get(current, set()):
+        transition(conn, mission_id, user_id, dest)
+    elif event == "abandoned":
+        set_status(conn, mission_id, user_id, "ABANDONED")
+    elif event == "pr_merged":
+        set_status(conn, mission_id, user_id, "MERGED")
+    return load_mission_plan(conn, mission_id, user_id) or plan
