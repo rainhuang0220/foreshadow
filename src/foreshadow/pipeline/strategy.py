@@ -113,14 +113,23 @@ def recommend_entry(
             why.append(f"主语言是 {language}，先跟 Issue / 复现说明，不建议重写核心")
         return _pack(path, why, "Medium", "6h", False, s1, access, language)
     if feat.gap_docs == 1:
-        why.append("文档缺口（不是贡献机会本身，只是入口）")
-        return _pack("DOCUMENTATION", why, "Easy", "4h", False, s1, access, language)
+        if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
+            why.append("文档缺口（不是贡献机会本身，只是入口）")
+            return _pack("DOCUMENTATION", why, "Easy", "4h", False, s1, access, language)
+        why.append("有文档缺口，但外部接受未知、为 0、或进入通道偏低，先 Issue，不要直接补 CONTRIBUTING.md")
+        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
     if feat.gap_tests == 1 and not hard:
-        why.append("测试目录缺口")
-        return _pack("TEST", why, "Easy", "6h", False, s1, access, language)
+        if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
+            why.append("测试目录缺口")
+            return _pack("TEST", why, "Easy", "6h", False, s1, access, language)
+        why.append("测试缺口在外部接受未知时不能当成补测试 PR")
+        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
     if feat.gap_ci == 1 and not hard:
-        why.append("缺少 CI")
-        return _pack("TOOLING", why, "Medium", "1d", False, s1, access, language)
+        if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
+            why.append("缺少 CI")
+            return _pack("TOOLING", why, "Medium", "1d", False, s1, access, language)
+        why.append("缺少 CI，但先讨论，不要直接提工作流 PR")
+        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
     if (feat.unassigned_help or 0) >= 1 or (feat.help_n or 0) >= 1:
         why.append("有未认领的求助 Issue；GFI 只作 onboarding 信号")
         titles = feat.help_issue_titles or feat.open_issue_titles or []
@@ -140,6 +149,11 @@ def recommend_entry(
     if hard:
         why.append(f"主语言是 {language}，按你当前能力走 Issue / 文档")
     return _pack("ISSUE", why, "Medium", "6h", False, s1, access, language)
+
+
+def _accepts_code_entry(access: AccessResult) -> bool:
+    """Code-shaped paths need a known, non-zero external merge rate."""
+    return access.merge_rate is not None and access.merge_rate > 0
 
 
 def _language_too_hard(language: str | None, skills: Sequence[str]) -> bool:

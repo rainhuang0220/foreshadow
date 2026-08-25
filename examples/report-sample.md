@@ -33,7 +33,7 @@ Exceptional: no
 Best contribution:
 1. #12 document eviction — docs, medium impact
 2. #18 window overflow — tests
-3. Add CONTRIBUTING.md — community gap
+3. 先复现问题，再记录给维护者
 
 Risk:
 Maintainer concentration (8 contributors); growth could be a single viral post; H-rules passed.

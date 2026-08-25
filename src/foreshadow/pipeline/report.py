@@ -697,6 +697,9 @@ def _components(bd: ScoreBreakdown) -> dict[str, Any]:
 
 
 def _help_bullets(feat: Mapping[str, Any]) -> list[str]:
+    from foreshadow.models import FeaturesBlob
+    from foreshadow.pipeline.strategy import recommend_entry
+
     bullets: list[str] = []
     for title in feat.get("help_issue_titles") or []:
         raw = str(title)
@@ -707,12 +710,13 @@ def _help_bullets(feat: Mapping[str, Any]) -> list[str]:
         elif "test" in lower or "overflow" in lower:
             kind = " — tests"
         bullets.append(f"{raw}{kind}")
-    if feat.get("gap_docs"):
-        bullets.append("Add CONTRIBUTING.md — community gap")
-    if feat.get("gap_tests"):
-        bullets.append("Add tests — test gap")
-    if feat.get("gap_ci"):
-        bullets.append("Add CI workflow — CI gap")
+    if feat.get("gap_docs") or feat.get("gap_tests") or feat.get("gap_ci"):
+        try:
+            blob = FeaturesBlob.model_validate(dict(feat))
+        except (TypeError, ValueError):
+            blob = FeaturesBlob()
+        strat = recommend_entry(blob)
+        bullets.append(strat.summary_zh)
     return bullets[:3]
 
 

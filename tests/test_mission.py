@@ -59,7 +59,20 @@ def test_persist_mission(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=20, age_days=30, contributors=3)
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            gap_docs=1,
+            pr_accept_rate=0.5,
+            pr_review_rate=0.5,
+            maint_touch=0.5,
+            pr_merged_sample_n=4,
+            issue_sample_n=2,
+        ),
+        stars=20,
+        age_days=30,
+        contributors=3,
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)

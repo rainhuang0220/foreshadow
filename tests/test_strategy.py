@@ -11,8 +11,21 @@ def test_not_all_projects_recommend_pr():
     bugs = recommend_entry(FeaturesBlob(bug_n=4, issue_sample_n=8, maint_touch=0.5))
     assert bugs.path == "REPRODUCTION"
     assert bugs.allows_direct_pr is False
-    docs = recommend_entry(FeaturesBlob(gap_docs=1, issue_sample_n=2))
+    docs = recommend_entry(
+        FeaturesBlob(
+            gap_docs=1,
+            issue_sample_n=2,
+            pr_accept_rate=0.5,
+            pr_review_rate=0.5,
+            maint_touch=0.5,
+            pr_merged_sample_n=4,
+        )
+    )
     assert docs.path == "DOCUMENTATION"
+    closed_docs = recommend_entry(FeaturesBlob(gap_docs=1, issue_sample_n=2))
+    assert closed_docs.path == "ISSUE"
+    assert closed_docs.allows_direct_pr is False
+    assert "CONTRIBUTING.md" in " ".join(closed_docs.why)
 
 
 def test_experimental_uses_discussion():
@@ -75,6 +88,23 @@ def test_hard_language_does_not_recommend_core_rewrite():
     blob = " ".join(strat.steps_zh + strat.why + [strat.summary_zh])
     assert "重写整个" not in blob
     assert "inference engine" not in blob.lower()
+
+
+def test_report_copy_does_not_say_add_contributing():
+    from foreshadow.pipeline.report import _help_bullets
+
+    bullets = _help_bullets({"gap_docs": 1, "help_n": 0, "bug_n": 0})
+    blob = " ".join(bullets).lower()
+    assert "add contributing.md" not in blob
+    assert "add ci workflow" not in blob
+
+
+def test_unknown_acceptance_is_not_a_docs_pr():
+    strat = recommend_entry(FeaturesBlob(gap_docs=1, gap_tests=1, gap_ci=1))
+    assert strat.path not in {"DOCUMENTATION", "TEST", "TOOLING", "FEATURE", "BUG_FIX"}
+    assert strat.allows_direct_pr is False
+    blob = " ".join(strat.steps_zh + strat.why + [strat.summary_zh])
+    assert "open a PR" not in blob.lower()
 
 
 def test_long_term_unknown_is_not_zero():
