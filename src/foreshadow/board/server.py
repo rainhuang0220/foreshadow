@@ -167,6 +167,20 @@ class BoardHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if path == "/api/missions":
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.mission import list_missions
+
+            conn = self.state.db()
+            try:
+                items = list_missions(conn, int(user["id"]))
+            finally:
+                conn.close()
+            self._send(*_json_bytes({"missions": items}))
+            return
         if path == "/api/board":
             user = self._user()
             if user is None:
@@ -273,6 +287,52 @@ class BoardHandler(BaseHTTPRequestHandler):
             finally:
                 conn.close()
             self._send(*_json_bytes({"ok": True, "repo": repo, "action": action}))
+            return
+        if path == "/api/mission":
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.mission import create_for_user
+            from foreshadow.paths import resolve_data_dir
+
+            name = str(data.get("full_name") or data.get("repo") or "")
+            if "/" not in name:
+                self._send(*_json_bytes({"error": "需要 full_name"}, 400))
+                return
+            conn = self.state.db()
+            try:
+                mission = create_for_user(
+                    conn,
+                    user_id=int(user["id"]),
+                    full_name=name,
+                    data_dir=resolve_data_dir(),
+                )
+            finally:
+                conn.close()
+            self._send(*_json_bytes({"mission": mission.as_dict()}))
+            return
+        if path == "/api/mission/setup":
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.mission import list_missions, set_status
+
+            mid = int(data.get("id") or 0)
+            conn = self.state.db()
+            try:
+                set_status(conn, mid, int(user["id"]), "LOCAL_SETUP")
+                items = list_missions(conn, int(user["id"]))
+            finally:
+                conn.close()
+            found = next((m for m in items if m.get("id") == mid), None)
+            self._send(*_json_bytes({"mission": found or {"id": mid, "status": "LOCAL_SETUP"}}))
+            return
+        if path == "/api/mission/remote":
+            from foreshadow.mission import refuse_remote_action
+
+            self._send(*_json_bytes(refuse_remote_action(str(data.get("action") or ""))))
             return
         self._send(*_json_bytes({"error": "not found"}, 404))
 

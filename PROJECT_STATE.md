@@ -33,6 +33,7 @@
 - **PR-A Activity Momentum Preview:** v2-only AM 0–100 + class; fills NA momentum slot when `v7` missing; Board 活跃度 + evidence. Not star growth. Report: [`docs/opportunity-engine-v2-activity-report.md`](docs/opportunity-engine-v2-activity-report.md).
 - **S1 Preview:** Earlyness × Evidence × Opportunity Window + stage + experimental pool. No star band/veto/bonus. Report: [`docs/opportunity-engine-v2-s1-report.md`](docs/opportunity-engine-v2-s1-report.md).
 - **S2 Community Access:** Access Score independent of Gap; PR merge/review rates; UNKNOWN≠0. Report: [`docs/opportunity-engine-v2-s2-report.md`](docs/opportunity-engine-v2-s2-report.md).
+- **S3 + Entry Mission:** recommended entry path (not default PR); Board **开始进入** creates a local mission (`entry_missions`). Remote GitHub writes stay blocked until explicit approval.
 
 ## In Progress
 

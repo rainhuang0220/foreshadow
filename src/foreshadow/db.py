@@ -6,12 +6,13 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
     (2, "002_users.sql"),
     (3, "003_score_version.sql"),
+    (4, "004_missions.sql"),
 )
 
 

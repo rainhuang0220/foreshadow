@@ -104,3 +104,11 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | S2-1 | Access Score is independent of Contributor Gap. |
 | S2-2 | Empty PR sample → merge/review UNKNOWN, not 0. |
 | S2-3 | GFI/help-wanted are onboarding signals inside Access, not contribution opportunity. |
+
+## S3 / Entry Mission
+
+| ID | Decision |
+|---|---|
+| S3-1 | Default entry is Issue/Discussion/Reproduction, not PR. |
+| S3-2 | `开始进入` creates a local Entry Mission. Clone/local files allowed. |
+| S3-3 | Remote GitHub mutations require explicit approval and are refused by default. |

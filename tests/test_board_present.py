@@ -46,6 +46,7 @@ def test_present_board_is_chinese_and_sorted():
     assert "早期程度" in html
     assert "证据强度" in html
     assert "机会窗口" in html
+    assert "进入通道" in html
     assert "activity_class_zh" in top
     assert '<html lang="zh-CN">' in html
     # list is summary-first: details live inside <details>, not as a wall of cards

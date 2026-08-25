@@ -20,6 +20,7 @@
 - [x] **PR-A** Activity Momentum Preview (`docs/opportunity-engine-v2-activity-report.md`)
 - [x] **S1 Preview** Earlyness × Evidence × Opportunity Window (`docs/opportunity-engine-v2-s1-report.md`)
 - [x] **S2** Community Access Score (`docs/opportunity-engine-v2-s2-report.md`)
+- [x] **S3** Contribution Strategy + Entry Mission (local only; remote blocked)
 - [ ] PR-S3…S5 scoring / preview
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 

@@ -29,6 +29,7 @@ from foreshadow.pipeline.hydrate import parse_dt
 from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import is_official_eligible
+from foreshadow.pipeline.strategy import recommend_entry
 from foreshadow.reviews import ACTIONS
 
 _ACTIONS = ACTIONS
@@ -123,6 +124,11 @@ def _card(
         access_class=extra_meta.get("access_class"),
         access_merge_rate=_float_or_none(extra_meta.get("access_merge_rate")),
         access_review_rate=_float_or_none(extra_meta.get("access_review_rate")),
+        strategy_path=extra_meta.get("strategy_path"),
+        strategy_summary_zh=extra_meta.get("strategy_summary_zh"),
+        strategy_steps_zh=list(extra_meta.get("strategy_steps_zh") or []),
+        strategy_difficulty=extra_meta.get("strategy_difficulty"),
+        strategy_effort=extra_meta.get("strategy_effort"),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -385,6 +391,7 @@ def load_scored_from_db(
             feat=blob,
             activity=act,
         )
+        strat = recommend_entry(blob, s1=s1, access=acc)
         extras[full_name] = {
             "html_url": html_url or data.get("html_url"),
             "stars": data.get("S"),
@@ -425,6 +432,11 @@ def load_scored_from_db(
             "access_class": acc.classification,
             "access_merge_rate": acc.merge_rate,
             "access_review_rate": acc.review_rate,
+            "strategy_path": strat.path,
+            "strategy_summary_zh": strat.summary_zh,
+            "strategy_steps_zh": strat.steps_zh,
+            "strategy_difficulty": strat.difficulty,
+            "strategy_effort": strat.effort,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days

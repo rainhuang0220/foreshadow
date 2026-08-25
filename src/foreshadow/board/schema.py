@@ -133,6 +133,11 @@ class BoardCard(BaseModel):
     access_class: str | None = None
     access_merge_rate: float | None = None
     access_review_rate: float | None = None
+    strategy_path: str | None = None
+    strategy_summary_zh: str | None = None
+    strategy_steps_zh: list[str] = Field(default_factory=list)
+    strategy_difficulty: str | None = None
+    strategy_effort: str | None = None
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None

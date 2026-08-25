@@ -69,7 +69,7 @@ uv run foreshadow board --preview --no-open
 
 Then open **http://127.0.0.1:8765/** in a browser (the command also opens a tab unless `--no-open`).
 
-The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: five dimensions, three reviewers, disagreement, Chair, evidence, GitHub link, and your review action. Review actions persist per user and share the same `reviews` table as `foreshadow review owner/repo interested`.
+The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: stage, earlyness, evidence, opportunity window, access, recommended entry path, five dimensions, Chair, and **开始进入**. That button creates an Entry Mission (local plan only). Foreshadow never opens Issues/PRs or pushes until you explicitly approve a remote action.
 
 `--export-html` still writes a static Chinese list (accordion) under `preview/YYYY-MM-DD/` or `reports/`. It is an export, not the product.
 

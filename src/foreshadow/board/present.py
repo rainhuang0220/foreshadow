@@ -535,6 +535,11 @@ def present_card(
         "access_class_zh": ACTIVITY_CLASS_LABELS.get(card.access_class or "", "未知"),
         "access_merge_rate": card.access_merge_rate,
         "access_review_rate": card.access_review_rate,
+        "strategy_path": card.strategy_path,
+        "strategy_summary_zh": card.strategy_summary_zh,
+        "strategy_steps_zh": list(card.strategy_steps_zh or []),
+        "strategy_difficulty": card.strategy_difficulty,
+        "strategy_effort": card.strategy_effort,
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {

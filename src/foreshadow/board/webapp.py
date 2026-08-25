@@ -259,6 +259,7 @@ const state = {
   auth: "login",
   error: "",
   busy: false,
+  mission: null,
 };
 
 async function api(path, opts={}) {
@@ -429,7 +430,12 @@ function drawerView(card) {
       最近活动 ${n(card.last_pushed_at)} · 最近 Release ${n(card.last_release)}
       · 首次发现 ${n(card.first_seen_at)}
     </p>
-    <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
+    <p class="meta"><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}（${esc(card.strategy_path || "")}） · 难度 ${esc(card.strategy_difficulty || "—")} · 预计 ${esc(card.strategy_effort || "—")}</p>
+    <ol class="ev">${(card.strategy_steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+    <p>
+      <button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(card.full_name)}')">开始进入</button>
+      <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
+    </p>
     <h3>五维评分</h3>
     ${d.dimensions.map(dimBlock).join("")}
     <h3>三个独立评审视角</h3>
@@ -478,7 +484,30 @@ function boardView() {
   <h2>今日候选榜</h2>
   <div class="list">${listView(b)}</div>
   ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
+  ${missionView(state.mission)}
   `;
+}
+
+function missionView(m) {
+  if (!m) return "";
+  const steps = (m.steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
+  return `
+  <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
+  <aside class="drawer on" role="dialog" aria-label="进入任务">
+    <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
+    <p class="brand">FORESHADOW ENTRY MISSION</p>
+    <h2>${esc(m.full_name)}</h2>
+    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会窗口 ${n(m.opportunity_window)} · 进入通道 ${n(m.access)}</p>
+    <p><strong>为什么现在进入：</strong>${esc((m.why_now||[]).join("；") || "—")}</p>
+    <p><strong>推荐入口：</strong>${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
+    <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status||"—")}</p>
+    <h3>行动计划</h3>
+    <ol>${steps}</ol>
+    <p class="meta">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
+    <p class="meta">本地目录：${esc(m.local_path || "尚未准备")}</p>
+    <button type="button" class="primary" onclick="setupLocal(${m.id})">准备本地目录</button>
+    <button type="button" onclick="refuseRemote()">我不会让系统自动发 Issue / PR</button>
+  </aside>`;
 }
 
 function render() {
@@ -530,6 +559,29 @@ async function logout() {
 
 function openCard(name) { state.open = name; render(); }
 function closeCard() { state.open = null; render(); }
+
+async function startEnter(name) {
+  try {
+    const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
+    state.mission = data.mission;
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function setupLocal(id) {
+  try {
+    const data = await api("/api/mission/setup", { method: "POST", body: JSON.stringify({ id }) });
+    state.mission = data.mission;
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function refuseRemote() {
+  try {
+    const data = await api("/api/mission/remote", { method: "POST", body: JSON.stringify({ action: "create_pr" }) });
+    alert(data.error || data.remote_blocked || "已阻止远程操作");
+  } catch (e) { alert(e.message); }
+}
 
 async function saveReview(repo, action) {
   try {

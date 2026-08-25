@@ -46,6 +46,12 @@ def test_sql_packaged():
     assert "score_version" in v3
     assert "UNIQUE (run_id, repo_id, score_version)" in v3
     assert "CREATE TABLE score_compare" in v3
+    v4 = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/004_missions.sql")
+        .read_text()
+    )
+    assert "CREATE TABLE entry_missions" in v4
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):
