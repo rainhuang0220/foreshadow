@@ -472,7 +472,8 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"本地 clone：{clone.get('status') or '尚未尝试'}\n"
         f"README：{'有' if inspect.get('has_readme') else '未知'} · "
         f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
-        f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n\n"
+        f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n"
+        f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
         "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         "等待你的确认才能执行任何远程 GitHub 操作。\n"
@@ -551,12 +552,33 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     entries = list(Path(clone_dir).iterdir())
     names = {p.name.lower() for p in entries}
     top = sorted(p.name for p in entries)[:20]
+    readme = next(
+        (p for p in entries if p.is_file() and p.name.lower().startswith("readme")),
+        None,
+    )
+    headings = _markdown_headings(readme) if readme else []
     return {
         "has_readme": any(n.startswith("readme") for n in names),
         "has_contributing": "contributing.md" in names,
         "has_tests": bool({"tests", "test", "spec"} & names),
         "top_entries": top,
+        "readme_headings": headings[:12],
     }
+
+
+def _markdown_headings(path: Path) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[:8000]
+    except OSError:
+        return []
+    out: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("#") and not s.startswith("#!"):
+            title = s.lstrip("#").strip()
+            if title:
+                out.append(title)
+    return out
 
 
 def _git_env() -> dict[str, str]:
@@ -839,6 +861,7 @@ def setup_local_environment(
             "branch": branch,
             "tests": tests,
             "draft_path": str(draft),
+            "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
         },

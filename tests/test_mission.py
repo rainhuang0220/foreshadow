@@ -164,6 +164,7 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
     assert "acme/toy" in md
     assert "不会自动" in md
+    assert "toy" in md.lower() or "README" in md
     assert (dest / "ISSUE_DRAFT.md").is_file()
     draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
     assert "等待你的确认" in draft
