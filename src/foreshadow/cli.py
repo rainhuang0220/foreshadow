@@ -244,6 +244,31 @@ def outcome(
     )
 
 
+@app.command("missions")
+def missions_cmd() -> None:
+    """List local Entry Missions. Never talks to GitHub."""
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.mission import list_missions, status_zh
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = ensure_local_user(conn)
+        items = list_missions(conn, uid)
+    finally:
+        conn.close()
+    if not items:
+        sys.stdout.write("no missions. run foreshadow enter owner/repo\n")
+        return
+    for row in items:
+        st = str(row.get("status") or "")
+        sys.stdout.write(
+            f"{row.get('id')} {row.get('full_name')} "
+            f"{st} ({status_zh(st)}) {row.get('next_step_zh') or ''}\n"
+        )
+
+
 @app.command()
 def watchlist(
     action: str | None = typer.Option(None, "--action", help="Filter by stance"),

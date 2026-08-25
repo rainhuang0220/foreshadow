@@ -11,6 +11,9 @@ def test_cli_outcome_records_without_github(tmp_home, monkeypatch):
     result = runner.invoke(app, ["outcome", "acme/toy", "--event", "abandoned"])
     assert result.exit_code == 0
     assert "does not post" in result.stdout
+    listed = runner.invoke(app, ["missions"])
+    assert listed.exit_code == 0
+    assert "acme/toy" in listed.stdout
 
 
 def test_help_lists_commands():
@@ -25,5 +28,6 @@ def test_help_lists_commands():
         "board",
         "enter",
         "outcome",
+        "missions",
     ):
         assert name in result.stdout
