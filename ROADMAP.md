@@ -27,7 +27,10 @@ PR-D Discovery pools A/B/C          ← in tree
  → PR-A Activity Momentum Preview   ← in tree; v2 only
  → S1 Earlyness × Evidence Preview  ← in tree; official still v1
  → S2 Community Access              ← in tree; v2 only
- → S3 Contribution Strategy + Entry Mission ← in tree; local only
+ → S3 Contribution Strategy + Entry Mission ← in tree; local clone + HITL
+ → S4 Human-in-the-loop gates              ← remote GitHub writes refused
+ → S5 Observed Access overlay              ← user events; formula weights frozen
+ → S6 Portfolio counts                     ← /api/portfolio
  → PR-S2 Maintainer / Community
  → PR-S3 Contributor Access
  → PR-S4 Contribution Opportunity + Entry Strategy
@@ -43,7 +46,7 @@ Multi-source discovery (HN / Reddit / …), GH Archive backfill of `v7` (**label
 
 ## P2 — contribution assistance (human still submits)
 
-On **entered** repos only: clone, issue clustering, local PR draft. Still never auto-push to third-party repos.
+On **entered** repos only: shallow clone is in tree; issue clustering and local PR draft still later. Still never auto-push to third-party repos.
 
 ## P3 — portfolio
 

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 through **S2 Access + S3 Strategy + Entry Mission + S4 gates + S5 events + S6 portfolio**. Official still **v1**. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 through **S2–S6 plus local clone, observed Access overlay, medium PR sample**. Official still **v1**. |
 | **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not cut over Official to v2. |
 | **Scoring version** | **Official v1**. Preview **v2** dual-written; never Official. |
 | **Discovery version** | **v2 recall** (14 queries, pools A/B/C, exposure quotas, no star pre-rank). Official scoring still v1. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
@@ -34,11 +34,14 @@
 - **S1 Preview:** Earlyness × Evidence × Opportunity Window + stage + experimental pool. No star band/veto/bonus. Report: [`docs/opportunity-engine-v2-s1-report.md`](docs/opportunity-engine-v2-s1-report.md).
 - **S2 Community Access:** Access Score independent of Gap; PR merge/review rates; UNKNOWN≠0. Report: [`docs/opportunity-engine-v2-s2-report.md`](docs/opportunity-engine-v2-s2-report.md).
 - **S3 + Entry Mission:** recommended entry path (not default PR); Board **开始进入** creates a local mission (`entry_missions`). Remote GitHub writes stay blocked until explicit approval.
+- **Local clone:** `git clone --depth 1` into `$FORESHADOW_HOME/work/{owner}__{repo}/repo`. Fail-soft. Never push. Tokens stripped from clone env.
+- **S5 overlay:** `observed_access` from this user's `contribution_events`. UNKNOWN if fewer than 3 outcomes. Does **not** retune Access weights.
+- **Medium Access:** closed-PR REST page on Phase M (merge rate; review stays UNKNOWN). Next dogfood run fills it.
 
 ## In Progress
 
 - 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
-- Next: S2 maintainer depth or hydrate the experimental 15 so Evidence is known. Do not cut over Official.
+- Next hydrate will populate medium-tier PR samples so Access UNKNOWN on 90/120 can drop. Do not cut over Official.
 
 ## Blocked
 
@@ -46,7 +49,7 @@
 
 ## Next Action
 
-Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D, PR-V, PR-H, PR-A, and S1 Preview are in tree.** Official remains v1. 1-push toys are experimental-pool; 2★ with real evidence can stay; 1626★ breakout is not auto-killed.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0 through S6 + local clone is in tree. Official remains v1. Tomorrow morning: `FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview` → login → **开始进入**.
 
 ## Known Bugs
 

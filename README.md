@@ -70,7 +70,7 @@ uv run foreshadow board --preview --no-open
 
 Then open **http://127.0.0.1:8765/** in a browser (the command also opens a tab unless `--no-open`).
 
-The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: stage, earlyness, evidence, opportunity window, access, recommended entry path, five dimensions, Chair, and **开始进入**. That button creates an Entry Mission (local plan only). Foreshadow never opens Issues/PRs or pushes until you explicitly approve a remote action.
+The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: stage, earlyness, evidence, opportunity window, access, recommended entry path, five dimensions, Chair, and **开始进入**. That button creates an Entry Mission, writes `FORESHADOW.md`, and may `git clone --depth 1` into `$FORESHADOW_HOME/work/`. It never opens Issues/PRs or pushes. **查看任务** lists missions. Review radio **进入** only records a personal stance (hydrate / watchlist) — it does not start a mission.
 
 `--export-html` still writes a static Chinese list (accordion) under `preview/YYYY-MM-DD/` or `reports/`. It is an export, not the product.
 

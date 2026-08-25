@@ -112,3 +112,14 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | S3-1 | Default entry is Issue/Discussion/Reproduction, not PR. |
 | S3-2 | `开始进入` creates a local Entry Mission. Clone/local files allowed. |
 | S3-3 | Remote GitHub mutations require explicit approval and are refused by default. |
+| S3-4 | Default contributor skills are Python / docs / tests. Hard languages (Rust/C/C++/CUDA) do not get a core-rewrite entry. |
+| S3-5 | Long-term contributor potential is explainable (access × evidence × stage) and NA when unknown. |
+
+## S4 / S5 / S6
+
+| ID | Decision |
+|---|---|
+| S4-1 | `/api/mission/remote` always refuses. Clone is local-only. |
+| S5-1 | Observed Access is a visible overlay from this user's events. Access formula weights stay published and unused by S5. |
+| S5-2 | Overlay sample under 3 outcomes → UNKNOWN, not 0. |
+| S6-1 | Portfolio counts missions/events. It does not scrape third-party GitHub. |

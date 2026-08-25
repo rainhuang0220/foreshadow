@@ -1,40 +1,42 @@
 # 12-HOUR ITERATION REPORT
 
-Elapsed (this session): started `2026-08-25T17:14:36Z`. Stages below shipped as separate commits on `p0-implementation`.
-
-Official still **v1 / 55 / 35 / local v7 / empty Top 5**. No third-party GitHub writes.
+Elapsed: started `2026-08-25T17:14:36Z`. This checkpoint continues the same authorized window. Official still **v1 / 55 / 35 / local v7 / empty Top 5**. No third-party GitHub writes.
 
 ## Stages completed
 
 ### S2 Community Access
 Access Score 0–100 from external PR merge/review, maintainer TTR, onboarding. Independent of Contributor Gap. UNKNOWN ≠ 0.
 
-Replay 2026-08-25: 90/120 UNKNOWN (no Phase B PR sample); known 30 mix VERY_LOW–HIGH across 20–300 / 300–1000 / 1000+ bands.
+Replay 2026-08-25 (existing hydrate): 30/120 known (Phase B); 90 UNKNOWN until the next run picks up the new medium closed-PR page.
 
 Commit: `e89853c` `feat: add community access scoring`
 
 ### S3 Contribution Strategy
-Default path is Issue / Discussion / Reproduction / Docs / Tests — **not PR**. Experimental pool → Discussion.
+Default path is Issue / Discussion / Reproduction / Docs / Tests — **not PR**. Experimental pool → Discussion. Hard languages do not get a core-rewrite entry. Long-term potential is explainable and NA when unknown.
 
 ### Entry Mission
-Board **开始进入** and CLI `foreshadow enter owner/repo` create `entry_missions`, local `work/` folder, `FORESHADOW.md`. Status `MISSION_READY`.
+Board **开始进入** and CLI `foreshadow enter owner/repo` create `entry_missions`, write `FORESHADOW.md`, and `git clone --depth 1` into `$FORESHADOW_HOME/work/{owner}__{repo}/repo`.
 
-Commit: `2e0419e` `feat: add contribution strategy and entry mission`
+Verified: `foreshadow enter rainhuang0220/foreshadow` → `clone=cloned`, status `WAITING_USER_APPROVAL`. Board POST `/api/mission` + `/setup` cloned `eigenpal/docx-editor`.
 
 ### S4 Human-in-the-loop
-`/api/mission/remote` always returns blocked. Allowed transitions cannot jump to SUBMITTED via GitHub. Copy: 等待你的确认才能执行任何远程 GitHub 操作.
+`/api/mission/remote` always returns blocked. Transitions cannot jump to `SUBMITTED`. Copy: 等待你的确认才能执行任何远程 GitHub 操作.
+
+Review radio **进入** is now **记入观察清单（不是创建任务）** so it is not confused with **开始进入**.
 
 ### S5 Contribution Learning
-`contribution_events` records `entered` / `local_setup`. Not yet used to retune Access (weights stay explainable).
+`contribution_events` records `entered` / `local_setup` / `clone_ok` plus user-marked outcomes. `observed_access` is a **visible overlay**. Formula Access weights are unchanged. Fewer than 3 outcomes → UNKNOWN, not 0.
 
 ### S6 Reputation / Portfolio
-`GET /api/portfolio` counts missions and events. Does not scrape third-party GitHub.
+`GET /api/portfolio` counts missions/events and includes `observed_access`. Does not scrape third-party GitHub.
 
 ## Tests
-`uv run pytest` → **300 passed**.
+`uv run pytest` → **313 passed**.
 
 ## Real experiments
-Same 2026-08-25 120, in-memory, no fake snapshots.
+- Dogfood sqlite run_id=2 (2026-08-25): 120 candidates, Phase B 30 / medium 30 / lightweight 60. Access terms only on the 30 Phase B rows until the next hydrate.
+- Local clone of `rainhuang0220/foreshadow` and `eigenpal/docx-editor` succeeded (`--depth 1`).
+- Board on `:8767`: register → board → 开始进入 → clone → remote create_pr blocked.
 
 ## What you can do tomorrow morning
 
@@ -43,21 +45,25 @@ cd .worktrees/p0-implementation
 FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview
 ```
 
-1. 打开 http://127.0.0.1:8765/
-2. 登录
-3. 点开 `curie-eng/curie` 或 `bobmatnyc/trusty-tools`
-4. 看阶段 / 证据 / 进入通道 / **推荐入口**
-5. 点 **开始进入**
-6. 阅读 Entry Mission；确认文案写着不会自动发 Issue/PR
+1. Open http://127.0.0.1:8765/
+2. Log in
+3. Open `eigenpal/docx-editor` (or `curie-eng/curie` / `bobmatnyc/trusty-tools`)
+4. Read 阶段 / 证据 / 进入通道 / **推荐入口**
+5. Click **开始进入** (not the review radio 记入观察清单)
+6. Wait for local clone; read FORESHADOW.md
+7. Confirm the banner: the system will not post Issues/PRs until you say so
+8. **查看任务** lists what you entered; **停止任务** abandons
+
+CLI equivalent: `FORESHADOW_HOME=dogfood/local/home uv run foreshadow enter owner/repo`
 
 ## What remains
-- Actual `git clone --depth 1` (today only creates a work folder)
-- Browser-verified UX pass
-- Using S5 events to update Access weights
-- Real merge tracking after you manually open PRs
+- Re-run hydrate so medium closed-PR samples fill Access on ~30 more repos
+- Optional: GraphQL `prsMerged` on Phase A for full-pool Access (budget/complexity tradeoff)
+- S5 overlay is not blended into rank
+- Local PR draft / patch attach still later
 - Official v2 cutover (not this window)
 
 ## Top remaining bottlenecks
-1. Access UNKNOWN on 90/120 until more Phase B PR samples
-2. Entry Mission is a plan, not a full local toolchain
-3. Human approval UI does not yet attach a local patch
+1. Access UNKNOWN on 90/120 until the next dogfood hydrate
+2. Mission is not yet joined onto every board card (list still offers 开始进入 even if a mission exists)
+3. No automatic GitHub merge tracking — user marks `pr_merged`

@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Engine 2.0 S2 Community Access: Access Score from external PR merge/review, maintainer TTR, onboarding. Not Contributor Gap. Board 进入通道.
 - Engine 2.0 S3 + Entry Mission: per-repo entry path (Issue / 复现 / 文档 / 讨论…). Board **开始进入** writes `entry_missions`. No automatic GitHub writes.
 - Engine 2.0 S4–S6: mission status transitions, contribution_events, `/api/portfolio`, CLI `foreshadow enter`. Remote GitHub writes still refused.
+- Entry Mission local setup: `git clone --depth 1` into `$FORESHADOW_HOME/work/…/repo`, FORESHADOW.md plan, fail-soft if git/network missing. Tokens are not passed to git.
+- S5 Observed Access overlay (`/api/portfolio.observed_access`). Does not retune Access weights. UNKNOWN ≠ 0.
+- Medium-tier closed-PR REST page feeds Access merge rate (review rate stays UNKNOWN).
+- Board: **查看任务**, **停止任务**, outcome buttons, review radio **进入** relabeled so it is not 开始进入.
+- Strategy: long-term potential; hard-language repos stay on Issue / docs / reproduction.
 
 ### Changed
 

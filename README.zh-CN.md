@@ -28,7 +28,7 @@ uv sync --group dev
 FORESHADOW_HOME=… uv run foreshadow board --preview
 ```
 
-浏览器打开 **http://127.0.0.1:8765/**（仅本机）。先注册/登录，点开项目看阶段 / 证据 / 进入通道 / 推荐入口，再点 **开始进入** 生成 Entry Mission。系统只做本地准备，不会自动向第三方仓库发 Issue / PR。
+浏览器打开 **http://127.0.0.1:8765/**（仅本机）。先注册/登录，点开项目看阶段 / 证据 / 进入通道 / 推荐入口，再点 **开始进入**。系统会生成本地 Entry Mission，并可 `git clone --depth 1`。**不会**自动向第三方仓库发 Issue / PR。远程操作会停在「等待你的确认」。点 **查看任务** 看已进入的项目。
 
 静态导出：`foreshadow board --preview --export-html`。
 

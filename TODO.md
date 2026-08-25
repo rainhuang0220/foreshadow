@@ -24,6 +24,10 @@
 - [x] **S4** Remote GitHub actions blocked pending approval
 - [x] **S5** contribution_events log
 - [x] **S6** /api/portfolio counts
+- [x] Local `git clone --depth 1` for Entry Mission (fail-soft, never push)
+- [x] S5 Observed Access overlay (not weight retune)
+- [x] Medium-tier closed-PR sample for Access
+- [ ] Next dogfood hydrate so medium Access is populated
 - [ ] PR-S3…S5 scoring / preview
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 
