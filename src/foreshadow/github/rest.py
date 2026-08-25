@@ -117,6 +117,17 @@ def fetch_community_profile(
     return body if isinstance(body, dict) else {}
 
 
+def fetch_issue(
+    client: GitHubClient, owner: str, repo: str, number: int
+) -> dict[str, Any] | None:
+    """GET a single issue/PR. Never posts."""
+    resp = client.get(f"/repos/{owner}/{repo}/issues/{int(number)}")
+    if resp.status_code == 204:
+        return None
+    body = resp.json()
+    return body if isinstance(body, dict) else None
+
+
 def fetch_closed_pulls(
     client: GitHubClient, owner: str, repo: str, *, per_page: int = 10
 ) -> list[dict[str, Any]]:

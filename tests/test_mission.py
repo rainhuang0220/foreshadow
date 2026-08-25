@@ -171,6 +171,52 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     assert out["branch"]["ok"] is True
 
 
+def test_setup_embeds_cited_issue(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        if "clone" in cmd:
+            clone_dest = Path(cmd[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def fake_fetch(full_name: str, number: int):
+        assert full_name == "acme/toy"
+        assert number == 73
+        return {
+            "number": 73,
+            "title": "crash on empty batch",
+            "body": "repro: pass []",
+            "html_url": "https://github.com/acme/toy/issues/73",
+        }
+
+    out = setup_local_environment(
+        conn, mid, uid, tmp_home, runner=runner, fetch_issue=fake_fetch
+    )
+    md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
+    assert "#73" in md
+    assert "repro: pass []" in md
+    assert out["mission"].get("cited_issue", {}).get("number") == 73
+
+
 def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
     monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
     from foreshadow.mission import create_for_user

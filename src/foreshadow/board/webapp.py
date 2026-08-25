@@ -559,6 +559,7 @@ function missionView(m) {
     <p class="meta"><strong>下一步：</strong>${esc(m.next_step_zh || "先阅读推荐入口")}</p>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
     <p><strong>第一步：</strong>${esc((m.steps_zh && m.steps_zh[0]) || "阅读本地 FORESHADOW.md")}</p>
+    ${m.cited_issue && m.cited_issue.number ? `<p><strong>建议先看 Issue #${esc(m.cited_issue.number)}</strong> ${esc(m.cited_issue.title||"")}</p>` : ""}
     ${m.draft_excerpt ? `<h3>本地草稿（未发送）</h3><pre class="meta">${esc(m.draft_excerpt)}</pre>` : ""}
     <h3>行动计划</h3>
     <ol>${steps}</ol>

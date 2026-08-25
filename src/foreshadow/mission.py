@@ -59,6 +59,7 @@ USER_EVENTS = frozenset(
     }
 )
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+ISSUE_NUM_RE = re.compile(r"#(\d+)")
 CLONE_TIMEOUT_S = 120
 
 
@@ -473,7 +474,16 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"README：{'有' if inspect.get('has_readme') else '未知'} · "
         f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
         f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n"
-        f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n\n"
+        f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n"
+    )
+    cited = extra.get("cited_issue") or {}
+    if cited.get("number"):
+        text += (
+            f"\n引用 Issue #{cited['number']}：{cited.get('title') or ''}\n"
+            f"{(cited.get('body') or '')[:400]}\n"
+        )
+    text += (
+        "\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
         "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         "等待你的确认才能执行任何远程 GitHub 操作。\n"
@@ -781,6 +791,34 @@ def patch_mission_plan(
     return plan
 
 
+def cited_issue_number(mission: Mission) -> int | None:
+    blob = " ".join([*mission.why_now, *mission.strategy.why, *mission.strategy.steps_zh])
+    match = ISSUE_NUM_RE.search(blob)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _load_cited_issue(full_name: str, number: int) -> dict[str, Any] | None:
+    try:
+        from foreshadow.github.client import GitHubClient, resolve_token
+        from foreshadow.github.rest import fetch_issue
+    except ImportError:
+        return None
+    try:
+        owner, name = full_name.split("/", 1)
+        client = GitHubClient(resolve_token())
+        raw = fetch_issue(client, owner, name, number)
+    except (OSError, ValueError, KeyError, RuntimeError):
+        return None
+    if not raw:
+        return None
+    title = str(raw.get("title") or "")[:200]
+    body = str(raw.get("body") or "")[:800]
+    html = str(raw.get("html_url") or "")
+    return {"number": number, "title": title, "body": body, "html_url": html}
+
+
 def setup_local_environment(
     conn: sqlite3.Connection,
     mission_id: int,
@@ -788,6 +826,7 @@ def setup_local_environment(
     data_dir: Path,
     *,
     runner: Any | None = None,
+    fetch_issue: Any | None = None,
 ) -> dict[str, Any]:
     plan = load_mission_plan(conn, mission_id, user_id)
     if plan is None:
@@ -841,7 +880,18 @@ def setup_local_environment(
         else {"ok": False, "status": "skipped"}
     )
     draft = write_issue_draft(dest, mission)
-    write_mission_doc(dest, mission, extra={"clone": clone, "inspect": inspect})
+    issue_n = cited_issue_number(mission)
+    cited = None
+    if issue_n is not None:
+        try:
+            if fetch_issue is not None:
+                cited = fetch_issue(full_name, issue_n)
+            elif os.environ.get("FORESHADOW_SKIP_CLONE") != "1":
+                cited = _load_cited_issue(full_name, issue_n)
+        except (OSError, ValueError, TypeError, RuntimeError):
+            cited = None
+    extra = {"clone": clone, "inspect": inspect, "cited_issue": cited or {}}
+    write_mission_doc(dest, mission, extra=extra)
     dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
     after_setup = str(
         conn.execute(
@@ -862,6 +912,7 @@ def setup_local_environment(
             "tests": tests,
             "draft_path": str(draft),
             "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
+            "cited_issue": cited or {},
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
         },
