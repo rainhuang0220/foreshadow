@@ -148,11 +148,12 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
 
     def runner(cmd, **_k):
-        clone_dest = Path(cmd[-1])
-        clone_dest.mkdir(parents=True)
-        (clone_dest / ".git").mkdir()
-        (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if "clone" in cmd:
+            clone_dest = Path(cmd[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="foreshadow/entry\n", stderr="")
 
     out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
     assert out["clone"]["ok"] is True
@@ -163,3 +164,42 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
     assert "acme/toy" in md
     assert "不会自动" in md
+    assert (dest / "ISSUE_DRAFT.md").is_file()
+    draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
+    assert "等待你的确认" in draft
+    assert out["branch"]["ok"] is True
+
+
+def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    from foreshadow.mission import create_for_user
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    first = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
+    second = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
+    assert first.id == second.id
+    n = conn.execute(
+        "SELECT COUNT(*) FROM entry_missions WHERE user_id=? AND full_name=?",
+        (uid, "acme/toy"),
+    ).fetchone()[0]
+    assert n == 1
+
+
+def test_local_branch_never_pushes(tmp_path):
+    from foreshadow.mission import create_local_branch
+
+    clone = tmp_path / "repo"
+    clone.mkdir()
+    (clone / ".git").mkdir()
+    seen: list[list[str]] = []
+
+    def runner(cmd, **_k):
+        seen.append(list(cmd))
+        return SimpleNamespace(returncode=0, stdout="foreshadow/entry\n", stderr="")
+
+    out = create_local_branch(clone, runner=runner)
+    assert out["ok"] is True
+    assert all(part != "push" for cmd in seen for part in cmd)
+    assert any("foreshadow/entry" in cmd for cmd in seen)

@@ -555,12 +555,13 @@ function missionView(m) {
     <p class="meta">阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${n(m.access)}</p>
     <p><strong>为什么现在进入：</strong>${esc((m.why_now||[]).join("；") || "—")}</p>
     <p><strong>推荐入口：</strong>${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
-    <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status||"—")}</p>
+    <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status_zh || m.status || "—")}</p>
     <p class="meta"><strong>下一步：</strong>${esc(m.next_step_zh || "先阅读推荐入口")}</p>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
     <h3>行动计划</h3>
     <ol>${steps}</ol>
     <p class="meta">本地目录：${esc(m.local_path || "尚未准备")} · clone：${esc(clone)}</p>
+    <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}</p>
     <p>
       <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
       <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>

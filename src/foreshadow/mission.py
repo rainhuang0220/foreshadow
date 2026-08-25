@@ -94,9 +94,10 @@ class Mission:
             "needs_user_approval": self.needs_user_approval,
             "local_path": self.local_path,
             "next_step_zh": next_step_zh(self.status),
+            "status_zh": status_zh(self.status),
             "git_ops_zh": [
                 "git clone --depth 1（仅本地）",
-                "可在 clone 目录建本地分支",
+                "本地分支 foreshadow/entry（不 push）",
                 "可本地 commit",
                 "不会 push / 开 Issue / 开 PR",
             ],
@@ -236,6 +237,20 @@ def create_for_user(
     data_dir: Path,
 ) -> Mission:
     from foreshadow.pipeline import load_score_input
+
+    existing = conn.execute(
+        """
+        SELECT id FROM entry_missions
+        WHERE user_id=? AND full_name=?
+          AND status NOT IN ('ABANDONED', 'MERGED')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (user_id, full_name),
+    ).fetchone()
+    if existing:
+        plan = load_mission_plan(conn, int(existing[0]), user_id)
+        if plan is not None:
+            return mission_from_plan(plan)
 
     row = conn.execute(
         "SELECT id FROM repos WHERE full_name=?", (full_name,)
@@ -391,6 +406,24 @@ def refuse_remote_action(action: str) -> dict[str, Any]:
     }
 
 
+def status_zh(status: str | None) -> str:
+    return {
+        "MISSION_READY": "任务已就绪",
+        "LOCAL_SETUP": "正在准备本地环境",
+        "WAITING_USER_APPROVAL": "等待你确认远程操作",
+        "DRAFT_READY": "本地草稿已好",
+        "IMPLEMENTING": "本地实现中",
+        "WAITING_MAINTAINER": "等待维护者",
+        "REVIEWING": "按反馈修改",
+        "SUBMITTED": "你已自行提交",
+        "MERGED": "已合并，可继续跟进",
+        "FOLLOW_UP": "后续跟进",
+        "ABANDONED": "已停止",
+        "BLOCKED": "被拦住",
+        "INVESTIGATING": "还在阅读项目",
+    }.get(status or "", status or "—")
+
+
 def next_step_zh(status: str | None) -> str:
     return {
         "MISSION_READY": "准备本地环境（clone / 读文档），不要发 Issue 或 PR",
@@ -482,11 +515,6 @@ def clone_public_repo(
         }
     clone_dir.parent.mkdir(parents=True, exist_ok=True)
     run = runner or subprocess.run
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GIT_ASKPASS"] = ""
-    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN"):
-        env.pop(key, None)
     cmd = ["git", "clone", "--depth", "1", "--", url, str(clone_dir)]
     try:
         completed = run(
@@ -495,7 +523,7 @@ def clone_public_repo(
             text=True,
             timeout=timeout,
             check=False,
-            env=env,
+            env=_git_env(),
         )
     except FileNotFoundError:
         return {
@@ -526,6 +554,134 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     }
 
 
+def _git_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = ""
+    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN"):
+        env.pop(key, None)
+    return env
+
+
+def create_local_branch(
+    clone_dir: Path,
+    *,
+    runner: Any | None = None,
+    name: str = "foreshadow/entry",
+) -> dict[str, Any]:
+    """Create a local branch. Never push."""
+    if not (Path(clone_dir) / ".git").exists():
+        return {"ok": False, "status": "no_repo", "error": "no clone"}
+    run = runner or subprocess.run
+    cmd = ["git", "-C", str(clone_dir), "checkout", "-B", name]
+    try:
+        completed = run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+            env=_git_env(),
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "status": "failed", "error": str(exc)}
+    if getattr(completed, "returncode", 1) != 0:
+        err = (getattr(completed, "stderr", None) or "")[:300]
+        return {"ok": False, "status": "failed", "error": err or "checkout failed"}
+    return {"ok": True, "status": "ready", "name": name}
+
+
+def probe_python_tests(
+    clone_dir: Path,
+    *,
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    """Collect-only pytest if present. No pip install. Fail-soft."""
+    root = Path(clone_dir)
+    if not root.is_dir():
+        return {"ok": False, "status": "no_repo"}
+    if not (
+        (root / "pyproject.toml").exists()
+        or (root / "pytest.ini").exists()
+        or (root / "tests").is_dir()
+    ):
+        return {"ok": False, "status": "none"}
+    run = runner or subprocess.run
+    cmd = ["python", "-m", "pytest", "--collect-only", "-q"]
+    try:
+        completed = run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            cwd=str(root),
+            env=_git_env(),
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "status": "failed", "error": str(exc)}
+    code = getattr(completed, "returncode", 1)
+    out = (getattr(completed, "stdout", None) or "")[:400]
+    return {
+        "ok": code == 0,
+        "status": "collect_ok" if code == 0 else "collect_failed",
+        "summary": out or None,
+    }
+
+
+def write_issue_draft(dest: Path, mission: Mission) -> Path:
+    path = Path(dest) / "ISSUE_DRAFT.md"
+    why = "\n".join(f"- {w}" for w in mission.why_now) or "- （待补充）"
+    steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+    kind = {
+        "DISCUSSION": "讨论草稿（不要当成 Issue 乱发）",
+        "REPRODUCTION": "复现说明草稿",
+        "DOCUMENTATION": "文档缺口说明草稿",
+        "TEST": "测试缺口说明草稿",
+        "BUG_FIX": "修复说明草稿（先沟通）",
+    }.get(mission.strategy.path, "Issue 草稿")
+    path.write_text(
+        f"# {kind}\n\n"
+        f"项目：{mission.full_name}\n"
+        f"标题：{mission.strategy.summary_zh}\n\n"
+        f"## 为什么写这份草稿\n{why}\n\n"
+        f"## 建议怎么说\n{steps}\n\n"
+        "这只是本地草稿。等待你的确认才能发到 GitHub。\n"
+        "Foreshadow 不会自动 post Issue / Discussion / PR。\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def mission_from_plan(plan: dict[str, Any]) -> Mission:
+    from foreshadow.pipeline.strategy import StrategyResult
+
+    raw = plan.get("strategy") if isinstance(plan.get("strategy"), dict) else {}
+    strat = StrategyResult(
+        path=raw.get("path") or plan.get("entry_path") or "ISSUE",
+        summary_zh=raw.get("summary_zh") or "",
+        steps_zh=list(raw.get("steps_zh") or plan.get("steps_zh") or []),
+        difficulty=raw.get("difficulty") or plan.get("difficulty") or "Medium",
+        effort=raw.get("effort") or plan.get("effort") or "6h",
+        allows_direct_pr=bool(raw.get("allows_direct_pr")),
+        why=list(raw.get("why") or []),
+    )
+    return Mission(
+        full_name=str(plan.get("full_name") or ""),
+        status=plan.get("status") or "MISSION_READY",  # type: ignore[arg-type]
+        strategy=strat,
+        stage=plan.get("stage"),
+        earlyness=plan.get("earlyness"),
+        evidence=plan.get("evidence"),
+        window=plan.get("opportunity_window"),
+        access=plan.get("access"),
+        why_now=list(plan.get("why_now") or []),
+        needs_user_approval=True,
+        local_path=plan.get("local_path"),
+        id=plan.get("id"),
+    )
+
+
 def load_mission_plan(
     conn: sqlite3.Connection, mission_id: int, user_id: int
 ) -> dict[str, Any] | None:
@@ -554,6 +710,7 @@ def load_mission_plan(
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
             "next_step_zh": next_step_zh(str(row[2])),
+            "status_zh": status_zh(str(row[2])),
         }
     )
     return plan
@@ -645,6 +802,18 @@ def setup_local_environment(
             )
         except (TypeError, ValueError, KeyError):
             pass
+    clone_dir = Path(clone["path"]) if clone.get("path") else dest / "repo"
+    branch = (
+        create_local_branch(clone_dir, runner=runner)
+        if clone.get("ok")
+        else {"ok": False, "status": "skipped"}
+    )
+    tests = (
+        probe_python_tests(clone_dir, runner=runner)
+        if clone.get("ok")
+        else {"ok": False, "status": "skipped"}
+    )
+    draft = write_issue_draft(dest, mission)
     write_mission_doc(dest, mission, extra={"clone": clone, "inspect": inspect})
     dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
     after_setup = str(
@@ -662,6 +831,9 @@ def setup_local_environment(
         {
             "clone": clone,
             "inspect": inspect,
+            "branch": branch,
+            "tests": tests,
+            "draft_path": str(draft),
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
         },
@@ -686,8 +858,16 @@ def setup_local_environment(
     )
     updated["clone"] = clone
     updated["inspect"] = inspect
+    updated["branch"] = branch
+    updated["tests"] = tests
     updated["needs_user_approval"] = True
-    return {"mission": updated, "clone": clone, "inspect": inspect}
+    return {
+        "mission": updated,
+        "clone": clone,
+        "inspect": inspect,
+        "branch": branch,
+        "tests": tests,
+    }
 
 
 def record_user_event(
