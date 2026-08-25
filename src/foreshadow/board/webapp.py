@@ -579,7 +579,9 @@ function missionView(m) {
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
     <p><strong>第一步：</strong>${esc(first)}</p>
     ${root ? `<p class="meta">本地先打开：${esc(root)}/FORESHADOW.md 和 ${esc(root)}/ISSUE_DRAFT.md<br/>代码在 ${esc(root)}/repo ，分支 foreshadow/entry。不要 push。</p>` : ""}
+    ${m.inspect && m.inspect.has_readme ? `<p class="meta">README：有${(m.inspect.readme_headings||[]).length ? " · " + esc((m.inspect.readme_headings||[]).slice(0,6).join("；")) : ""}</p>` : ""}
     ${m.cited_issue && m.cited_issue.number ? `<p><strong>建议先看 Issue #${esc(m.cited_issue.number)}</strong> ${esc(m.cited_issue.title||"")}</p>` : ""}
+    ${m.cited_issue && m.cited_issue.body ? `<pre class="meta">${esc(String(m.cited_issue.body).slice(0,400))}</pre>` : ""}
     ${m.draft_excerpt ? `<h3>本地草稿（未发送）</h3><pre class="meta">${esc(m.draft_excerpt)}</pre>` : ""}
     <h3>行动计划</h3>
     <ol>${steps}</ol>
