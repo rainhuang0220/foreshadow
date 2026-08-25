@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from foreshadow.models import FeaturesBlob
@@ -611,19 +612,66 @@ def _git_env() -> dict[str, str]:
     return env
 
 
+ENTRY_BRANCH = "foreshadow/entry"
+
+
+def refuse_unsafe_local_cmd(cmd: list[str] | str) -> dict[str, Any] | None:
+    """Block installers and downloaders. Return None if argv is allowed."""
+    parts = list(cmd) if isinstance(cmd, list) else str(cmd).split()
+    argv0 = Path(parts[0]).name.lower() if parts else ""
+    text = " ".join(parts).lower()
+    blocked = {
+        "make",
+        "cmake",
+        "cargo",
+        "curl",
+        "wget",
+        "npm",
+        "yarn",
+        "pnpm",
+        "bun",
+        "docker",
+        "tox",
+        "nox",
+    }
+    if argv0 in blocked:
+        return {"ok": False, "status": "blocked", "error": f"refused {argv0}"}
+    needles = (
+        "pip install",
+        "python -m pip",
+        "npm install",
+        "yarn ",
+        "cargo fetch",
+        "cargo test",
+        "curl ",
+        "| sh",
+        "| bash",
+    )
+    if any(n in text for n in needles):
+        return {"ok": False, "status": "blocked", "error": f"refused {text[:80]}"}
+    if "push" in parts or "-u" in parts or "--set-upstream" in parts:
+        return {"ok": False, "status": "blocked", "error": "refused git push"}
+    return None
+
+
 def create_local_branch(
     clone_dir: Path,
     *,
     runner: Any | None = None,
-    name: str = "foreshadow/entry",
+    name: str = ENTRY_BRANCH,
 ) -> dict[str, Any]:
-    """Create a local branch. Never push."""
-    if not (Path(clone_dir) / ".git").exists():
-        return {"ok": False, "status": "no_repo", "error": "no clone"}
+    """Local branch only. Idempotent. Never push, never -B reset."""
+    root = Path(clone_dir)
+    if not (root / ".git").exists():
+        return {"ok": False, "status": "no_repo", "name": name, "error": "no clone"}
     run = runner or subprocess.run
-    cmd = ["git", "-C", str(clone_dir), "checkout", "-B", name]
-    try:
-        completed = run(
+
+    def git(*args: str) -> Any:
+        cmd = ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", *args]
+        blocked = refuse_unsafe_local_cmd(cmd)
+        if blocked is not None:
+            return SimpleNamespace(returncode=1, stdout="", stderr=blocked["error"])
+        return run(
             cmd,
             capture_output=True,
             text=True,
@@ -631,31 +679,70 @@ def create_local_branch(
             check=False,
             env=_git_env(),
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return {"ok": False, "status": "failed", "error": str(exc)}
+
+    try:
+        exists = git("show-ref", "--verify", "--quiet", f"refs/heads/{name}")
+        if getattr(exists, "returncode", 1) == 0:
+            completed = git("checkout", name)
+            status = "exists"
+        else:
+            completed = git("checkout", "-b", name)
+            status = "created"
+    except FileNotFoundError:
+        return {"ok": False, "status": "no_git", "name": name, "error": "本机没有 git"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "status": "timeout", "name": name, "error": "branch timed out"}
     if getattr(completed, "returncode", 1) != 0:
         err = (getattr(completed, "stderr", None) or "")[:300]
-        return {"ok": False, "status": "failed", "error": err or "checkout failed"}
-    return {"ok": True, "status": "ready", "name": name}
+        return {"ok": False, "status": "failed", "name": name, "error": err or "checkout failed"}
+    return {"ok": True, "status": status, "name": name, "error": None}
 
 
-def probe_python_tests(
-    clone_dir: Path,
-    *,
-    runner: Any | None = None,
-) -> dict[str, Any]:
-    """Collect-only pytest if present. No pip install. Fail-soft."""
+def detect_local_tests(clone_dir: Path) -> dict[str, Any]:
     root = Path(clone_dir)
     if not root.is_dir():
-        return {"ok": False, "status": "no_repo"}
-    if not (
+        return {"kind": "none", "reason": "no_repo"}
+    names = {p.name.lower() for p in root.iterdir()}
+    py = (
         (root / "pyproject.toml").exists()
         or (root / "pytest.ini").exists()
         or (root / "tests").is_dir()
-    ):
-        return {"ok": False, "status": "none"}
+    )
+    if "package.json" in names and not py:
+        return {"kind": "node", "reason": "npm_test_blocked"}
+    if "cargo.toml" in names and not py:
+        return {"kind": "cargo", "reason": "cargo_blocked"}
+    if py:
+        return {"kind": "pytest", "reason": "pytest"}
+    return {"kind": "none", "reason": "none"}
+
+
+def run_local_tests(
+    clone_dir: Path,
+    *,
+    runner: Any | None = None,
+    execute: bool = False,
+) -> dict[str, Any]:
+    """Allowlisted python -m pytest only. Default collect-only. No installs."""
+    import sys
+
+    detected = detect_local_tests(clone_dir)
+    if detected["kind"] != "pytest":
+        return {
+            "ok": False,
+            "status": "skipped",
+            "kind": detected["kind"],
+            "reason": detected["reason"],
+        }
+    if os.environ.get("FORESHADOW_SKIP_TESTS") == "1":
+        return {"ok": False, "status": "skipped", "kind": "pytest", "reason": "skipped"}
+    cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", "--maxfail=1"]
+    if not execute:
+        cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
+    blocked = refuse_unsafe_local_cmd(cmd)
+    if blocked is not None:
+        return blocked
     run = runner or subprocess.run
-    cmd = ["python", "-m", "pytest", "--collect-only", "-q"]
     try:
         completed = run(
             cmd,
@@ -663,18 +750,33 @@ def probe_python_tests(
             text=True,
             timeout=30,
             check=False,
-            cwd=str(root),
+            cwd=str(clone_dir),
             env=_git_env(),
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return {"ok": False, "status": "failed", "error": str(exc)}
+    except FileNotFoundError:
+        return {"ok": False, "status": "no_runner", "kind": "pytest"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "status": "timeout", "kind": "pytest"}
     code = getattr(completed, "returncode", 1)
-    out = (getattr(completed, "stdout", None) or "")[:400]
+    summary = (getattr(completed, "stdout", None) or "")[:400]
+    if execute:
+        status = "passed" if code == 0 else "failed"
+    else:
+        status = "collect_ok" if code == 0 else "collect_failed"
     return {
         "ok": code == 0,
-        "status": "collect_ok" if code == 0 else "collect_failed",
-        "summary": out or None,
+        "status": status,
+        "kind": "pytest",
+        "summary": summary or None,
     }
+
+
+def probe_python_tests(
+    clone_dir: Path,
+    *,
+    runner: Any | None = None,
+) -> dict[str, Any]:
+    return run_local_tests(clone_dir, runner=runner, execute=False)
 
 
 def write_fork_note(dest: Path, full_name: str) -> Path:
@@ -928,7 +1030,7 @@ def setup_local_environment(
         else {"ok": False, "status": "skipped"}
     )
     tests = (
-        probe_python_tests(clone_dir, runner=runner)
+        run_local_tests(clone_dir, runner=runner)
         if clone.get("ok")
         else {"ok": False, "status": "skipped"}
     )
