@@ -142,6 +142,15 @@ def test_persist_mission(tmp_home):
     assert row[1] == "DOCUMENTATION"
 
 
+def test_allowed_never_includes_submitted(tmp_home):
+    from foreshadow.mission import ALLOWED
+
+    for src, dests in ALLOWED.items():
+        assert src != "SUBMITTED"
+        assert "SUBMITTED" not in dests
+        assert "PR_DRAFT" not in dests
+
+
 def test_transition_cannot_jump_to_submitted(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
@@ -304,6 +313,9 @@ def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
     first = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
     second = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
     assert first.id == second.id
+    dest = tmp_home / "work" / "acme__toy"
+    assert (dest / "ISSUE_DRAFT.md").is_file()
+    assert (dest / "FORESHADOW.md").is_file()
     n = conn.execute(
         "SELECT COUNT(*) FROM entry_missions WHERE user_id=? AND full_name=?",
         (uid, "acme/toy"),

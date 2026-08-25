@@ -306,6 +306,9 @@ def create_for_user(
     dest = prepare_local_dir(data_dir, full_name)
     mission.local_path = str(dest)
     write_mission_doc(dest, mission)
+    write_issue_draft(dest, mission)
+    write_pr_draft(dest, mission)
+    write_fork_note(dest, full_name)
     persist_mission(conn, mission, user_id=user_id, repo_id=repo_id)
     record_event(
         conn,

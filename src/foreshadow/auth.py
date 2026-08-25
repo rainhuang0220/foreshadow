@@ -82,6 +82,23 @@ def ensure_local_user(conn: sqlite3.Connection) -> int:
     return int(found[0])
 
 
+def resolve_cli_user(conn: sqlite3.Connection) -> int:
+    """Prefer the latest unexpired Board session so CLI and Board share missions."""
+    now = datetime.now(UTC).isoformat()
+    row = conn.execute(
+        """
+        SELECT user_id FROM sessions
+        WHERE expires_at > ?
+        ORDER BY COALESCE(last_seen_at, created_at) DESC
+        LIMIT 1
+        """,
+        (now,),
+    ).fetchone()
+    if row:
+        return int(row[0])
+    return ensure_local_user(conn)
+
+
 def is_operator_user(conn: sqlite3.Connection, user_id: int) -> bool:
     row = conn.execute("SELECT is_local FROM users WHERE id=?", (user_id,)).fetchone()
     return bool(row and int(row[0]) == 1)

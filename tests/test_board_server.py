@@ -183,6 +183,14 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         after = a.get(f"{base}/api/board").json()
         card = next(c for c in after["candidates"] if c["full_name"] == "acme/x")
         assert card.get("mission_id") == mission["id"]
+        spoof = a.post(
+            f"{base}/api/mission/event",
+            json={"id": mission["id"], "event": "user_submitted"},
+        )
+        assert spoof.status_code == 200
+        assert spoof.json()["mission"]["status"] != "SUBMITTED"
+        listed_zh = a.get(f"{base}/api/missions").json()["missions"]
+        assert listed_zh[0].get("status_zh")
         ev = a.post(
             f"{base}/api/mission/event",
             json={"id": mission["id"], "event": "abandoned"},

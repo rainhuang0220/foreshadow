@@ -555,11 +555,12 @@ function missionListView() {
 
 function missionView(m) {
   if (!m) return "";
-  const steps = (m.steps_zh||[]).map((x,i) => `<li><strong>第 ${i+1} 步</strong> ${esc(x)}</li>`).join("");
+  const cloneOk = m.clone && m.clone.ok;
+  const stepsSrc = (m.steps_zh||[]).filter(s => !cloneOk || !String(s).includes("克隆"));
+  const steps = stepsSrc.map((x,i) => `<li><strong>第 ${i+1} 步</strong> ${esc(x)}</li>`).join("");
   const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
-  const cloneOk = m.clone && m.clone.ok;
   const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"}[clone] || clone);
   const first = cloneOk ? "打开本地 FORESHADOW.md，按里面的第一步做" : ((m.steps_zh && m.steps_zh[0]) || "阅读本地 FORESHADOW.md");
   const root = m.local_path || "";
@@ -584,6 +585,7 @@ function missionView(m) {
     <ol>${steps}</ol>
     <p class="meta">本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
     ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
+    ${m.tests && (m.tests.kind==="node" || m.tests.kind==="cargo") ? `<p class="meta">仓库测试是 ${esc(m.tests.kind)}。Foreshadow 不执行 npm/cargo。</p>` : ""}
     <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}${m.pr_draft_path ? " · 补丁草案：" + esc(m.pr_draft_path) + "（未发送）" : ""}</p>
     <p>
       <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
@@ -702,6 +704,12 @@ async function openExisting(id) {
   try {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
+    const found = (state.missions || []).find(x => x.id === id);
+    const needsSetup = found && found.status !== "ABANDONED" && !(found.clone && found.clone.ok);
+    if (needsSetup) {
+      await setupLocal(id);
+      return;
+    }
     state.showMissions = true;
     openMission(id);
   } catch (e) { alert(e.message); }

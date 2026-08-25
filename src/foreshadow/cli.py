@@ -175,7 +175,7 @@ def enter(
     repo: str = typer.Argument(..., help="owner/repo"),
 ) -> None:
     """Create a local Entry Mission. Never posts to GitHub."""
-    from foreshadow.auth import ensure_local_user
+    from foreshadow.auth import resolve_cli_user
     from foreshadow.mission import create_for_user
 
     if "/" not in repo:
@@ -185,7 +185,7 @@ def enter(
     conn = connect(path)
     migrate(conn)
     try:
-        uid = ensure_local_user(conn)
+        uid = resolve_cli_user(conn)
         mission = create_for_user(
             conn, user_id=uid, full_name=repo, data_dir=resolve_data_dir()
         )
@@ -196,6 +196,7 @@ def enter(
         )
         mission_status = setup["mission"].get("status") or mission.status
         clone_status = (setup.get("clone") or {}).get("status")
+        local_path = setup["mission"].get("local_path") or mission.local_path
     finally:
         conn.close()
     sys.stdout.write(
@@ -203,6 +204,8 @@ def enter(
         f"path={mission.strategy.path} status={mission_status} "
         f"clone={clone_status}\n"
         f"{mission.strategy.summary_zh}\n"
+        f"local {local_path}\n"
+        f"read {local_path}/FORESHADOW.md and {local_path}/ISSUE_DRAFT.md\n"
         "remote GitHub writes are blocked until you approve them.\n"
     )
 
@@ -217,7 +220,7 @@ def outcome(
     ),
 ) -> None:
     """Record a manual contribution outcome. Never talks to GitHub."""
-    from foreshadow.auth import ensure_local_user
+    from foreshadow.auth import resolve_cli_user
     from foreshadow.mission import USER_EVENTS, list_missions, record_user_event
 
     if event not in USER_EVENTS:
@@ -227,7 +230,7 @@ def outcome(
     conn = connect(path)
     migrate(conn)
     try:
-        uid = ensure_local_user(conn)
+        uid = resolve_cli_user(conn)
         items = list_missions(conn, uid)
         found = next((m for m in items if m.get("full_name") == repo), None)
         if found is None:
@@ -272,14 +275,14 @@ def sample_access() -> None:
 @app.command("missions")
 def missions_cmd() -> None:
     """List local Entry Missions. Never talks to GitHub."""
-    from foreshadow.auth import ensure_local_user
+    from foreshadow.auth import resolve_cli_user
     from foreshadow.mission import list_missions, status_zh
 
     path = resolve_data_dir() / "foreshadow.sqlite3"
     conn = connect(path)
     migrate(conn)
     try:
-        uid = ensure_local_user(conn)
+        uid = resolve_cli_user(conn)
         items = list_missions(conn, uid)
     finally:
         conn.close()
@@ -290,7 +293,8 @@ def missions_cmd() -> None:
         st = str(row.get("status") or "")
         sys.stdout.write(
             f"{row.get('id')} {row.get('full_name')} "
-            f"{st} ({status_zh(st)}) {row.get('next_step_zh') or ''}\n"
+            f"{st} ({status_zh(st)}) {row.get('next_step_zh') or ''} "
+            f"{row.get('local_path') or ''}\n"
         )
 
 
