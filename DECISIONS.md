@@ -96,3 +96,11 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | S1-3 | Opportunity Window = 75×√(E×Ev)+25×access. Gold needs both. Replaces v2 `entry_window` only. |
 | S1-4 | Experimental pool (thin evidence + young/tiny) is ranked after main in v2 `pool_rank`. Not a star veto. |
 | S1-5 | Stage is not a star table. Official v1 untouched. |
+
+## S2 Community Access (2026-08-26)
+
+| ID | Decision |
+|---|---|
+| S2-1 | Access Score is independent of Contributor Gap. |
+| S2-2 | Empty PR sample → merge/review UNKNOWN, not 0. |
+| S2-3 | GFI/help-wanted are onboarding signals inside Access, not contribution opportunity. |

@@ -530,6 +530,11 @@ def present_card(
         "s1_earlyness_minus": list(card.s1_earlyness_minus or []),
         "s1_evidence_plus": list(card.s1_evidence_plus or []),
         "s1_evidence_minus": list(card.s1_evidence_minus or []),
+        "access_score": card.access_score,
+        "access_class": card.access_class,
+        "access_class_zh": ACTIVITY_CLASS_LABELS.get(card.access_class or "", "未知"),
+        "access_merge_rate": card.access_merge_rate,
+        "access_review_rate": card.access_review_rate,
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {

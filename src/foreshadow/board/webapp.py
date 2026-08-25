@@ -421,6 +421,8 @@ function drawerView(card) {
     <p class="meta">证据加分：${esc((card.s1_evidence_plus || []).join("；") || "—")}</p>
     <p class="meta">证据不足：${esc((card.s1_evidence_minus || []).join("；") || "—")}</p>
     <p class="meta">Star 只是规模观察，不是区间门槛，也不是否决。</p>
+    <p class="meta">进入通道：${esc(card.access_class_zh || "未知")}${card.access_score != null ? "　" + n(card.access_score) + " / 100" : ""}（不是贡献者缺口）</p>
+    <p class="meta">外部 PR 接受率：${n(card.access_merge_rate)} · 外部 PR 评审率：${n(card.access_review_rate)}</p>
     <p class="meta">
       Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
       · Open Issues ${n(card.open_issues)}<br/>

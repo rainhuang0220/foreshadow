@@ -108,6 +108,8 @@ def render_board_html(board: BoardDocument) -> str:
     <p>证据加分：{_e("；".join(card.get("s1_evidence_plus") or []) or "—")}</p>
     <p>证据不足：{_e("；".join(card.get("s1_evidence_minus") or []) or "—")}</p>
     <p class="muted">Star 只是规模观察，不是区间门槛，也不是否决。</p>
+    <p>进入通道：{_e(card.get("access_class_zh") or "未知")} {_activity_score({"activity_momentum": card.get("access_score")})}（不是贡献者缺口）</p>
+    <p>外部 PR 接受率：{_score(card.get("access_merge_rate"))} · 外部 PR 评审率：{_score(card.get("access_review_rate"))}</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
        · Open Issues {_e(card["open_issues"])}</p>

@@ -129,18 +129,23 @@ def test_pool_a_help_can_reach_deep_hydration():
 
 
 def test_pr_acceptance_empty_sample_is_unknown():
-    n, ext, rate = _pr_acceptance({})
+    n, ext, rate, rev, rrate = _pr_acceptance({})
     assert n is None and ext is None and rate is None
-    n, ext, rate = _pr_acceptance({"prsMerged": {"nodes": []}})
+    assert rev is None and rrate is None
+    n, ext, rate, rev, rrate = _pr_acceptance({"prsMerged": {"nodes": []}})
     assert n == 0
     assert ext is None
     assert rate is None
-    n, ext, rate = _pr_acceptance(
+    assert rev is None and rrate is None
+    n, ext, rate, rev, rrate = _pr_acceptance(
         {
             "prsMerged": {
                 "nodes": [
-                    {"authorAssociation": "CONTRIBUTOR"},
-                    {"authorAssociation": "OWNER"},
+                    {
+                        "authorAssociation": "CONTRIBUTOR",
+                        "reviews": {"totalCount": 1},
+                    },
+                    {"authorAssociation": "OWNER", "reviews": {"totalCount": 0}},
                 ]
             }
         }
@@ -148,6 +153,8 @@ def test_pr_acceptance_empty_sample_is_unknown():
     assert n == 2
     assert ext == 1
     assert rate == 0.5
+    assert rev == 1
+    assert rrate == 0.5
 
 
 def test_activity_counts_are_not_star_growth(frozen_clock):

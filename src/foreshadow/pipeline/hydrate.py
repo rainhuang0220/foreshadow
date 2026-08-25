@@ -1309,7 +1309,7 @@ def build_features_blob(
     maint_hours = None
     if response_hours:
         maint_hours = sum(response_hours) / len(response_hours)
-    pr_n, pr_ext, pr_rate = _pr_acceptance(repo)
+    pr_n, pr_ext, pr_rate, pr_rev, pr_rev_rate = _pr_acceptance(repo)
     now_dt = now or datetime.now(UTC)
     activity = activity_from_commits(
         rest.get("commits") if isinstance(rest.get("commits"), list) else None,
@@ -1362,6 +1362,8 @@ def build_features_blob(
         pr_merged_sample_n=pr_n,
         pr_external_merged_n=pr_ext,
         pr_accept_rate=pr_rate,
+        pr_reviewed_n=pr_rev,
+        pr_review_rate=pr_rev_rate,
         maint_first_response_hours=maint_hours,
         commits_7d=activity["commits_7d"],
         commits_30d=activity["commits_30d"],
@@ -1407,21 +1409,29 @@ def build_medium_features_blob(
 
 def _pr_acceptance(
     repo: Mapping[str, Any],
-) -> tuple[int | None, int | None, float | None]:
+) -> tuple[int | None, int | None, float | None, int | None, float | None]:
     raw = repo.get("prsMerged")
     nodes = raw.get("nodes") if isinstance(raw, dict) else None
     if not isinstance(nodes, list):
-        return None, None, None
+        return None, None, None, None, None
     n = len(nodes)
     if n == 0:
-        return 0, None, None
+        return 0, None, None, None, None
     ext = 0
+    reviewed = 0
     for pr in nodes:
         if not isinstance(pr, dict):
             continue
         if str(pr.get("authorAssociation") or "") in EXT_ASSOC:
             ext += 1
-    return n, ext, ext / n
+        reviews = pr.get("reviews") if isinstance(pr.get("reviews"), dict) else {}
+        try:
+            rc = int(reviews.get("totalCount") or 0)
+        except (TypeError, ValueError):
+            rc = 0
+        if rc > 0:
+            reviewed += 1
+    return n, ext, ext / n, reviewed, reviewed / n
 
 
 def _label_names(issue: Mapping[str, Any]) -> set[str]:

@@ -62,6 +62,8 @@ class FeaturesBlob(BaseModel):
     pr_merged_sample_n: int | None = None
     pr_external_merged_n: int | None = None
     pr_accept_rate: float | None = None
+    pr_reviewed_n: int | None = None
+    pr_review_rate: float | None = None
     maint_first_response_hours: float | None = None
     commits_7d: int | None = None
     commits_30d: int | None = None

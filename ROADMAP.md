@@ -26,6 +26,7 @@ PR-D Discovery pools A/B/C          ← in tree
  → PR-H Hydration Expansion         ← in tree; official still v1
  → PR-A Activity Momentum Preview   ← in tree; v2 only
  → S1 Earlyness × Evidence Preview  ← in tree; official still v1
+ → S2 Community Access              ← in tree; v2 only
  → PR-S2 Maintainer / Community
  → PR-S3 Contributor Access
  → PR-S4 Contribution Opportunity + Entry Strategy

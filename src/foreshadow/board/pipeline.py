@@ -22,6 +22,7 @@ from foreshadow.db import connect, migrate
 from foreshadow.models import FeaturesBlob
 from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline import load_score_input
+from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.direction import load_direction_bags
 from foreshadow.pipeline.hydrate import parse_dt
@@ -118,6 +119,10 @@ def _card(
         s1_earlyness_minus=list(extra_meta.get("s1_earlyness_minus") or []),
         s1_evidence_plus=list(extra_meta.get("s1_evidence_plus") or []),
         s1_evidence_minus=list(extra_meta.get("s1_evidence_minus") or []),
+        access_score=_float_or_none(extra_meta.get("access_score")),
+        access_class=extra_meta.get("access_class"),
+        access_merge_rate=_float_or_none(extra_meta.get("access_merge_rate")),
+        access_review_rate=_float_or_none(extra_meta.get("access_review_rate")),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -359,6 +364,7 @@ def load_scored_from_db(
         feat_map = features if isinstance(features, dict) else {}
         act = compute_activity(feat_map, settings.scoring)
         blob = FeaturesBlob.model_validate(feat_map) if feat_map else FeaturesBlob()
+        acc = compute_access(blob)
         now_d = clock.now().date()
         age_days = data.get("age_days")
         if age_days is None:
@@ -415,6 +421,10 @@ def load_scored_from_db(
             "s1_earlyness_minus": s1.earlyness_minus,
             "s1_evidence_plus": s1.evidence_plus,
             "s1_evidence_minus": s1.evidence_minus,
+            "access_score": acc.score,
+            "access_class": acc.classification,
+            "access_merge_rate": acc.merge_rate,
+            "access_review_rate": acc.review_rate,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days

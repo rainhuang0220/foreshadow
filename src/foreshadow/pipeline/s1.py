@@ -226,6 +226,11 @@ def _living01(
 
 
 def _access01(feat: FeaturesBlob, c: int | None) -> float | None:
+    from foreshadow.pipeline.access import compute_access
+
+    scored = compute_access(feat)
+    if scored.score is not None:
+        return clip01(scored.score / 100.0)
     bits: list[float] = []
     if feat.pr_accept_rate is not None:
         bits.append(clip01(float(feat.pr_accept_rate)))

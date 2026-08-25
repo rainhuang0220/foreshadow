@@ -32,6 +32,7 @@
 - **PR-H Hydration Expansion:** pool-allocated Phase B (A15/B10/C5) + medium REST 30; PR acceptance sample; maintainer TTR hours; activity raw (`commits_7d` etc.) **not** in `windows.v7`; `data_completeness` HIGH/MEDIUM/LOW for Board/audit only. Report: [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md).
 - **PR-A Activity Momentum Preview:** v2-only AM 0–100 + class; fills NA momentum slot when `v7` missing; Board 活跃度 + evidence. Not star growth. Report: [`docs/opportunity-engine-v2-activity-report.md`](docs/opportunity-engine-v2-activity-report.md).
 - **S1 Preview:** Earlyness × Evidence × Opportunity Window + stage + experimental pool. No star band/veto/bonus. Report: [`docs/opportunity-engine-v2-s1-report.md`](docs/opportunity-engine-v2-s1-report.md).
+- **S2 Community Access:** Access Score independent of Gap; PR merge/review rates; UNKNOWN≠0. Report: [`docs/opportunity-engine-v2-s2-report.md`](docs/opportunity-engine-v2-s2-report.md).
 
 ## In Progress
 

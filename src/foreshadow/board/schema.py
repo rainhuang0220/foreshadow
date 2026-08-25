@@ -129,6 +129,10 @@ class BoardCard(BaseModel):
     s1_earlyness_minus: list[str] = Field(default_factory=list)
     s1_evidence_plus: list[str] = Field(default_factory=list)
     s1_evidence_minus: list[str] = Field(default_factory=list)
+    access_score: float | None = None
+    access_class: str | None = None
+    access_merge_rate: float | None = None
+    access_review_rate: float | None = None
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None

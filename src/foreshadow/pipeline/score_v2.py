@@ -12,6 +12,7 @@ from typing import Any
 from foreshadow.clock import Clock
 from foreshadow.config import ScoringSettings
 from foreshadow.models import ComponentScore, FeaturesBlob, ScoreBreakdown
+from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import ACTIVITY_NOTE, compute_activity
 from foreshadow.pipeline.features import clip, clip01
 from foreshadow.pipeline.h_rules import apply_penalties, evaluate_h
@@ -49,6 +50,7 @@ def score_repo_v2(
 
     momentum, accel_term, size_term = _momentum(ctx, windows, scoring)
     activity = compute_activity(feat, scoring)
+    access = compute_access(feat)
     if windows.v7 is None and activity.momentum is not None:
         # Fill the NA momentum slot with Activity Momentum. Not star growth.
         momentum = ComponentScore(
@@ -190,6 +192,7 @@ def score_repo_v2(
         "flags": list(breakdown.flags),
         "known_bias": {"discovery_recency_bias": True},
         "s1": s1.as_dict(),
+        "access": access.as_dict(),
     }
     return ScoredRepo(
         owner=ctx.owner,
