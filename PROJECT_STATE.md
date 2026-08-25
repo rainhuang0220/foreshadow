@@ -33,7 +33,7 @@
 ## In Progress
 
 - 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
-- Next: owner review of [`docs/opportunity-engine-v2-v1v2.md`](docs/opportunity-engine-v2-v1v2.md), then decide **PR-S1**. Do not cut over Official.
+- Next: owner review of [`docs/opportunity-engine-v2-real-experiment.md`](docs/opportunity-engine-v2-real-experiment.md). Do **not** start PR-S1 until hydrate vs recency vs scoring is chosen. Do not cut over Official.
 
 ## Blocked
 
@@ -41,7 +41,7 @@
 
 ## Next Action
 
-Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D and PR-V are in tree.** Official remains v1. Do not start PR-S1 until the owner says so.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D and PR-V are in tree.** 2026-08-25 real experiment is in `docs/opportunity-engine-v2-real-experiment.md`. Official remains v1. Do not start PR-S1 until the owner picks hydrate vs activity vs scoring.
 
 ## Known Bugs
 

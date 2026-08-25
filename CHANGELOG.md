@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Interactive Chinese Review Board on localhost (`foreshadow board` → http://127.0.0.1:8765/). List + drawer, sort/filter, GitHub outbound link, per-user register/login, reviews isolated by `user_id`. Static HTML remains available via `--export-html`. P0 thresholds, v7, and snapshots are unchanged.
 - Engine 2.0 Discovery (PR-D): 14-query pools A/B/C, quota as max exposure (underfill OK, no FIFO fill to 120), `lightweight_keep`, `sort:updated` only. Official `score.py` / `select.py` / 55 / 35 / local v7 unchanged.
 - Engine 2.0 dual-write (PR-V): `scores.score_version` v1+v2, `score_compare` rank deltas, preview scorer in `score_v2.py`. Official Top 5 / `select.py` / 55 / 35 / local v7 / `score.py` still v1.
+- Real 2026-08-25 PR-D dogfood experiment report: [`docs/opportunity-engine-v2-real-experiment.md`](docs/opportunity-engine-v2-real-experiment.md). Official Top 5 still 0.
 
 ### Changed
 

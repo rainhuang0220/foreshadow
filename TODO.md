@@ -15,6 +15,8 @@
 - [x] **PR-D** Discovery: pools A/B/C, no `sort:stars`, pre_rank without raw stars, reserved seats
 - [x] PR-V `score_version` dual-write (`003_score_version.sql`) + preview v2 + rank delta
 - [x] PR-V counterexamples (small active vs large mature; small stagnant does not win)
+- [x] Real 2026-08-25 PR-D dogfood experiment (`docs/opportunity-engine-v2-real-experiment.md`)
+- [ ] Owner decide: hydrate depth vs activity feature vs S1 — do not mix
 - [ ] PR-S1…S5 scoring / preview (not before D+V+T)
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 
