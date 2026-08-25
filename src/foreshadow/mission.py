@@ -489,6 +489,7 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
     text += (
         "\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
+        "同目录还有 ISSUE_DRAFT.md（本地草稿，未发送）。\n"
         "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         "等待你的确认才能执行任何远程 GitHub 操作。\n"
     )
