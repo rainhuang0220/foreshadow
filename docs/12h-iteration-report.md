@@ -1,6 +1,6 @@
 # 12-HOUR ITERATION REPORT
 
-Elapsed: started `2026-08-25T17:14:36Z`. This checkpoint continues the same authorized window. Official still **v1 / 55 / 35 / local v7 / empty Top 5**. No third-party GitHub writes.
+Elapsed: started `2026-08-25T17:14:36Z`; this checkpoint ~`2026-08-25T18:20Z`. Official still **v1 / 55 / 35 / local v7 / empty Top 5**. No third-party GitHub writes.
 
 ## Stages completed
 
@@ -63,6 +63,8 @@ CLI equivalent: `FORESHADOW_HOME=dogfood/local/home uv run foreshadow enter owne
 - S5 overlay is not blended into rank
 - Local PR draft / patch attach still later
 - Official v2 cutover (not this window)
+
+Checkpoint notes: Board now shows `strategy_why`, open issues carry `#N`, `ISSUE_DRAFT.md` is rewritten after GET, list refreshes to **查看任务** after 开始进入. Tests: **318 passed**.
 
 ## Top remaining bottlenecks
 1. Access UNKNOWN on 90/120 until the next dogfood hydrate

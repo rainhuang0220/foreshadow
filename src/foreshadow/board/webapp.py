@@ -412,7 +412,7 @@ function listView(board) {
       <div>
         <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
-      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(c.access_class_zh || "未知")} · 入口 ${esc(c.strategy_summary_zh || "先阅读")} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
+      <div class="sub">${esc(c.headline)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(c.access_class_zh || "未知")} · 入口 ${esc(c.strategy_summary_zh || "先阅读")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
     </div>`).join("");
 }
 
