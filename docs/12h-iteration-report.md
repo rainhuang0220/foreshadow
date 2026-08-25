@@ -37,6 +37,7 @@ Review radio **进入** is now **记入观察清单（不是创建任务）** so
 - Dogfood sqlite run_id=2 (2026-08-25): 120 candidates, Phase B 30 / medium 30 / lightweight 60. Access terms only on the 30 Phase B rows until the next hydrate.
 - Local clone of `rainhuang0220/foreshadow` and `eigenpal/docx-editor` succeeded (`--depth 1`).
 - Board on `:8767`: register → board → 开始进入 → clone → remote create_pr blocked.
+- Live GET of closed PRs on 6 medium-tier dogfood repos (GET-only, not written back): Access became known across 20–300 / 300–1000 / 1000+ (VERY_LOW and LOW). HIGH still needs Phase B review/TTR. Known 0% external merge is a real 0, not UNKNOWN.
 
 ## What you can do tomorrow morning
 

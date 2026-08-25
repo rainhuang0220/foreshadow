@@ -208,6 +208,43 @@ def enter(
 
 
 @app.command()
+def outcome(
+    repo: str = typer.Argument(..., help="owner/repo"),
+    event: str = typer.Option(
+        ...,
+        "--event",
+        help="maintainer_replied / pr_merged / abandoned / …",
+    ),
+) -> None:
+    """Record a manual contribution outcome. Never talks to GitHub."""
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.mission import USER_EVENTS, list_missions, record_user_event
+
+    if event not in USER_EVENTS:
+        print(f"unknown event {event}", file=sys.stderr)
+        raise SystemExit(2)
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = ensure_local_user(conn)
+        items = list_missions(conn, uid)
+        found = next((m for m in items if m.get("full_name") == repo), None)
+        if found is None:
+            print("no mission for that repo — run foreshadow enter first", file=sys.stderr)
+            raise SystemExit(2)
+        plan = record_user_event(
+            conn, user_id=uid, mission_id=int(found["id"]), event=event
+        )
+    finally:
+        conn.close()
+    sys.stdout.write(
+        f"recorded {event} on {repo} status={plan.get('status')}\n"
+        "this does not post to GitHub.\n"
+    )
+
+
+@app.command()
 def watchlist(
     action: str | None = typer.Option(None, "--action", help="Filter by stance"),
 ) -> None:
