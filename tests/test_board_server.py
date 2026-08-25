@@ -129,6 +129,8 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         )
         assert bob_card["my_action"] in (None, "")
         assert "开始进入" in page.text
+        assert "row .act" in page.text
+        assert "FORESHADOW.md" in page.text
         assert "查看任务" in page.text
         assert "暂停扫描" in page.text
         assert "Escape" in page.text

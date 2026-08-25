@@ -107,7 +107,7 @@ select {
 .list { border-top: 1px solid var(--rule); }
 .row {
   display: grid;
-  grid-template-columns: 3.2rem minmax(0,1fr) 7.2rem;
+  grid-template-columns: 3.2rem minmax(0,1fr) 8.5rem;
   gap: .25rem 1rem;
   padding: .85rem 0;
   border-bottom: 1px solid var(--rule);
@@ -130,6 +130,8 @@ select {
   line-height: 1;
 }
 .sub { grid-column: 2; color: var(--ink-dim); font-size: .86rem; }
+.row .act { grid-column: 3; grid-row: 1 / span 2; text-align: right; }
+.row .act button { margin-top: .45rem; }
 .sub b { color: var(--ink); font-weight: 500; }
 .gh-mini {
   margin-left: .6rem;
@@ -276,6 +278,7 @@ pre.meta {
   .counts { grid-template-columns: repeat(2, 1fr); }
   .wrap { padding: 1rem 1rem 5rem; }
   .row { grid-template-columns: 2.4rem minmax(0,1fr); }
+  .row .act { grid-column: 1 / -1; grid-row: auto; text-align: left; }
   .final { text-align: left; }
 }
 </style>
@@ -407,11 +410,11 @@ function listView(board) {
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
       </div>
-      <div class="final">${n(c.final_score)}</div>
-      <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
-      <div>
+      <div class="act">
+        <div class="final">${n(c.final_score)}</div>
         <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
+      <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
       <div class="sub">${esc(c.headline)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(c.access_class_zh || "未知")} · 入口 ${esc(c.strategy_summary_zh || "先阅读")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
     </div>`).join("");
 }
@@ -542,7 +545,7 @@ function missionListView() {
     <div class="row">
       <div>
         <div class="nm">${esc(m.full_name)}</div>
-        <div class="sub">状态 ${esc(m.status||"—")} · ${esc(m.next_step_zh || "")}</div>
+        <div class="sub">状态 ${esc(m.status_zh || m.status || "—")} · ${esc(m.next_step_zh || "")}</div>
       </div>
       <div>
         <button type="button" class="primary" onclick="openMission(${Number(m.id)||0})">打开</button>
@@ -556,6 +559,10 @@ function missionView(m) {
   const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
+  const cloneOk = m.clone && m.clone.ok;
+  const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"}[clone] || clone);
+  const first = cloneOk ? "打开本地 FORESHADOW.md，按里面的第一步做" : ((m.steps_zh && m.steps_zh[0]) || "阅读本地 FORESHADOW.md");
+  const root = m.local_path || "";
   const id = m.id;
   return `
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
@@ -569,12 +576,13 @@ function missionView(m) {
     <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status_zh || m.status || "—")}</p>
     <p class="meta"><strong>下一步：</strong>${esc(m.next_step_zh || "先阅读推荐入口")}</p>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
-    <p><strong>第一步：</strong>${esc((m.steps_zh && m.steps_zh[0]) || "阅读本地 FORESHADOW.md")}</p>
+    <p><strong>第一步：</strong>${esc(first)}</p>
+    ${root ? `<p class="meta">本地先打开：${esc(root)}/FORESHADOW.md 和 ${esc(root)}/ISSUE_DRAFT.md<br/>代码在 ${esc(root)}/repo ，分支 foreshadow/entry。不要 push。</p>` : ""}
     ${m.cited_issue && m.cited_issue.number ? `<p><strong>建议先看 Issue #${esc(m.cited_issue.number)}</strong> ${esc(m.cited_issue.title||"")}</p>` : ""}
     ${m.draft_excerpt ? `<h3>本地草稿（未发送）</h3><pre class="meta">${esc(m.draft_excerpt)}</pre>` : ""}
     <h3>行动计划</h3>
     <ol>${steps}</ol>
-    <p class="meta">本地目录：${esc(m.local_path || "尚未准备")} · clone：${esc(clone)}</p>
+    <p class="meta">本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
     ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
     <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}</p>
     <p>

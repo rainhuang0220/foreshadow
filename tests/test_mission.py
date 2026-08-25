@@ -45,7 +45,7 @@ def test_transition_and_portfolio(tmp_home):
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
     m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
-    from foreshadow.mission import portfolio, record_event, transition
+    from foreshadow.mission import list_missions, portfolio, record_event, transition
 
     transition(conn, mid, uid, "LOCAL_SETUP")
     record_event(conn, user_id=uid, mission_id=mid, full_name="acme/toy", event="local_setup")
@@ -53,6 +53,10 @@ def test_transition_and_portfolio(tmp_home):
     assert port["missions"] == 1
     assert port["by_status"].get("LOCAL_SETUP") == 1
     assert port["events"].get("local_setup") == 1
+    listed = list_missions(conn, uid)
+    assert listed[0]["status"] == "LOCAL_SETUP"
+    assert listed[0]["status_zh"] == "正在准备本地环境"
+    assert "本地" in (listed[0].get("next_step_zh") or "")
 
 
 def test_persist_mission(tmp_home):
