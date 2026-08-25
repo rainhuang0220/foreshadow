@@ -28,3 +28,18 @@ Locked in the P0 spec (`docs/p0-architecture.md`). Reopen only with a written re
 | P1-B3 | Reviewers are deterministic evidence engines | CLI cannot spawn Grok subagents. Parallel ThreadPool. LLM narrative remains optional and cannot change numbers. |
 
 **Invariants:** no GitHub writes; max 5; no padding; no commit-count KPI; NA ≠ 0; empty Top 5 is success.
+
+## Opportunity Engine 2.0 (proposed 2026-08-25, not locked)
+
+Audit: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md). Production scoring stays **v1**.
+
+| ID | Proposal | Why |
+|---|---|---|
+| E2-1 | Keep K5/K7: official star `v7` = local snapshots only | 2026-06-30 stargazer listing is admin-only; GH Archive WatchEvent degraded. Do not invent `S(t-7)`. |
+| E2-2 | Day-1 **activity** windows (forks/issues/PRs created) are labeled evidence, never written into `windows.v7` | User still gets “is it moving?” without lying about stars. |
+| E2-3 | Reopen **K2 weights** and `late()` / `late_10x` as v2 Entry Window | 2026-08-24 shortlist: 0 rows &lt;300★; shimmy 5807★ provisional #3. v1 Early Entry prefers mid-size. |
+| E2-4 | Do **not** lower `min_opportunity=55` / `min_explosion=35` | Lowering Opportunity would admit hot-closed 2k★ repos. |
+| E2-5 | Persist `score_version`; dual-write; never overwrite v1 rows | Backtest v1 vs v2. |
+| E2-6 | Discovery: per-query quota + drop `sort:stars` / llama.cpp magnets **before** claiming v2 “found smaller repos” | Funnel is search+pre_rank, not only Opportunity mix. |
+
+Owner must accept E2-1…E2-6 before Phase 8 code.

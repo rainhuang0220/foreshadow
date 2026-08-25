@@ -16,9 +16,17 @@ P0 success: `GITHUB_TOKEN` + `foreshadow run` produces a markdown Top 5 (or hone
 
 HTML Daily Board + 100→20→3 reviewers→10→Chair. Official Top 5 still requires `v7`. No extra data sources in this slice.
 
+## Opportunity Engine 2.0 (research 2026-08-25)
+
+**Not implemented.** v1 remains official. Plan: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md).
+
+Goal: rank **early window × real contribution**, not 1k–5k star AI incumbents. Official Top 5 still needs **local** `v7`. Day-1 GitHub **star** history is not available (stargazer listing admin-only). Activity windows (forks/issues/PRs) may label movement; they must not become `windows.v7`.
+
+Order after owner OK: discovery quota → `score_version` dual-write → counterexample tests → Entry Window + acceptance → preview reads v2 / official stays v1 → replay 120 → cutover.
+
 ## P1 later / P0+ 
 
-Multi-source discovery (HN / Reddit / …), GH Archive backfill of `v7` (labeled), maintainer first-response time. Not this PR.
+Multi-source discovery (HN / Reddit / …), GH Archive backfill of `v7` (**labeled only**, WatchEvent is degraded), maintainer first-response time. Not this PR.
 
 ## P2 — contribution assistance (human still submits)
 
