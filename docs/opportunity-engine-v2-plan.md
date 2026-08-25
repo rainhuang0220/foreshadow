@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Approved locks recorded. **No `score.py` change in PR-D.** |
+| **Status** | PR-D + PR-V + PR-H in tree. **No `score.py` change.** PR-S1 still suspended. |
 | **Date** | 2026-08-25 |
 | **Official scoring** | **v1** until dual-write + counterexamples + owner cutover |
 | **Charter** | [`opportunity-engine-v2-audit.md`](opportunity-engine-v2-audit.md) + DECISIONS E2-0…E2-22 |
@@ -26,7 +26,7 @@ Product: **Good Project × Early Window × Real Contribution Opportunity**. Not 
 | E2-9 Entry Strategy | Report: “Add CONTRIBUTING.md” / GFI title | PR-S4 + board copy |
 | E2-10/15 Opp > Exp > Stars | Official: Opp > Exp > **Contribution**; preview: lightweight / Chair | PR-S5 |
 | E2-11 Official v7 | Already correct | **Do not touch** |
-| E2-12/13 Activity ≠ stars | No labeled `forks_created_7d` etc. | PR-H (hydrate evidence), never `windows.v7` |
+| E2-12/13 Activity ≠ stars | `commits_7d` / `releases_30d` in features; not `windows.v7` | PR-H landed; `issues_created_*` still UNKNOWN |
 | E2-16 Counterexamples | None of the 10 names exist | PR-T before score behavior |
 | E2-17 Dual-write | `UNIQUE(run_id, repo_id)` | PR-V |
 
@@ -39,10 +39,11 @@ Dogfood 2026-08-24: Preview Top 20 **0 rows &lt;300★**. Success for Discovery 
 Do not skip. Do not validate scoring on old discovery.
 
 ```
-PR-D   Discovery multi-pool + pre_rank without stars     ← next
-PR-V   score_version dual-write (schema 003)             default still v1
+PR-D   Discovery multi-pool + pre_rank without stars     ← in tree
+PR-V   score_version dual-write (schema 003)             ← in tree; official still v1
+PR-H   Hydration expansion (pool Phase B + medium + PR sample)
 PR-T   Counterexample tests (red until formulas)
-PR-S1  Entry Window (replace late/late_10x)
+PR-S1  Entry Window (replace late/late_10x)              ← suspended
 PR-S2  Maintainer / Community (TTR, activity)
 PR-S3  Contributor Access (PR sample; separate from Gap)
 PR-S4  Contribution Opportunity (I×N×F×A) + Entry Strategy copy
@@ -50,7 +51,7 @@ PR-S5  Preview ranks v2 Opportunity; official stays v1
 PR-R   Replay 120 in-memory; compare v1 vs v2
 ```
 
-`score.py` first behavior change is **PR-S1**, after PR-T is merged (tests may be `@pytest.mark.xfail` until S1).
+`score.py` first behavior change is still **PR-S1**, only after the owner reads [`opportunity-engine-v2-hydration-report.md`](opportunity-engine-v2-hydration-report.md).
 
 ---
 

@@ -380,6 +380,8 @@ class FakeGitHub:
             return FakeResponse(200, self.contributors.get(full, []))
         if rest[:1] == ["commits"]:
             return FakeResponse(200, self.commits.get(full, []))
+        if rest[:1] == ["releases"]:
+            return FakeResponse(200, [])
         if rest[:1] == ["contents"]:
             extra = "/".join(rest[1:])
             listing = self.contents.get(

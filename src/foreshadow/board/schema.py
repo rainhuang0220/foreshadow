@@ -109,6 +109,8 @@ class BoardCard(BaseModel):
     p0_opportunity: float | None = None
     p0_explosion: float | None = None
     p0_contribution: float | None = None
+    p0_confidence: Literal["low", "medium", "high"] | None = None
+    data_completeness: Literal["high", "medium", "low"] | None = None
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None

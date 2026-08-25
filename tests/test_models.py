@@ -79,7 +79,19 @@ def test_features_blob_parses_spec_object():
     assert blob.health_percentage == 71
     assert blob.gap_tests_scope == "root_only"
     assert blob.phase == "B"
-    assert set(blob.model_dump()) == set(SPEC_FEATURES)
+    dumped = blob.model_dump()
+    assert set(SPEC_FEATURES) <= set(dumped)
+    assert set(dumped) == set(FeaturesBlob.model_fields)
+    extra = FeaturesBlob(
+        phase="B",
+        pr_accept_rate=0.5,
+        commits_7d=4,
+        data_completeness="high",
+    )
+    extra_d = extra.model_dump()
+    assert extra_d["pr_accept_rate"] == 0.5
+    assert extra_d["commits_7d"] == 4
+    assert extra_d["data_completeness"] == "high"
 
 
 def test_features_blob_empty_is_all_missing():
@@ -90,7 +102,7 @@ def test_features_blob_empty_is_all_missing():
     assert dumped["readme_headings"] is None
     assert dumped["phase"] is None
     assert "U_issue" not in dumped
-    assert set(dumped) == set(SPEC_FEATURES)
+    assert set(dumped) == set(FeaturesBlob.model_fields)
 
 
 def test_report_json_requires_spec_keys():

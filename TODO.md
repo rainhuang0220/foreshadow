@@ -16,8 +16,9 @@
 - [x] PR-V `score_version` dual-write (`003_score_version.sql`) + preview v2 + rank delta
 - [x] PR-V counterexamples (small active vs large mature; small stagnant does not win)
 - [x] Real 2026-08-25 PR-D dogfood experiment (`docs/opportunity-engine-v2-real-experiment.md`)
-- [ ] Owner decide: hydrate depth vs activity feature vs S1 — do not mix
-- [ ] PR-S1…S5 scoring / preview (not before D+V+T)
+- [x] **PR-H** Hydration Expansion: pool Phase B + medium tier + PR acceptance + completeness (`docs/opportunity-engine-v2-hydration-report.md`)
+- [ ] Owner read hydration report, then choose Activity scoring vs S1 — do not mix
+- [ ] PR-S1…S5 scoring / preview (not before D+V+H; S1 still suspended)
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 
 ## P0 implementation

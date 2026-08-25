@@ -23,7 +23,9 @@ Official scoring remains **v1**. Plan: [`docs/opportunity-engine-v2-plan.md`](do
 ```
 PR-D Discovery pools A/B/C          ← in tree
  → PR-V score_version dual-write    ← in tree; official still v1
- → PR-S1 Entry Window               ← owner decide after v1 vs v2 review
+ → PR-H Hydration Expansion         ← in tree; official still v1
+ → Activity scoring                 ← owner decide after hydration report
+ → PR-S1 Entry Window               ← suspended until that read
  → PR-S2 Maintainer / Community
  → PR-S3 Contributor Access
  → PR-S4 Contribution Opportunity + Entry Strategy
@@ -31,7 +33,7 @@ PR-D Discovery pools A/B/C          ← in tree
  → PR-R replay 120 and compare
 ```
 
-Do not retune `score.py` on the old discovery funnel. Official Top 5 still needs local `v7`. Activity ≠ star growth.
+Do not retune `score.py` on the old discovery funnel. Official Top 5 still needs local `v7`. Activity ≠ star growth. Hydration report: [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md).
 
 ## P1 later / P0+ 
 

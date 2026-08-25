@@ -87,6 +87,7 @@ def render_board_html(board: BoardDocument) -> str:
        · <strong>最终综合评分：</strong>{_score(card["final_score"])}
        · <span class="stamp">{_e(card["rank_kind_zh"])}</span>
        {" · 不是正式预测" if card["not_official"] else ""}</p>
+    <p>数据完整度：{_e(card.get("data_completeness_zh") or "低")} · 置信度：{_e(card.get("p0_confidence_zh") or "低")}（完整度低不是低分）</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
        · Open Issues {_e(card["open_issues"])}</p>

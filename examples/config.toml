@@ -15,6 +15,14 @@ pushed_within_days = 45       # templates {pushed45} = today − this
 max_candidates = 120          # union of watchlist + search; underfill is OK
 max_deep_hydrate = 30
 max_watchlist_deep = 20       # Phase B reserved for rankable watchlist only (watch/interested/investigate); enter does not consume
+max_medium_hydrate = 30
+phase_b_pool_a = 15
+phase_b_pool_b = 10
+phase_b_pool_c = 5
+phase_b_per_query_floor = 2
+medium_pool_a = 15
+medium_pool_b = 10
+medium_pool_c = 5
 per_page = 25                 # GraphQL search first:N; do not paginate to 1000
 exclude_forks = true          # drop forks in discovery. H2 ALWAYS vetoes Top 5 even if false
 exclude_archived = true

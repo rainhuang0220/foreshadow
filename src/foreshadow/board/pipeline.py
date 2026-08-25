@@ -90,6 +90,8 @@ def _card(
         p0_opportunity=row.breakdown.opportunity.value,
         p0_explosion=row.breakdown.explosion.value,
         p0_contribution=row.breakdown.contribution.value,
+        p0_confidence=row.breakdown.opportunity.confidence,
+        data_completeness=_completeness_of(extra_meta),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -341,9 +343,21 @@ def load_scored_from_db(
             "language": language,
             "node_id": node_id,
             "hydrate_status": status,
+            "data_completeness": (
+                features.get("data_completeness")
+                if isinstance(features, dict)
+                else None
+            ),
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days
+
+
+def _completeness_of(extra: dict[str, Any]) -> str | None:
+    raw = extra.get("data_completeness")
+    if raw in {"high", "medium", "low"}:
+        return raw
+    return None
 
 
 def _last_release(features: Any) -> str | None:

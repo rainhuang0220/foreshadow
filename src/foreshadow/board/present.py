@@ -42,6 +42,7 @@ STATUS_LABELS = {
 
 DISAGREE_LABELS = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
 CONF_LABELS = {"low": "低", "medium": "中", "high": "高"}
+COMPLETENESS_LABELS = {"low": "低", "medium": "中", "high": "高"}
 REC_LABELS = {
     "strong_candidate": "强候选",
     "candidate": "候选",
@@ -495,6 +496,12 @@ def present_card(
         "official_eligible": card.official_eligible,
         "momentum_na": card.momentum_na,
         "vetoed": card.vetoed,
+        "data_completeness": card.data_completeness,
+        "data_completeness_zh": COMPLETENESS_LABELS.get(
+            card.data_completeness or "low", "低"
+        ),
+        "p0_confidence": card.p0_confidence,
+        "p0_confidence_zh": CONF_LABELS.get(card.p0_confidence or "low", "低"),
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {
@@ -519,7 +526,13 @@ def present_card(
                 "judgment": _chair_judgment(card),
                 "justification_zh": _chair_judgment(card),
                 "main_risk": _risk_zh(card),
-                "confidence_note": "置信度随 v7 是否存在而变化，缺历史不加置信。",
+                "confidence_note": "置信度随 v7 与数据完整度变化；缺字段是 N/A，不是 0 分。",
+                "data_completeness": card.data_completeness,
+                "data_completeness_zh": COMPLETENESS_LABELS.get(
+                    card.data_completeness or "low", "低"
+                ),
+                "p0_confidence": card.p0_confidence,
+                "p0_confidence_zh": CONF_LABELS.get(card.p0_confidence or "low", "低"),
             },
             "why_selected": _why_selected(card) if in_top5 else None,
             "why_excluded": None if in_top5 else _why_excluded(card),

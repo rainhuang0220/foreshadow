@@ -62,3 +62,16 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | E2-22 | Success = exclude mature-closed “good projects” while keeping early, used, responsive, enterable repos — including when they have 73★ and beat 2800★. |
 
 **K2 (v1 weights) and `late()`:** remain v1 until PR-S1. Reopen only behind `score_version=v2`. **K5/K7 unchanged.**
+
+## PR-H Hydration (2026-08-25)
+
+| ID | Decision |
+|---|---|
+| H1 | Phase B is **pool budget** (default A15/B10/C5), not global Top-30. Unused seats leftover-fill by `pre_rank`; they do not steal from a pool that still has hits. |
+| H2 | Phase B / medium must not rank by raw stars. |
+| H3 | Do not deep-hydrate all 120. Tiers: lightweight (all) / medium REST 30 / deep GraphQL 30. |
+| H4 | PR acceptance empty sample → UNKNOWN, never 0. |
+| H5 | Activity raw (`commits_7d`, …) is not `windows.v7` and is not scored this PR. |
+| H6 | `data_completeness` is a quality label for Board / audit / routing. Not Opportunity. |
+| H7 | Confidence and Opportunity stay independent. HIGH completeness + LOW confidence is legal. |
+| H8 | PR-S1 / Entry Window / Activity *scoring* stay suspended until the owner reads [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md). |

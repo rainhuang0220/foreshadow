@@ -369,7 +369,7 @@ function listView(board) {
       <div class="final">${n(c.final_score)}</div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
       <div></div>
-      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)}</div>
+      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 数据完整度 ${esc(c.data_completeness_zh || "低")} · 置信度 ${esc(c.p0_confidence_zh || "低")}</div>
     </div>`).join("");
 }
 
@@ -410,6 +410,7 @@ function drawerView(card) {
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
     <p><strong>最终综合评分：</strong>${n(card.final_score)}
       <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
+    <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.p0_confidence_zh || "低")}（完整度低不是低分）</p>
     <p class="meta">
       Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
       · Open Issues ${n(card.open_issues)}<br/>

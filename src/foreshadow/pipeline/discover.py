@@ -16,14 +16,17 @@ from foreshadow.pipeline.hydrate import (
     HydratedRepo,
     apply_identity,
     build_features_blob,
+    build_medium_features_blob,
     census_contributors,
     extract_repo,
     features_json,
     from_graphql,
     hydrate_a_node,
     hydrate_b_node,
+    hydrate_medium_rest,
     hydrate_phase_b_rest,
     insert_hit,
+    medium_shortlist,
     phase_b_shortlist,
     unique_committers_30d,
     update_repo_from_graphql,
@@ -742,6 +745,8 @@ def discover_hydrate_snapshot(
             hydrated[cand.node_id] = view
         elif view.repo_id is None:
             view.repo_id = _ensure_candidate_repo(conn, cand, now)
+        view.pool = cand.pool
+        view.query_key = cand.query_key
         views.append(view)
         wl = watch_by_id.get(cand.node_id)
         action = (
@@ -810,7 +815,6 @@ def discover_hydrate_snapshot(
             rest = hydrate_phase_b_rest(
                 client, owner, name, clock, is_fork=view.is_fork
             )
-            view.features = build_features_blob(repo, rest)
             c_rows = rest.get("contributors")
             if c_rows is None:
                 view.contributor_count = None
@@ -827,6 +831,12 @@ def discover_hydrate_snapshot(
             view.unique_committers_30d = (
                 None if commits is None else unique_committers_30d(commits)
             )
+            view.features = build_features_blob(
+                repo,
+                rest,
+                now=clock.now(),
+                contributor_count=view.contributor_count,
+            )
             live = from_graphql(
                 repo, repo_id=view.repo_id, hydrate_status=view.hydrate_status
             )
@@ -836,6 +846,44 @@ def discover_hydrate_snapshot(
             view.topics = live.topics
             view.language = live.language
             view.description = live.description
+
+    if not stop():
+        medium_views = medium_shortlist(
+            views,
+            phase_b_views,
+            cfg=settings.discovery,
+            bags=bags,
+            now=clock.now(),
+            exclude_forks=settings.discovery.exclude_forks,
+        )
+        for view in medium_views:
+            if stop():
+                health["budget_abort"] = True
+                break
+            if view.hydrate_status == "not_found":
+                continue
+            if view.owner and view.name:
+                owner, name = view.owner, view.name
+            else:
+                owner, name = _split_fn(view.full_name)
+            if not owner or not name:
+                continue
+            rest = hydrate_medium_rest(client, owner, name, clock)
+            c_rows = rest.get("contributors")
+            if c_rows is not None:
+                total, ident, anon, censored = census_contributors(c_rows)
+                view.contributor_count = total
+                view.contributor_identified = ident
+                view.contributor_anon = anon
+                view.contributor_censored = censored
+            commits = rest.get("commits")
+            if commits is not None:
+                view.unique_committers_30d = unique_committers_30d(commits)
+            view.features = build_medium_features_blob(
+                rest,
+                now=clock.now(),
+                contributor_count=view.contributor_count,
+            )
 
     failed = 0
     for cand in capped.candidates:

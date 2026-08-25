@@ -34,9 +34,13 @@ def test_present_board_is_chinese_and_sorted():
     assert rev_names == ["趋势评审", "社区评审", "贡献评审"]
     assert d["disagreement"]["explain"]
     assert d["chair"]["weight_note"].startswith("主审权重更高")
+    assert top["data_completeness_zh"] in {"高", "中", "低"}
+    assert top["p0_confidence_zh"] in {"高", "中", "低"}
     html = render_board_html(board)
     assert "今日候选榜" in html
     assert "打开 GitHub" in html
+    assert "数据完整度" in html
+    assert "置信度" in html
     assert '<html lang="zh-CN">' in html
     # list is summary-first: details live inside <details>, not as a wall of cards
     assert html.count("<details") >= 1

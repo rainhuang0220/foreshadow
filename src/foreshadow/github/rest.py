@@ -117,6 +117,18 @@ def fetch_community_profile(
     return body if isinstance(body, dict) else {}
 
 
+def fetch_releases(
+    client: GitHubClient, owner: str, repo: str, *, per_page: int = 10
+) -> list[dict[str, Any]]:
+    resp = client.get(
+        f"/repos/{owner}/{repo}/releases", params={"per_page": per_page, "page": 1}
+    )
+    if resp.status_code == 204:
+        return []
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
+
+
 def content_exists(client: GitHubClient, owner: str, repo: str, path: str) -> bool:
     url = (
         f"{client.settings.api_url.rstrip('/')}"

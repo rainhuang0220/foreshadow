@@ -58,7 +58,20 @@ class FeaturesBlob(BaseModel):
     help_issue_titles: list[str] | None = None
     open_issue_titles: list[str] | None = None
     bots_dropped: list[str] | None = None
-    phase: Literal["A", "B"] | None = None
+    phase: Literal["A", "B", "M"] | None = None
+    pr_merged_sample_n: int | None = None
+    pr_external_merged_n: int | None = None
+    pr_accept_rate: float | None = None
+    maint_first_response_hours: float | None = None
+    commits_7d: int | None = None
+    commits_30d: int | None = None
+    recent_contributors_7d: int | None = None
+    releases_30d: int | None = None
+    issues_created_7d: int | None = None
+    issues_created_30d: int | None = None
+    prs_created_7d: int | None = None
+    prs_created_30d: int | None = None
+    data_completeness: Literal["high", "medium", "low"] | None = None
 
 
 class ReportJSON(BaseModel):

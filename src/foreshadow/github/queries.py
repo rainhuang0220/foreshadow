@@ -48,14 +48,25 @@ fragment RepoB on Repository {
     nodes {
       number
       title
+      createdAt
       author { login }
       authorAssociation
       labels(first: 8) { nodes { name } }
       comments(first: 3) {
         totalCount
-        nodes { author { login } authorAssociation }
+        nodes { author { login } authorAssociation createdAt }
       }
       assignees(first: 1) { totalCount }
+    }
+  }
+  prsMerged: pullRequests(states: MERGED, first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    nodes {
+      number
+      createdAt
+      mergedAt
+      author { login }
+      authorAssociation
+      reviews(first: 1) { totalCount }
     }
   }
   issuesClosedSample: issues(states: CLOSED, first: 30) {

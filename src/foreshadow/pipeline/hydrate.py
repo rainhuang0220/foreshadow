@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from foreshadow.clock import Clock
 from foreshadow.config import DiscoverySettings
@@ -18,6 +18,7 @@ from foreshadow.github.rest import (
     fetch_commits,
     fetch_community_profile,
     fetch_contributors,
+    fetch_releases,
     fetch_root_contents,
     fetch_workflows,
     is_bot,
@@ -91,6 +92,8 @@ class HydratedRepo:
     contributor_anon: int | None = None
     contributor_censored: int | None = None
     unique_committers_30d: int | None = None
+    pool: str | None = None
+    query_key: str | None = None
 
 
 def _get(repo: Any, *names: str, default: Any = None) -> Any:
@@ -245,13 +248,219 @@ def phase_b_shortlist(
         phase.append(repo)
         taken.add(nid)
     rest = [c for c in pool if nid_of(c) not in taken and nid_of(c) not in enter]
-    rest.sort(key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True)
-    for repo in rest:
+    remaining = max(0, max_deep - len(phase))
+    if remaining <= 0:
+        return phase
+    has_pools = any(getattr(c, "pool", None) in {"A", "B", "C"} for c in rest)
+    if not has_pools:
+        rest.sort(
+            key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True
+        )
+        for repo in rest:
+            if len(phase) >= max_deep:
+                break
+            phase.append(repo)
+            taken.add(nid_of(repo))
+        return phase
+    seated = _seat_deep_pools(rest, remaining, cfg, bags, now)
+    for repo in seated:
+        if len(phase) >= max_deep:
+            break
+        nid = nid_of(repo)
+        if nid in taken:
+            continue
+        phase.append(repo)
+        taken.add(nid)
+    leftover = [c for c in rest if nid_of(c) not in taken]
+    leftover.sort(
+        key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True
+    )
+    for repo in leftover:
         if len(phase) >= max_deep:
             break
         phase.append(repo)
         taken.add(nid_of(repo))
     return phase
+
+
+def _scaled_phase_quotas(
+    quotas: dict[str, int], remaining: int, total: int
+) -> dict[str, int]:
+    if remaining <= 0:
+        return {key: 0 for key in quotas}
+    if remaining >= total:
+        return dict(quotas)
+    out = {
+        key: int(quotas[key] * remaining / max(total, 1)) for key in quotas
+    }
+    leftover = remaining - sum(out.values())
+    for pool in ("A", "B", "C"):
+        if leftover <= 0:
+            break
+        if quotas.get(pool, 0) <= 0:
+            continue
+        out[pool] = out.get(pool, 0) + 1
+        leftover -= 1
+    return out
+
+
+def _seat_deep_pools(
+    rest: Sequence[Any],
+    remaining: int,
+    cfg: DiscoverySettings,
+    bags: Sequence[DirectionBag],
+    now: datetime | date,
+) -> list[Any]:
+    """Seat each pool up to its own quota. No raw-star sort.
+
+    Unused quota is not taken from a pool that still has unseated hits.
+    Leftover seats (underfilled pools) are filled later by pre_rank.
+    """
+    quotas = _scaled_phase_quotas(
+        {
+            "A": cfg.phase_b_pool_a,
+            "B": cfg.phase_b_pool_b,
+            "C": cfg.phase_b_pool_c,
+        },
+        remaining,
+        max(cfg.max_deep_hydrate, remaining),
+    )
+    by_pool: dict[str, list[Any]] = {"A": [], "B": [], "C": []}
+    for repo in rest:
+        pool = getattr(repo, "pool", None)
+        if pool in by_pool:
+            by_pool[pool].append(repo)
+    floor = max(0, int(cfg.phase_b_per_query_floor))
+    out: list[Any] = []
+    for pool in ("A", "B", "C"):
+        group = by_pool[pool]
+        group.sort(
+            key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True
+        )
+        out.extend(_round_robin_query_key(group, int(quotas.get(pool, 0)), floor))
+    return out
+
+
+def _round_robin_query_key(
+    repos: Sequence[Any], quota: int, per_query_floor: int
+) -> list[Any]:
+    if quota <= 0 or not repos:
+        return []
+    groups: dict[str, list[Any]] = {}
+    order: list[str] = []
+    for repo in repos:
+        key = str(getattr(repo, "query_key", None) or "_")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(repo)
+    taken: set[str] = set()
+    out: list[Any] = []
+
+    def nid(repo: Any) -> str:
+        return str(_get(repo, "node_id", "id", default="") or "")
+
+    floor = max(0, per_query_floor)
+    for key in order:
+        for repo in groups[key][:floor]:
+            if len(out) >= quota:
+                return out
+            ident = nid(repo)
+            if ident in taken:
+                continue
+            taken.add(ident)
+            out.append(repo)
+    progressed = True
+    while progressed and len(out) < quota:
+        progressed = False
+        for key in order:
+            for repo in groups[key]:
+                ident = nid(repo)
+                if ident in taken:
+                    continue
+                taken.add(ident)
+                out.append(repo)
+                progressed = True
+                break
+            if len(out) >= quota:
+                break
+    return out
+
+
+def medium_shortlist(
+    candidates: Sequence[Any],
+    already: Sequence[Any],
+    *,
+    cfg: DiscoverySettings | None = None,
+    bags: Sequence[DirectionBag] | None = None,
+    now: datetime | date | None = None,
+    exclude_forks: bool = True,
+) -> list[Any]:
+    """Cheaper REST tier. Does not consume Phase B GraphQL issue samples."""
+    cfg = cfg or DiscoverySettings()
+    bags = list(bags) if bags is not None else load_direction_bags()
+    now = now or datetime.now(UTC)
+    taken = {str(_get(c, "node_id", "id", default="") or "") for c in already}
+
+    def dropped(repo: Any) -> bool:
+        if _get(repo, "is_archived", "isArchived"):
+            return True
+        if _get(repo, "is_disabled", "isDisabled"):
+            return True
+        if _get(repo, "is_empty", "isEmpty"):
+            return True
+        if _get(repo, "status") == "not_found":
+            return True
+        return bool(exclude_forks and _get(repo, "is_fork", "isFork"))
+
+    rest = [
+        c
+        for c in candidates
+        if not dropped(c)
+        and str(_get(c, "node_id", "id", default="") or "") not in taken
+    ]
+    cap = int(cfg.max_medium_hydrate)
+    if cap <= 0 or not rest:
+        return []
+    if not any(getattr(c, "pool", None) in {"A", "B", "C"} for c in rest):
+        rest.sort(key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True)
+        return rest[:cap]
+    cfg_med = cfg.model_copy(
+        update={
+            "phase_b_pool_a": cfg.medium_pool_a,
+            "phase_b_pool_b": cfg.medium_pool_b,
+            "phase_b_pool_c": cfg.medium_pool_c,
+            "max_deep_hydrate": cap,
+        }
+    )
+    seated = _seat_deep_pools(rest, cap, cfg_med, bags, now)
+    out: list[Any] = []
+    seen: set[str] = set()
+    for repo in seated:
+        ident = str(_get(repo, "node_id", "id", default="") or "")
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append(repo)
+        if len(out) >= cap:
+            return out
+    leftover = [
+        c
+        for c in rest
+        if str(_get(c, "node_id", "id", default="") or "") not in seen
+    ]
+    leftover.sort(
+        key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True
+    )
+    for repo in leftover:
+        if len(out) >= cap:
+            break
+        ident = str(_get(repo, "node_id", "id", default="") or "")
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append(repo)
+    return out[:cap]
 
 
 def unique_committers_30d(commits: Sequence[Mapping[str, Any]]) -> int:
@@ -764,6 +973,7 @@ def hydrate_phase_b_rest(
         "contents": None,
         "workflows": None,
         "community": None,
+        "releases": None,
     }
     try:
         out["contributors"] = fetch_contributors(client, owner, name)
@@ -788,6 +998,10 @@ def hydrate_phase_b_rest(
             out["community"] = fetch_community_profile(client, owner, name)
         except GitHubError:
             pass
+    try:
+        out["releases"] = fetch_releases(client, owner, name)
+    except GitHubError:
+        out["releases"] = None
     contents = out["contents"] if isinstance(out["contents"], list) else []
     names = {
         str(item.get("name"))
@@ -803,9 +1017,122 @@ def hydrate_phase_b_rest(
     return out
 
 
+def hydrate_medium_rest(
+    client: Any,
+    owner: str,
+    name: str,
+    clock: Clock,
+) -> dict[str, Any]:
+    """Contributors + recent commits + releases. No issue/PR GraphQL sample."""
+    out: dict[str, Any] = {
+        "contributors": None,
+        "commits": None,
+        "releases": None,
+    }
+    try:
+        out["contributors"] = fetch_contributors(client, owner, name)
+    except GitHubError:
+        pass
+    try:
+        out["commits"] = fetch_commits(
+            client, owner, name, clock.now() - timedelta(days=30), max_pages=1
+        )
+    except GitHubError:
+        pass
+    try:
+        out["releases"] = fetch_releases(client, owner, name)
+    except GitHubError:
+        pass
+    return out
+
+
+def activity_from_commits(
+    commits: Sequence[Mapping[str, Any]] | None, now: datetime
+) -> dict[str, int | None]:
+    """Commit *counts* for activity evidence. Never star growth / windows.v7."""
+    if commits is None:
+        return {
+            "commits_7d": None,
+            "commits_30d": None,
+            "recent_contributors_7d": None,
+        }
+    cutoff7 = now - timedelta(days=7)
+    n7 = 0
+    authors7: set[str] = set()
+    for row in commits:
+        if not isinstance(row, Mapping):
+            continue
+        dt = _commit_datetime(row)
+        if dt is None:
+            continue
+        if dt >= cutoff7:
+            n7 += 1
+            login = None
+            author = row.get("author")
+            if isinstance(author, Mapping):
+                login = author.get("login")
+            atype = author.get("type") if isinstance(author, Mapping) else None
+            if login and not is_bot(str(login), atype):
+                authors7.add(str(login).lower())
+    return {
+        "commits_7d": n7,
+        "commits_30d": len([c for c in commits if isinstance(c, Mapping)]),
+        "recent_contributors_7d": len(authors7),
+    }
+
+
+def _commit_datetime(row: Mapping[str, Any]) -> datetime | None:
+    commit = row.get("commit") if isinstance(row.get("commit"), Mapping) else None
+    if commit:
+        for key in ("author", "committer"):
+            block = commit.get(key)
+            if isinstance(block, Mapping) and block.get("date"):
+                parsed = parse_dt(block.get("date"))
+                if parsed is not None:
+                    return parsed
+    return None
+
+
+def releases_30d(rows: Sequence[Mapping[str, Any]] | None, now: datetime) -> int | None:
+    if rows is None:
+        return None
+    cutoff = now - timedelta(days=30)
+    n = 0
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        dt = parse_dt(row.get("published_at") or row.get("created_at"))
+        if dt is not None and dt >= cutoff:
+            n += 1
+    return n
+
+
+def classify_data_completeness(
+    feat: FeaturesBlob | None,
+    contributor_count: int | None,
+) -> Literal["high", "medium", "low"]:
+    """Describes available features. Does not change Opportunity."""
+    if feat is None:
+        return "low"
+    has_c = contributor_count is not None
+    has_issues = feat.issue_sample_n is not None
+    has_tree = feat.tree_names is not None
+    has_maint = feat.maint_touch is not None
+    has_pr = feat.pr_merged_sample_n is not None
+    deep_bits = sum([has_c, has_issues, has_tree, has_maint or has_pr])
+    if deep_bits >= 3:
+        return "high"
+    if has_c or feat.commits_30d is not None or feat.phase in {"B", "M"}:
+        return "medium"
+    return "low"
+
+
 def build_features_blob(
     repo: dict[str, Any],
     rest: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    contributor_count: int | None = None,
 ) -> FeaturesBlob:
     readme_obj = repo.get("readme")
     readme_text = ""
@@ -830,6 +1157,7 @@ def build_features_blob(
     maint_hits = 0
     help_titles: list[str] = []
     open_titles: list[str] = []
+    response_hours: list[float] = []
     for issue in nodes:
         if not isinstance(issue, dict):
             continue
@@ -866,6 +1194,8 @@ def build_features_blob(
         cnodes = comments.get("nodes") if isinstance(comments, dict) else None
         talked = False
         maint = False
+        issue_created = parse_dt(issue.get("createdAt"))
+        first_maint_at: datetime | None = None
         if isinstance(cnodes, list):
             for cmt in cnodes:
                 if not isinstance(cmt, dict):
@@ -877,10 +1207,17 @@ def build_features_blob(
                     talked = True
                 if cassoc in MAINT_ASSOC:
                     maint = True
+                    c_at = parse_dt(cmt.get("createdAt"))
+                    if first_maint_at is None and c_at is not None:
+                        first_maint_at = c_at
         if talked:
             talk_n += 1
         if maint:
             maint_hits += 1
+        if issue_created is not None and first_maint_at is not None:
+            hours = (first_maint_at - issue_created).total_seconds() / 3600.0
+            if hours >= 0:
+                response_hours.append(hours)
     usage_closed_n = 0
     for issue in closed_nodes:
         if isinstance(issue, dict) and USAGE_CLOSED_RE.search(
@@ -969,6 +1306,19 @@ def build_features_blob(
         tree_kind = "readme_only" if is_readme_only_tree(tree_names) else "has_source"
     n_sample = len(nodes)
     maint_touch = (maint_hits / n_sample) if n_sample else None
+    maint_hours = None
+    if response_hours:
+        maint_hours = sum(response_hours) / len(response_hours)
+    pr_n, pr_ext, pr_rate = _pr_acceptance(repo)
+    now_dt = now or datetime.now(UTC)
+    activity = activity_from_commits(
+        rest.get("commits") if isinstance(rest.get("commits"), list) else None,
+        now_dt,
+    )
+    rel_n = releases_30d(
+        rest.get("releases") if isinstance(rest.get("releases"), list) else None,
+        now_dt,
+    )
     excerpt = readme_text[:README_CHARS] if readme_text else None
     open_blob = "\n".join(open_titles)
     if len(open_blob.encode()) > 2048:
@@ -977,7 +1327,7 @@ def build_features_blob(
     if len(help_blob.encode()) > 2048:
         help_titles = _cap_titles(help_titles, 2048)
 
-    return FeaturesBlob(
+    blob = FeaturesBlob(
         u_issue=len(authors) if open_sample_landed else None,
         u_issue_ext=len(authors_ext) if open_sample_landed else None,
         issue_sample_n=n_sample if open_sample_landed else None,
@@ -1009,7 +1359,69 @@ def build_features_blob(
         open_issue_titles=open_titles or None,
         bots_dropped=list(dict.fromkeys(bots)) or None,
         phase="B",
+        pr_merged_sample_n=pr_n,
+        pr_external_merged_n=pr_ext,
+        pr_accept_rate=pr_rate,
+        maint_first_response_hours=maint_hours,
+        commits_7d=activity["commits_7d"],
+        commits_30d=activity["commits_30d"],
+        recent_contributors_7d=activity["recent_contributors_7d"],
+        releases_30d=rel_n,
+        issues_created_7d=None,
+        issues_created_30d=None,
+        prs_created_7d=None,
+        prs_created_30d=None,
+        data_completeness=None,
     )
+    blob.data_completeness = classify_data_completeness(blob, contributor_count)
+    return blob
+
+
+def build_medium_features_blob(
+    rest: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    contributor_count: int | None = None,
+) -> FeaturesBlob:
+    now_dt = now or datetime.now(UTC)
+    commits = rest.get("commits") if isinstance(rest.get("commits"), list) else None
+    activity = activity_from_commits(commits, now_dt)
+    rel_n = releases_30d(
+        rest.get("releases") if isinstance(rest.get("releases"), list) else None,
+        now_dt,
+    )
+    blob = FeaturesBlob(
+        phase="M",
+        commits_7d=activity["commits_7d"],
+        commits_30d=activity["commits_30d"],
+        recent_contributors_7d=activity["recent_contributors_7d"],
+        releases_30d=rel_n,
+        issues_created_7d=None,
+        issues_created_30d=None,
+        prs_created_7d=None,
+        prs_created_30d=None,
+    )
+    blob.data_completeness = classify_data_completeness(blob, contributor_count)
+    return blob
+
+
+def _pr_acceptance(
+    repo: Mapping[str, Any],
+) -> tuple[int | None, int | None, float | None]:
+    raw = repo.get("prsMerged")
+    nodes = raw.get("nodes") if isinstance(raw, dict) else None
+    if not isinstance(nodes, list):
+        return None, None, None
+    n = len(nodes)
+    if n == 0:
+        return 0, None, None
+    ext = 0
+    for pr in nodes:
+        if not isinstance(pr, dict):
+            continue
+        if str(pr.get("authorAssociation") or "") in EXT_ASSOC:
+            ext += 1
+    return n, ext, ext / n
 
 
 def _label_names(issue: Mapping[str, Any]) -> set[str]:

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D + PR-V landed**. Official scoring still **v1**. Next: owner reads v1 vs v2 review, then decide PR-S1. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D + PR-V + PR-H landed**. Official scoring still **v1**. Next: owner reads the hydration report, then choose Activity vs S1. Do **not** start S1 in this step. |
 | **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not cut over Official to v2. |
 | **Scoring version** | **Official v1**. Preview **v2** dual-written; never Official. |
 | **Discovery version** | **v2 recall** (14 queries, pools A/B/C, exposure quotas, no star pre-rank). Official scoring still v1. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
@@ -29,11 +29,12 @@
 - Owner accepted E2-0…E2-22. Implementation plan: `docs/opportunity-engine-v2-plan.md`.
 - **PR-D Discovery:** pools A/B/C, no `sort:stars`, no magnet keywords, `pre_rank_key` without raw stars, quota exposure not FIFO fill. `score.py` / `select.py` untouched.
 - **PR-V dual-write:** `score_version` v1+v2, `score_compare` rank deltas, preview `score_v2.py`. Official Top 5 still v1. Review: `docs/opportunity-engine-v2-v1v2.md`.
+- **PR-H Hydration Expansion:** pool-allocated Phase B (A15/B10/C5) + medium REST 30; PR acceptance sample; maintainer TTR hours; activity raw (`commits_7d` etc.) **not** in `windows.v7`; `data_completeness` HIGH/MEDIUM/LOW for Board/audit only. Report: [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md).
 
 ## In Progress
 
 - 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
-- Next: owner review of [`docs/opportunity-engine-v2-real-experiment.md`](docs/opportunity-engine-v2-real-experiment.md). Do **not** start PR-S1 until hydrate vs recency vs scoring is chosen. Do not cut over Official.
+- Next: owner review of the PR-H hydration report. Do **not** start PR-S1 / Entry Window / Activity *scoring* until that read. Do not cut over Official.
 
 ## Blocked
 
@@ -41,7 +42,7 @@
 
 ## Next Action
 
-Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D and PR-V are in tree.** 2026-08-25 real experiment is in `docs/opportunity-engine-v2-real-experiment.md`. Official remains v1. Do not start PR-S1 until the owner picks hydrate vs activity vs scoring.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D, PR-V, and PR-H are in tree.** Official remains v1. After hydration: if 1★ youth still dominate Preview, then S1; if ranks look reasonable, then Activity scoring. Owner decides.
 
 ## Known Bugs
 
