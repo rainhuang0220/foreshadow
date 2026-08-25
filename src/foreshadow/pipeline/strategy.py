@@ -101,6 +101,9 @@ def recommend_entry(
         return _pack("TOOLING", why, "Medium", "1d", False)
     if (feat.unassigned_help or 0) >= 1 or (feat.help_n or 0) >= 1:
         why.append("有未认领的求助 Issue；GFI 只作 onboarding 信号")
+        titles = feat.help_issue_titles or feat.open_issue_titles or []
+        if titles:
+            why.append(f"建议先看：{titles[0]}")
         return _pack("ISSUE", why, "Easy", "4h", False)
     if feat.screenshot_only:
         why.append("仓库几乎只有展示材料")
