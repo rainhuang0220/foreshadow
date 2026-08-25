@@ -107,7 +107,7 @@ select {
 .list { border-top: 1px solid var(--rule); }
 .row {
   display: grid;
-  grid-template-columns: 3.2rem minmax(0,1fr) 4.2rem;
+  grid-template-columns: 3.2rem minmax(0,1fr) 7.2rem;
   gap: .25rem 1rem;
   padding: .85rem 0;
   border-bottom: 1px solid var(--rule);
@@ -371,7 +371,9 @@ function listView(board) {
       </div>
       <div class="final">${n(c.final_score)}</div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
-      <div></div>
+      <div>
+        <button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>
+      </div>
       <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 早期 ${n(c.s1_earlyness)} · 证据 ${n(c.s1_evidence)} · 窗口 ${n(c.s1_window)} · ${esc(c.s1_pool_zh || "")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
     </div>`).join("");
 }
