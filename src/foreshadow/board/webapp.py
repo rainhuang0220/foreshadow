@@ -258,6 +258,13 @@ button.ghost, .toolbar button {
 .mission-list { margin: 0 0 1.2rem; border-top: 1px solid var(--rule); }
 .mission-list .row { cursor: default; grid-template-columns: minmax(0,1fr) 7rem; }
 details.git-ops { margin: .8rem 0; color: var(--paper-muted); font-size: .86rem; }
+pre.meta {
+  white-space: pre-wrap;
+  background: #efe6d0;
+  padding: .6rem .7rem;
+  max-height: 12rem;
+  overflow: auto;
+}
 .warn {
   border: 1px solid var(--cinnabar);
   color: var(--cinnabar-dim);
