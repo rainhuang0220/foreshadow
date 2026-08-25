@@ -166,6 +166,8 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     assert "不会自动" in md
     assert "toy" in md.lower() or "README" in md
     assert (dest / "ISSUE_DRAFT.md").is_file()
+    assert (dest / "FORK.md").is_file()
+    assert "不会" in (dest / "FORK.md").read_text(encoding="utf-8")
     draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
     assert "等待你的确认" in draft
     assert out["branch"]["ok"] is True
@@ -215,6 +217,9 @@ def test_setup_embeds_cited_issue(tmp_home):
     assert "#73" in md
     assert "repro: pass []" in md
     assert out["mission"].get("cited_issue", {}).get("number") == 73
+    draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
+    assert "crash on empty batch" in draft
+    assert "repro: pass []" in draft
 
 
 def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):

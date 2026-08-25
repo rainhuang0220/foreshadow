@@ -542,6 +542,7 @@ def present_card(
         "strategy_difficulty": card.strategy_difficulty,
         "strategy_effort": card.strategy_effort,
         "strategy_long_term": card.strategy_long_term or {},
+        "strategy_why": list(card.strategy_why or []),
         "mission_id": (mission or {}).get("id"),
         "mission_status": (mission or {}).get("status"),
         "next_step_zh": (mission or {}).get("next_step_zh"),

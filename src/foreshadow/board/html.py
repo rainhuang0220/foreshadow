@@ -112,6 +112,7 @@ def render_board_html(board: BoardDocument) -> str:
     <p>外部 PR 接受率：{_score(card.get("access_merge_rate"))} · 外部 PR 评审率：{_score(card.get("access_review_rate"))}</p>
     <p><strong>推荐入口：</strong>{_e(card.get("strategy_summary_zh") or "先阅读再决定")}
        · 难度 {_e(card.get("strategy_difficulty") or "—")} · 预计 {_e(card.get("strategy_effort") or "—")}</p>
+    <p>{_e("；".join(card.get("strategy_why") or []) or "")}</p>
     <p>在交互 Board 点「开始进入」生成 Entry Mission。静态页不会代发 GitHub。</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}

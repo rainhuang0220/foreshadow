@@ -139,6 +139,7 @@ class BoardCard(BaseModel):
     strategy_difficulty: str | None = None
     strategy_effort: str | None = None
     strategy_long_term: dict[str, Any] | None = None
+    strategy_why: list[str] = Field(default_factory=list)
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None

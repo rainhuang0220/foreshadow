@@ -666,7 +666,27 @@ def probe_python_tests(
     }
 
 
-def write_issue_draft(dest: Path, mission: Mission) -> Path:
+def write_fork_note(dest: Path, full_name: str) -> Path:
+    path = Path(dest) / "FORK.md"
+    path.write_text(
+        f"# Fork 只在你确认以后\n\n"
+        f"上游：https://github.com/{full_name}\n\n"
+        "若要提交补丁，需要你自己的 fork。Foreshadow **不会**：\n"
+        "- 调用 GitHub fork API\n"
+        "- 改你的 git remote\n"
+        "- push 到 origin\n\n"
+        "本地已经 `git clone --depth 1` 到 `repo/`，分支 `foreshadow/entry`。\n"
+        "等待你的确认才能执行任何远程 GitHub 操作。\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_issue_draft(
+    dest: Path,
+    mission: Mission,
+    cited: dict[str, Any] | None = None,
+) -> Path:
     path = Path(dest) / "ISSUE_DRAFT.md"
     why = "\n".join(f"- {w}" for w in mission.why_now) or "- （待补充）"
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
@@ -677,10 +697,18 @@ def write_issue_draft(dest: Path, mission: Mission) -> Path:
         "TEST": "测试缺口说明草稿",
         "BUG_FIX": "修复说明草稿（先沟通）",
     }.get(mission.strategy.path, "Issue 草稿")
+    cited = cited or {}
+    issue_block = ""
+    if cited.get("number"):
+        issue_block = (
+            f"针对：#{cited['number']} {cited.get('title') or ''}\n"
+            f"{(cited.get('body') or '')[:600]}\n\n"
+        )
     path.write_text(
         f"# {kind}\n\n"
         f"项目：{mission.full_name}\n"
         f"标题：{mission.strategy.summary_zh}\n\n"
+        f"{issue_block}"
         f"## 为什么写这份草稿\n{why}\n\n"
         f"## 建议怎么说\n{steps}\n\n"
         "这只是本地草稿。等待你的确认才能发到 GitHub。\n"
@@ -879,7 +907,7 @@ def setup_local_environment(
         if clone.get("ok")
         else {"ok": False, "status": "skipped"}
     )
-    draft = write_issue_draft(dest, mission)
+    write_fork_note(dest, full_name)
     issue_n = cited_issue_number(mission)
     cited = None
     if issue_n is not None:
@@ -890,6 +918,7 @@ def setup_local_environment(
                 cited = _load_cited_issue(full_name, issue_n)
         except (OSError, ValueError, TypeError, RuntimeError):
             cited = None
+    draft = write_issue_draft(dest, mission, cited=cited)
     extra = {"clone": clone, "inspect": inspect, "cited_issue": cited or {}}
     write_mission_doc(dest, mission, extra=extra)
     dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"

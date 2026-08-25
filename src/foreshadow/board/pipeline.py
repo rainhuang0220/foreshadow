@@ -66,6 +66,10 @@ def _card(
     titles = (row.evidence or {}).get("help_issue_titles") or []
     if isinstance(titles, list) and titles:
         suggested = str(titles[0])
+    elif extra and extra.get("strategy_why"):
+        why0 = extra.get("strategy_why")
+        if isinstance(why0, list) and why0:
+            suggested = str(why0[0])
     elif row.contribution_bullets:
         suggested = row.contribution_bullets[0]
     extra_meta = extra or {}
@@ -132,6 +136,7 @@ def _card(
         strategy_long_term=extra_meta.get("strategy_long_term")
         if isinstance(extra_meta.get("strategy_long_term"), dict)
         else None,
+        strategy_why=list(extra_meta.get("strategy_why") or []),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -394,7 +399,7 @@ def load_scored_from_db(
             feat=blob,
             activity=act,
         )
-        strat = recommend_entry(blob, s1=s1, access=acc)
+        strat = recommend_entry(blob, s1=s1, access=acc, language=language)
         extras[full_name] = {
             "html_url": html_url or data.get("html_url"),
             "stars": data.get("S"),
@@ -441,6 +446,7 @@ def load_scored_from_db(
             "strategy_difficulty": strat.difficulty,
             "strategy_effort": strat.effort,
             "strategy_long_term": strat.long_term,
+            "strategy_why": list(strat.why),
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days

@@ -1169,7 +1169,7 @@ def build_features_blob(
             continue
         title = str(issue.get("title") or "")
         number = issue.get("number")
-        open_titles.append(title)
+        open_titles.append(f"#{number} {title}" if number is not None else title)
         author = issue.get("author") if isinstance(issue.get("author"), dict) else {}
         login = author.get("login") if isinstance(author, dict) else None
         assoc = str(issue.get("authorAssociation") or "")

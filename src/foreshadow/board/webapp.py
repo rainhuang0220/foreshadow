@@ -385,6 +385,7 @@ function header(board) {
     </div>
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭") : ""}</p>
     <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
+    ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
     <div class="counts">
       <div><b>${c.discovered}</b>发现项目</div>
       <div><b>${c.shortlisted}</b>候选项目</div>
@@ -472,6 +473,7 @@ function drawerView(card) {
       · 首次发现 ${n(card.first_seen_at)}
     </p>
     <p class="meta"><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}（${esc(card.strategy_path || "")}） · 难度 ${esc(card.strategy_difficulty || "—")} · 预计 ${esc(card.strategy_effort || "—")}</p>
+    <p class="meta">${esc((card.strategy_why||[]).join("；") || "")}</p>
     <p class="meta">长期参与潜力：${card.strategy_long_term && card.strategy_long_term.score != null ? n(card.strategy_long_term.score) + " / 100" : "N/A"}（不是承诺）</p>
     <ol class="ev">${(card.strategy_steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
     <p>
@@ -552,6 +554,7 @@ function missionView(m) {
   const steps = (m.steps_zh||[]).map((x,i) => `<li><strong>第 ${i+1} 步</strong> ${esc(x)}</li>`).join("");
   const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
+  const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
   const id = m.id;
   return `
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
@@ -571,6 +574,7 @@ function missionView(m) {
     <h3>行动计划</h3>
     <ol>${steps}</ol>
     <p class="meta">本地目录：${esc(m.local_path || "尚未准备")} · clone：${esc(clone)}</p>
+    ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
     <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}</p>
     <p>
       <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
@@ -642,12 +646,17 @@ function openCard(name) { state.open = name; render(); }
 function closeCard() { state.open = null; render(); }
 
 async function startEnter(name) {
+  if (state.busy) return;
+  state.busy = true;
+  render();
   try {
     const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
     state.mission = data.mission;
     render();
     if (data.mission && data.mission.id) await setupLocal(data.mission.id);
+    try { await loadBoard(); } catch {}
   } catch (e) { alert(e.message); }
+  finally { state.busy = false; render(); }
 }
 
 async function setupLocal(id) {
@@ -655,6 +664,7 @@ async function setupLocal(id) {
     const data = await api("/api/mission/setup", { method: "POST", body: JSON.stringify({ id }) });
     state.mission = data.mission;
     if (state.portfolio) try { state.portfolio = await api("/api/portfolio"); } catch {}
+    try { await loadBoard(); } catch {}
     render();
   } catch (e) { alert(e.message); }
 }

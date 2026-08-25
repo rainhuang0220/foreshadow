@@ -131,6 +131,8 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "开始进入" in page.text
         assert "查看任务" in page.text
         assert "/api/mission" in page.text
+        assert "正在准备本地环境" in page.text
+        assert "clone.error" in page.text or "cloneErr" in page.text
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -173,6 +175,9 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         port = a.get(f"{base}/api/portfolio").json()
         assert port["missions"] >= 1
         assert port["observed_access"]["score"] is None
+        after = a.get(f"{base}/api/board").json()
+        card = next(c for c in after["candidates"] if c["full_name"] == "acme/x")
+        assert card.get("mission_id") == mission["id"]
         ev = a.post(
             f"{base}/api/mission/event",
             json={"id": mission["id"], "event": "abandoned"},

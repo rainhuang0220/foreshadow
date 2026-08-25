@@ -43,6 +43,18 @@ def test_present_board_is_chinese_and_sorted():
     enter = next(a for a in actions if a["id"] == "enter")
     assert "开始进入" not in enter["label"]
     assert "观察" in enter["label"]
+    missions = {
+        top["full_name"]: {
+            "id": 9,
+            "status": "MISSION_READY",
+            "next_step_zh": "准备本地环境",
+            "needs_user_approval": True,
+        }
+    }
+    joined = present_board(board, missions=missions)
+    hit = joined["candidates"][0]
+    assert hit["mission_id"] == 9
+    assert hit["needs_user_approval"] is True
     assert "打开 GitHub" in html
     assert "数据完整度" in html
     assert "置信度" in html
