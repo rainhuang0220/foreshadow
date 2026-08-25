@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from foreshadow.config import LLMSettings, Settings
-from foreshadow.llm import complete, fill_why_now
+from foreshadow.llm import _SYSTEM, complete, fill_why_now
 from foreshadow.models import ComponentScore, ScoreBreakdown
 from foreshadow.pipeline.report import build_card
 from foreshadow.pipeline.score import ScoredRepo, score_repo
@@ -123,6 +123,13 @@ def test_build_card_uses_llm_why_now(frozen_clock, repo_fixture):
     card = build_card(scored, rank=1, repo=repo)
     assert card["why_now"] == "LLM why now."
     assert card["best_contribution"] == ["Fix docs"]
+
+
+def test_llm_prompt_forbids_pr_as_first_action():
+    blob = _SYSTEM.lower()
+    assert "open a pr" in blob
+    assert "contributing.md" in blob
+    assert "do not tell the user" in blob
 
 
 def _eligible_card(name: str) -> ScoredRepo:

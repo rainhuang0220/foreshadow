@@ -524,6 +524,7 @@ function boardView() {
       </select>
     </label>
     <span class="date">当前按${state.sort==="final_score"?"综合评分":"所选指标"}排序</span>
+    <button type="button" disabled title="扫描由每日 foreshadow run 执行，本页不在后台扫 GitHub">暂停扫描</button>
     <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
   ${state.showMissions ? missionListView() : ""}
