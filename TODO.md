@@ -11,10 +11,12 @@
 - [ ] Keep P0 dogfood through 2026-08-31 UTC
 - [ ] P0 post-run review, then decide PR #1 merge
 - [x] Opportunity Engine 2.0 research + scoring audit (no formula changes)
-- [ ] Owner accepts Engine 2.0 locks in `docs/opportunity-engine-v2-audit.md` / DECISIONS E2-*
-- [ ] Then: discovery v2 (quota, star strata) — still no official score change
-- [ ] Then: `score_version` dual-write + counterexample tests + v2 formulas
-- [ ] Replay 2026-08-24 120 in-memory; compare lists; do not write fake snapshots
+- [x] Owner accepted E2-0…E2-22; plan in `docs/opportunity-engine-v2-plan.md`
+- [ ] **PR-D** Discovery: pools A/B/C, no `sort:stars`, pre_rank without raw stars, reserved seats
+- [ ] PR-V `score_version` dual-write (`003_score_version.sql`)
+- [ ] PR-T counterexample tests (E2-16)
+- [ ] PR-S1…S5 scoring / preview (not before D+V+T)
+- [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 
 ## P0 implementation
 

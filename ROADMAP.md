@@ -16,13 +16,23 @@ P0 success: `GITHUB_TOKEN` + `foreshadow run` produces a markdown Top 5 (or hone
 
 HTML Daily Board + 100→20→3 reviewers→10→Chair. Official Top 5 still requires `v7`. No extra data sources in this slice.
 
-## Opportunity Engine 2.0 (research 2026-08-25)
+## Opportunity Engine 2.0 (locks accepted 2026-08-25)
 
-**Not implemented.** v1 remains official. Plan: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md).
+Official scoring remains **v1**. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md).
 
-Goal: rank **early window × real contribution**, not 1k–5k star AI incumbents. Official Top 5 still needs **local** `v7`. Day-1 GitHub **star** history is not available (stargazer listing admin-only). Activity windows (forks/issues/PRs) may label movement; they must not become `windows.v7`.
+```
+PR-D Discovery pools A/B/C
+ → PR-V score_version dual-write
+ → PR-T counterexample tests
+ → PR-S1 Entry Window
+ → PR-S2 Maintainer / Community
+ → PR-S3 Contributor Access
+ → PR-S4 Contribution Opportunity + Entry Strategy
+ → PR-S5 Preview v2 / official v1
+ → PR-R replay 120 and compare
+```
 
-Order after owner OK: discovery quota → `score_version` dual-write → counterexample tests → Entry Window + acceptance → preview reads v2 / official stays v1 → replay 120 → cutover.
+Do not retune `score.py` on the old discovery funnel. Official Top 5 still needs local `v7`. Activity ≠ star growth.
 
 ## P1 later / P0+ 
 

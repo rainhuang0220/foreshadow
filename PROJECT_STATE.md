@@ -3,9 +3,11 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Opportunity Engine 2.0 **research done, scoring still v1**. |
-| **Current Goal** | Keep 7-day dogfood (2026-08-24 → 2026-08-31 UTC). **Do not merge to main** until post-run review. **Do not change v1 scoring / 55 / 35 / local v7** this week. Engine 2.0 plan: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md). |
-| **Scoring version** | **v1** (20/15/15/20/15/10/5). v2 designed, not implemented. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **locks accepted**. Next code: **Discovery multi-pool (PR-D)**. Scoring still **v1**. |
+| **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Implement Discovery before `score.py`. |
+| **Scoring version** | **v1**. v2 not implemented. |
+| **Discovery version** | **v1** (12 queries, `stars:50..8000`, FIFO, star pre-rank). v2 plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
+| **Known API limits** | Third-party stargazer listing / `starred_at` admin-only (2026-06-30). Activity windows ≠ star growth. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
 | **Package** | `foreshadow-radar` `0.1.0` (local / branch only) |
@@ -23,12 +25,13 @@
 - Tasks 1–11 on `p0-implementation`: skeleton through 0.1.0 hygiene (GET-only client, scores, Top 5 / empty OK, v7 required, human review, optional LLM narrative).
 - P1 Preview Audit Board: 120→20→3 reviewers→10→Chair, HTML Daily Board, official Top 5 still 0 without v7. Preview does not insert snapshots.
 - P1 round 2: localhost Chinese list+drawer Board, register/login, per-user reviews. P0 thresholds unchanged.
-- Opportunity Engine 2.0 Phase 1–7: parallel research + scoring audit. **No formula changes.** Audit: `docs/opportunity-engine-v2-audit.md`.
+- Opportunity Engine 2.0 research + audit. **No formula changes.**
+- Owner accepted E2-0…E2-22. Implementation plan: `docs/opportunity-engine-v2-plan.md`.
 
 ## In Progress
 
-- 7-day dogfood: `./scripts/dogfood-run.sh` (logs in `dogfood/local/`, gitignored). Empty Top 5 is success.
-- Engine 2.0 waiting on owner OK before discovery/v2 dual-write implementation.
+- 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
+- Next: PR-D Discovery multi-pool (not `score.py`).
 
 ## Blocked
 
@@ -36,7 +39,7 @@
 
 ## Next Action
 
-Keep the worktree. Run the dogfood script daily. Do **not** change `min_opportunity` / `min_explosion`. Do **not** fabricate snapshots or stargazer lists. After 7 calendar days, review `dogfood/local/JOURNAL.md` and decide merge. Engine 2.0: implement only after the audit locks are accepted.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: implement **PR-D Discovery** next; `score.py` only after dual-write + counterexample tests.
 
 ## Known Bugs
 

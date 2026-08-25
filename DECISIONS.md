@@ -29,17 +29,36 @@ Locked in the P0 spec (`docs/p0-architecture.md`). Reopen only with a written re
 
 **Invariants:** no GitHub writes; max 5; no padding; no commit-count KPI; NA ≠ 0; empty Top 5 is success.
 
-## Opportunity Engine 2.0 (proposed 2026-08-25, not locked)
+## Opportunity Engine 2.0 (accepted 2026-08-25)
 
-Audit: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md). Production scoring stays **v1**.
+Owner approved E2-0…E2-22. Production scoring remains **v1** until dual-write + counterexamples + explicit cutover.
 
-| ID | Proposal | Why |
-|---|---|---|
-| E2-1 | Keep K5/K7: official star `v7` = local snapshots only | 2026-06-30 stargazer listing is admin-only; GH Archive WatchEvent degraded. Do not invent `S(t-7)`. |
-| E2-2 | Day-1 **activity** windows (forks/issues/PRs created) are labeled evidence, never written into `windows.v7` | User still gets “is it moving?” without lying about stars. |
-| E2-3 | Reopen **K2 weights** and `late()` / `late_10x` as v2 Entry Window | 2026-08-24 shortlist: 0 rows &lt;300★; shimmy 5807★ provisional #3. v1 Early Entry prefers mid-size. |
-| E2-4 | Do **not** lower `min_opportunity=55` / `min_explosion=35` | Lowering Opportunity would admit hot-closed 2k★ repos. |
-| E2-5 | Persist `score_version`; dual-write; never overwrite v1 rows | Backtest v1 vs v2. |
-| E2-6 | Discovery: per-query quota + drop `sort:stars` / llama.cpp magnets **before** claiming v2 “found smaller repos” | Funnel is search+pre_rank, not only Opportunity mix. |
+Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). Audit: [`docs/opportunity-engine-v2-audit.md`](docs/opportunity-engine-v2-audit.md).
 
-Owner must accept E2-1…E2-6 before Phase 8 code.
+| ID | Decision |
+|---|---|
+| E2-0 | Target is Good Project × Early Window × Real Contribution. Not a high-star picker and not a low-star collector. |
+| E2-1 | **Discovery before scoring.** Do not retune weights on the old 50–8000 FIFO funnel. |
+| E2-2 | Three pools: A Early (recall 10–400★), B Emerging (100–3000★), C New ecosystem (no star-primary recall). Union → dedup → quality filter → reserved seats. Underfill is OK. |
+| E2-3 | No `sort:stars`; Phase B `pre_rank_key` must not use raw stars as the main key. |
+| E2-4 | Stars = attention / maturity proxy, not opportunity or quality. |
+| E2-5 | Entry Window is continuous + soft penalty. No `star>X` reject, no `star<X` bonus. |
+| E2-6 | **Contributor Gap ≠ Contributor Access.** High gap + low access must not score high. |
+| E2-7 | Maintainer / community responsiveness is a real component (not 5% decoration). |
+| E2-8 | Contribution = Impact × Need × Feasibility × Acceptance. GFI/typo/docs are not high opportunity. |
+| E2-9 | Entry Strategy (issue → repro → discuss → PR, or do not enter). Never default “file a PR.” |
+| E2-10 | Explosion (will it get big?) ≠ Opportunity (can I enter now?). Top 5 keyed on Opportunity. |
+| E2-11 | Official Top 5 still needs genuine **local v7**. No lower 55/35, no lifetime-as-v7, no NA→0, no fake snapshots, no Preview-as-Official. |
+| E2-12 | No third-party star timestamp history. Activity timestamps are allowed. |
+| E2-13 | `forks_created_7d` / `issues_created_7d` / `prs_created_7d` / `commits_7d` **are not** `stars_growth_7d`. |
+| E2-14 | Dual history: external activity + local snapshots; local v7 verifies, it is not first knowledge. |
+| E2-15 | Rank Opportunity > Explosion > Stars (stars never primary). |
+| E2-16 | Named counterexample tests must pass before v2 is “done.” |
+| E2-17 | Dual-write: v1 official, v2 preview, until cutover. |
+| E2-18 | Replay must ask whether 10–300★ **can** enter shortlist, not that smallness is required. |
+| E2-19 | Order: Discovery → score_version → tests → Entry Window → Maintainer → Access → Contribution → Preview v2 → replay → compare. |
+| E2-20 | Parallel research on independent slices; Grok 4.6. |
+| E2-21 | Update PROJECT_STATE / DECISIONS / ROADMAP / TODO at each phase. |
+| E2-22 | Success = exclude mature-closed “good projects” while keeping early, used, responsive, enterable repos — including when they have 73★ and beat 2800★. |
+
+**K2 (v1 weights) and `late()`:** remain v1 until PR-S1. Reopen only behind `score_version=v2`. **K5/K7 unchanged.**
