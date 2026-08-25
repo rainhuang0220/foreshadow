@@ -55,6 +55,9 @@ def test_present_board_is_chinese_and_sorted():
     hit = joined["candidates"][0]
     assert hit["mission_id"] == 9
     assert hit["needs_user_approval"] is True
+    assert hit.get("access_unknown") is True
+    assert hit.get("access_score") is None
+    assert hit.get("access_class_zh") == "未知"
     assert "打开 GitHub" in html
     assert "数据完整度" in html
     assert "置信度" in html

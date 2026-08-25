@@ -132,6 +132,11 @@ select {
 .sub { grid-column: 2; color: var(--ink-dim); font-size: .86rem; }
 .row .act { grid-column: 3; grid-row: 1 / span 2; text-align: right; }
 .row .act button { margin-top: .45rem; }
+.row .act button.primary {
+  background: var(--gold);
+  color: var(--night);
+  border-color: var(--gold);
+}
 .sub b { color: var(--ink); font-weight: 500; }
 .gh-mini {
   margin-left: .6rem;
@@ -314,6 +319,10 @@ async function api(path, opts={}) {
   if (!res.ok) {
     const err = new Error(data.error || ("HTTP " + res.status));
     err.status = res.status;
+    if (res.status === 401 && path !== "/api/login" && path !== "/api/register") {
+      state.user = null;
+      state.board = null;
+    }
     throw err;
   }
   return data;
@@ -325,6 +334,12 @@ function esc(s) {
   }[c]));
 }
 function n(v) { return v == null ? "N/A" : String(v); }
+function accessLine(card) {
+  if (!card || card.access_unknown || card.access_score == null) return "未知";
+  const zh = card.access_class_zh || "极低";
+  const zero = Number(card.access_score) === 0 ? "（已知为 0，不是未知）" : "";
+  return zh + "　" + n(card.access_score) + " / 100" + zero;
+}
 
 function applySortFilter(cands) {
   let rows = cands.slice();
@@ -415,7 +430,7 @@ function listView(board) {
         <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
-      <div class="sub">${esc(c.headline)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(c.access_class_zh || "未知")} · 入口 ${esc(c.strategy_summary_zh || "先阅读")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
+      <div class="sub">${esc(c.headline)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(accessLine(c))} · 入口 ${esc(c.strategy_summary_zh || "先阅读")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
     </div>`).join("");
 }
 
@@ -467,7 +482,7 @@ function drawerView(card) {
     <p class="meta">证据加分：${esc((card.s1_evidence_plus || []).join("；") || "—")}</p>
     <p class="meta">证据不足：${esc((card.s1_evidence_minus || []).join("；") || "—")}</p>
     <p class="meta">Star 只是规模观察，不是区间门槛，也不是否决。</p>
-    <p class="meta">进入通道：${esc(card.access_class_zh || "未知")}${card.access_score != null ? "　" + n(card.access_score) + " / 100" : ""}（不是贡献者缺口）</p>
+    <p class="meta">进入通道：${esc(accessLine(card))}（不是贡献者缺口）</p>
     <p class="meta">外部 PR 接受率：${n(card.access_merge_rate)} · 外部 PR 评审率：${n(card.access_review_rate)}</p>
     <p class="meta">
       Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
@@ -498,6 +513,7 @@ function drawerView(card) {
     <ul>${why}</ul>
     <p><strong>风险：</strong>${esc(ch.main_risk)}</p>
     <h3>我的决定</h3>
+    <p class="meta">下面只记个人立场。「记入观察清单」不会创建任务。要进入请点「开始进入」。</p>
     <div class="decide">${actions}</div>
   </aside>`;
 }
@@ -571,7 +587,7 @@ function missionView(m) {
     <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
     <p class="brand">FORESHADOW ENTRY MISSION</p>
     <h2>${esc(m.full_name)}</h2>
-    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${n(m.access)}</p>
+    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${m.access == null ? "未知" : (n(m.access) + (Number(m.access)===0 ? "（已知为 0，不是未知）" : ""))}</p>
     <p><strong>为什么现在进入：</strong>${esc((m.why_now||[]).join("；") || "—")}</p>
     <p><strong>推荐入口：</strong>${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
     <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status_zh || m.status || "—")}</p>
@@ -611,7 +627,7 @@ function missionView(m) {
 function render() {
   const root = document.getElementById("app");
   if (!state.user) root.innerHTML = authView();
-  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…${state.error ? "<br/>" + esc(state.error) : ""}</p>`;
+  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…${state.error ? "<br/>" + esc(state.error) : ""}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> <button type="button" onclick="logout()">退出</button></p>`;
   else root.innerHTML = boardView();
 }
 
@@ -672,6 +688,9 @@ async function startEnter(name) {
     const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
     state.mission = data.mission;
     render();
+    state.open = null;
+    const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
+    if (card && data.mission && data.mission.id) card.mission_id = data.mission.id;
     if (data.mission && data.mission.id) await setupLocal(data.mission.id);
     try { await loadBoard(); } catch {}
   } catch (e) { alert(e.message); }
@@ -698,8 +717,15 @@ async function loadMissions() {
 }
 
 function openMission(id) {
-  const found = (state.missions || []).find(x => x.id === id);
-  if (found) { state.mission = found; render(); }
+  const nid = Number(id);
+  const found = (state.missions || []).find(x => Number(x.id) === nid);
+  if (found) { state.open = null; state.mission = found; render(); }
+}
+
+async function retryBoard() {
+  state.error = "";
+  try { await loadBoard(); } catch (e) { state.error = e.message; }
+  render();
 }
 
 async function openExisting(id) {

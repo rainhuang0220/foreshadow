@@ -81,6 +81,15 @@ def _n(value: float | None) -> int | None:
     return round(value)
 
 
+def _access_view(card: BoardCard) -> tuple[str, float | None, bool]:
+    """UNKNOWN omitted, never shown as 0. Known 0% merge stays 0."""
+    score = card.access_score
+    if score is None:
+        return "未知", None, True
+    label = ACTIVITY_CLASS_LABELS.get(card.access_class or "", "极低" if score == 0 else "未知")
+    return label, score, False
+
+
 def _short_time(value: str | None) -> str | None:
     if not value:
         return None
@@ -475,6 +484,7 @@ def present_card(
     in_top5 = status in {"official", "preview_top"}
     rank_kind = "official" if board.mode == "official" else "preview"
     dims = _dimension_block(card, board.snapshot_days)
+    acc_zh, acc_score, acc_unknown = _access_view(card)
     return {
         "rank": card.list_rank,
         "full_name": card.full_name,
@@ -531,9 +541,11 @@ def present_card(
         "s1_earlyness_minus": list(card.s1_earlyness_minus or []),
         "s1_evidence_plus": list(card.s1_evidence_plus or []),
         "s1_evidence_minus": list(card.s1_evidence_minus or []),
-        "access_score": card.access_score,
-        "access_class": card.access_class,
-        "access_class_zh": ACTIVITY_CLASS_LABELS.get(card.access_class or "", "未知"),
+        "access_score": acc_score,
+        "access_class": None if acc_unknown else card.access_class,
+        "access_class_zh": acc_zh,
+        "access_unknown": acc_unknown,
+        "access_zero_note": "已知为 0，不是未知" if acc_score == 0 else None,
         "access_merge_rate": card.access_merge_rate,
         "access_review_rate": card.access_review_rate,
         "strategy_path": card.strategy_path,

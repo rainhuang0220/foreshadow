@@ -464,13 +464,19 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
     why = "\n".join(f"- {w}" for w in mission.why_now)
     clone = extra.get("clone") or {}
     inspect = extra.get("inspect") or {}
+    if mission.access is None:
+        access_s = "未知（不是 0）"
+    elif mission.access == 0:
+        access_s = "0（已知为 0，不是未知）"
+    else:
+        access_s = str(mission.access)
     text = (
         f"# FORESHADOW ENTRY MISSION\n\n"
         f"项目：{mission.full_name}\n\n"
         f"为什么现在进入：\n{why or '- （待补充）'}\n\n"
         f"阶段：{mission.stage or '—'}\n"
         f"机会窗口：{mission.window}\n"
-        f"进入通道：{mission.access}\n"
+        f"进入通道：{access_s}\n"
         f"推荐入口：{mission.strategy.summary_zh}（{mission.strategy.path}）\n"
         f"难度：{mission.strategy.difficulty}\n"
         f"预计：{mission.strategy.effort}\n"
