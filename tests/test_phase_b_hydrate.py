@@ -156,6 +156,17 @@ def test_pr_acceptance_empty_sample_is_unknown():
     assert rate == 0.5
     assert rev == 1
     assert rrate == 0.5
+    n, ext, rate, rev, rrate = _pr_acceptance(
+        {
+            "prsMerged": {
+                "nodes": [
+                    {"authorAssociation": "FIRST_TIMER", "reviews": {"totalCount": 1}},
+                    {"authorAssociation": "OWNER", "reviews": {"totalCount": 0}},
+                ]
+            }
+        }
+    )
+    assert n == 2 and ext == 1 and rate == 0.5
 
 
 def test_rest_closed_pulls_sample_unknown_review():

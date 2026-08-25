@@ -68,9 +68,9 @@ Checkpoint notes: Board now shows `strategy_why`, open issues carry `#N`, `ISSUE
 
 Replay of `recommend_entry` on the 2026-08-25 120 (no GitHub writes): ISSUE 41 / DISCUSSION 69 / REPRODUCTION 6 / TEST 2 / BUG_FIX 2 / direct PR 0. Lightweight 60 → DISCUSSION; medium 30 → ISSUE; Phase B mixed. Docs/tests/CI paths now require known merge rate.
 
-Live `foreshadow sample-access` on dogfood run_id=2: **updated=30**. Access now **56 known / 64 UNKNOWN** (60 lightweight left UNKNOWN on purpose). Mix VERY_LOW 28 / LOW 19 / MEDIUM 8 / HIGH 1.
+Live `foreshadow sample-access` then daily `foreshadow run` (dogfood, not 12h coding) on 2026-08-25: Access **known 55 / UNKNOWN 66** (lightweight stay UNKNOWN). Mix VL/L/M/H/VH. Entry paths on 120: ISSUE 82 / DISCUSSION 25 / BUG_FIX 8 / REPRODUCTION 6 / direct PR 0.
 
-Tests: **325 passed**.
+Tests: **331 passed**.
 
 ## Top remaining bottlenecks
 1. Access UNKNOWN on 90/120 until the next dogfood hydrate

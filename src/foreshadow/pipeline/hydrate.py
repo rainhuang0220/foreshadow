@@ -55,7 +55,9 @@ USAGE_CLOSED_RE = re.compile(
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 PUNCT_RE = re.compile(r"[^a-z0-9\s]+")
 TEST_DIRS = frozenset({"test", "tests", "spec", "__tests__"})
-EXT_ASSOC = frozenset({"NONE", "CONTRIBUTOR"})
+EXT_ASSOC = frozenset(
+    {"NONE", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"}
+)
 MAINT_ASSOC = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
