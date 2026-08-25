@@ -128,6 +128,57 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
             c for c in bob_board["candidates"] if c["full_name"] == first["full_name"]
         )
         assert bob_card["my_action"] in (None, "")
+        assert "开始进入" in page.text
+        assert "查看任务" in page.text
+        assert "/api/mission" in page.text
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        a = httpx.Client()
+        reg = a.post(
+            f"{base}/api/register",
+            json={
+                "username": "cara",
+                "email": "cara@example.com",
+                "password": "password1",
+            },
+        )
+        assert reg.status_code == 200
+        created = a.post(f"{base}/api/mission", json={"full_name": "acme/x"})
+        assert created.status_code == 200
+        mission = created.json()["mission"]
+        assert mission["needs_user_approval"] is True
+        assert mission["status"] == "MISSION_READY"
+        assert mission["strategy"]["allows_direct_pr"] is False
+        remote = a.post(
+            f"{base}/api/mission/remote", json={"action": "create_pr"}
+        )
+        assert remote.status_code == 200
+        assert remote.json()["blocked"] is True
+        setup = a.post(
+            f"{base}/api/mission/setup", json={"id": mission["id"]}
+        )
+        assert setup.status_code == 200
+        body = setup.json()
+        assert body["clone"]["ok"] is False
+        assert body["mission"]["status"] != "SUBMITTED"
+        listed = a.get(f"{base}/api/missions").json()
+        assert listed["missions"]
+        port = a.get(f"{base}/api/portfolio").json()
+        assert port["missions"] >= 1
+        assert port["observed_access"]["score"] is None
+        ev = a.post(
+            f"{base}/api/mission/event",
+            json={"id": mission["id"], "event": "abandoned"},
+        )
+        assert ev.status_code == 200
+        assert ev.json()["mission"]["status"] == "ABANDONED"
     finally:
         httpd.shutdown()
         httpd.server_close()

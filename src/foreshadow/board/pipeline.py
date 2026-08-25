@@ -129,6 +129,9 @@ def _card(
         strategy_steps_zh=list(extra_meta.get("strategy_steps_zh") or []),
         strategy_difficulty=extra_meta.get("strategy_difficulty"),
         strategy_effort=extra_meta.get("strategy_effort"),
+        strategy_long_term=extra_meta.get("strategy_long_term")
+        if isinstance(extra_meta.get("strategy_long_term"), dict)
+        else None,
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -437,6 +440,7 @@ def load_scored_from_db(
             "strategy_steps_zh": strat.steps_zh,
             "strategy_difficulty": strat.difficulty,
             "strategy_effort": strat.effort,
+            "strategy_long_term": strat.long_term,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days

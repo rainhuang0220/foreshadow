@@ -72,9 +72,18 @@ class BoardState:
                 if before != after:
                     raise RuntimeError("board run mutated snapshots")
                 stances = latest_action_map(conn, user_id=user_id) if user_id else {}
+                missions: dict[str, dict] = {}
+                if user_id:
+                    from foreshadow.mission import list_missions
+
+                    for row in list_missions(conn, int(user_id)):
+                        name = str(row.get("full_name") or "")
+                        if not name or str(row.get("status") or "") == "ABANDONED":
+                            continue
+                        missions.setdefault(name, row)
             finally:
                 conn.close()
-            return present_board(doc, stances=stances)
+            return present_board(doc, stances=stances, missions=missions)
 
 
 def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
@@ -173,10 +182,14 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
             from foreshadow.mission import portfolio
+            from foreshadow.pipeline.learning import observed_access
 
             conn = self.state.db()
             try:
                 payload = portfolio(conn, int(user["id"]))
+                payload["observed_access"] = observed_access(
+                    conn, user_id=int(user["id"])
+                )
             finally:
                 conn.close()
             self._send(*_json_bytes(payload))
@@ -331,17 +344,42 @@ class BoardHandler(BaseHTTPRequestHandler):
             if user is None:
                 self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
-            from foreshadow.mission import list_missions, set_status
+            from foreshadow.mission import setup_local_environment
+            from foreshadow.paths import resolve_data_dir
 
             mid = int(data.get("id") or 0)
             conn = self.state.db()
             try:
-                set_status(conn, mid, int(user["id"]), "LOCAL_SETUP")
-                items = list_missions(conn, int(user["id"]))
+                out = setup_local_environment(
+                    conn, mid, int(user["id"]), resolve_data_dir()
+                )
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
             finally:
                 conn.close()
-            found = next((m for m in items if m.get("id") == mid), None)
-            self._send(*_json_bytes({"mission": found or {"id": mid, "status": "LOCAL_SETUP"}}))
+            self._send(*_json_bytes({"mission": out["mission"], "clone": out["clone"]}))
+            return
+        if path == "/api/mission/event":
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.mission import record_user_event
+
+            mid = int(data.get("id") or 0)
+            event = str(data.get("event") or "")
+            conn = self.state.db()
+            try:
+                plan = record_user_event(
+                    conn, user_id=int(user["id"]), mission_id=mid, event=event
+                )
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
+            finally:
+                conn.close()
+            self._send(*_json_bytes({"mission": plan, "event": event}))
             return
         if path == "/api/mission/remote":
             from foreshadow.mission import refuse_remote_action

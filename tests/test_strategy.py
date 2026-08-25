@@ -44,3 +44,41 @@ def test_help_wanted_is_issue_not_pr_magnet():
     )
     assert strat.path == "ISSUE"
     assert "onboarding" in " ".join(strat.why).lower() or "Issue" in strat.summary_zh
+
+
+def test_reproduction_still_cites_a_concrete_issue():
+    strat = recommend_entry(
+        FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        )
+    )
+    assert strat.path == "REPRODUCTION"
+    assert "#73" in " ".join(strat.why)
+
+
+def test_hard_language_does_not_recommend_core_rewrite():
+    strat = recommend_entry(
+        FeaturesBlob(
+            bug_n=4,
+            issue_sample_n=8,
+            maint_touch=0.5,
+            pr_accept_rate=0.5,
+            pr_merged_sample_n=8,
+        ),
+        language="Rust",
+        skills=("Python", "docs"),
+    )
+    assert strat.path in {"ISSUE", "DISCUSSION", "DOCUMENTATION", "RESEARCH"}
+    assert strat.allows_direct_pr is False
+    blob = " ".join(strat.steps_zh + strat.why + [strat.summary_zh])
+    assert "重写整个" not in blob
+    assert "inference engine" not in blob.lower()
+
+
+def test_long_term_unknown_is_not_zero():
+    strat = recommend_entry(FeaturesBlob())
+    assert strat.long_term.get("score") is None or strat.long_term.get("missing")
+    if strat.long_term.get("score") is None:
+        assert "not 0" in strat.long_term.get("why", "").lower()

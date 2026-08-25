@@ -194,7 +194,9 @@ def score_repo_v2(
         "known_bias": {"discovery_recency_bias": True},
         "s1": s1.as_dict(),
         "access": access.as_dict(),
-        "strategy": recommend_entry(feat, s1=s1, access=access).as_dict(),
+        "strategy": recommend_entry(
+            feat, s1=s1, access=access, language=ctx.language
+        ).as_dict(),
     }
     return ScoredRepo(
         owner=ctx.owner,

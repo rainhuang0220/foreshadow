@@ -26,7 +26,7 @@ ACTION_LABELS = {
     "watch": "关注",
     "interested": "感兴趣",
     "investigate": "调查",
-    "enter": "进入",
+    "enter": "记入观察清单（不是创建任务）",
     "later": "暂不考虑",
     "reject": "拒绝",
 }
@@ -469,6 +469,7 @@ def present_card(
     board: BoardDocument,
     *,
     my_action: str | None = None,
+    mission: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     status = _status(card, board)
     in_top5 = status in {"official", "preview_top"}
@@ -540,6 +541,11 @@ def present_card(
         "strategy_steps_zh": list(card.strategy_steps_zh or []),
         "strategy_difficulty": card.strategy_difficulty,
         "strategy_effort": card.strategy_effort,
+        "strategy_long_term": card.strategy_long_term or {},
+        "mission_id": (mission or {}).get("id"),
+        "mission_status": (mission or {}).get("status"),
+        "next_step_zh": (mission or {}).get("next_step_zh"),
+        "needs_user_approval": bool((mission or {}).get("needs_user_approval")),
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {
@@ -606,8 +612,10 @@ def present_board(
     board: BoardDocument,
     *,
     stances: dict[str, str] | None = None,
+    missions: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     stances = stances or {}
+    missions = missions or {}
     ranked = sorted(
         board.shortlist,
         key=lambda c: (
@@ -618,7 +626,12 @@ def present_board(
         ),
     )
     candidates = [
-        present_card(card, board, my_action=stances.get(card.full_name))
+        present_card(
+            card,
+            board,
+            my_action=stances.get(card.full_name),
+            mission=missions.get(card.full_name),
+        )
         for card in ranked
     ]
     preview = board.mode != "official"

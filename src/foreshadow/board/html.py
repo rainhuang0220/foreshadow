@@ -110,7 +110,9 @@ def render_board_html(board: BoardDocument) -> str:
     <p class="muted">Star 只是规模观察，不是区间门槛，也不是否决。</p>
     <p>进入通道：{_e(card.get("access_class_zh") or "未知")} {_activity_score({"activity_momentum": card.get("access_score")})}（不是贡献者缺口）</p>
     <p>外部 PR 接受率：{_score(card.get("access_merge_rate"))} · 外部 PR 评审率：{_score(card.get("access_review_rate"))}</p>
-    <p><strong>推荐入口：</strong>{_e(card.get("strategy_summary_zh") or "先阅读再决定")}</p>
+    <p><strong>推荐入口：</strong>{_e(card.get("strategy_summary_zh") or "先阅读再决定")}
+       · 难度 {_e(card.get("strategy_difficulty") or "—")} · 预计 {_e(card.get("strategy_effort") or "—")}</p>
+    <p>在交互 Board 点「开始进入」生成 Entry Mission。静态页不会代发 GitHub。</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
        · Open Issues {_e(card["open_issues"])}</p>

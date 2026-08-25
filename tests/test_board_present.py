@@ -38,6 +38,11 @@ def test_present_board_is_chinese_and_sorted():
     assert top["p0_confidence_zh"] in {"高", "中", "低"}
     html = render_board_html(board)
     assert "今日候选榜" in html
+    view = present_board(board)
+    actions = view["candidates"][0]["detail"]["review_actions"]
+    enter = next(a for a in actions if a["id"] == "enter")
+    assert "开始进入" not in enter["label"]
+    assert "观察" in enter["label"]
     assert "打开 GitHub" in html
     assert "数据完整度" in html
     assert "置信度" in html

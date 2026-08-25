@@ -240,9 +240,36 @@ select {
   cursor: pointer;
 }
 .empty { color: var(--ink-dim); padding: 2rem 0; }
+button.primary {
+  background: var(--paper-ink);
+  color: var(--paper);
+  border: 1px solid var(--paper-ink);
+  padding: .4rem .75rem;
+  cursor: pointer;
+}
+button.ghost, .toolbar button {
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--rule);
+  padding: .35rem .7rem;
+  cursor: pointer;
+}
+.toolbar button { color: var(--ink); }
+.mission-list { margin: 0 0 1.2rem; border-top: 1px solid var(--rule); }
+.mission-list .row { cursor: default; grid-template-columns: minmax(0,1fr) 7rem; }
+details.git-ops { margin: .8rem 0; color: var(--paper-muted); font-size: .86rem; }
+.warn {
+  border: 1px solid var(--cinnabar);
+  color: var(--cinnabar-dim);
+  padding: .55rem .7rem;
+  margin: .8rem 0;
+  font-size: .88rem;
+}
 @media (max-width: 900px) {
   .counts { grid-template-columns: repeat(2, 1fr); }
   .wrap { padding: 1rem 1rem 5rem; }
+  .row { grid-template-columns: 2.4rem minmax(0,1fr); }
+  .final { text-align: left; }
 }
 </style>
 </head>
@@ -260,6 +287,8 @@ const state = {
   error: "",
   busy: false,
   mission: null,
+  missions: [],
+  showMissions: false,
   portfolio: null,
 };
 
@@ -348,6 +377,7 @@ function header(board) {
       ${preview ? "预览模式｜历史不足 v7｜不是正式预测" : "正式模式｜v7 历史完整"}
     </div>
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭") : ""}</p>
+    <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
     <div class="counts">
       <div><b>${c.discovered}</b>发现项目</div>
       <div><b>${c.shortlisted}</b>候选项目</div>
@@ -372,7 +402,7 @@ function listView(board) {
       <div class="final">${n(c.final_score)}</div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
       <div>
-        <button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>
+        <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
       <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 早期 ${n(c.s1_earlyness)} · 证据 ${n(c.s1_evidence)} · 窗口 ${n(c.s1_window)} · ${esc(c.s1_pool_zh || "")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
     </div>`).join("");
@@ -435,9 +465,10 @@ function drawerView(card) {
       · 首次发现 ${n(card.first_seen_at)}
     </p>
     <p class="meta"><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}（${esc(card.strategy_path || "")}） · 难度 ${esc(card.strategy_difficulty || "—")} · 预计 ${esc(card.strategy_effort || "—")}</p>
+    <p class="meta">长期参与潜力：${card.strategy_long_term && card.strategy_long_term.score != null ? n(card.strategy_long_term.score) + " / 100" : "N/A"}（不是承诺）</p>
     <ol class="ev">${(card.strategy_steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
     <p>
-      <button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(card.full_name)}')">开始进入</button>
+      <button type="button" class="primary" onclick="event.stopPropagation(); ${card.mission_id ? `openExisting(${Number(card.mission_id)||0})` : `startEnter('${esc(card.full_name)}')`}">${card.mission_id ? "查看任务" : "开始进入"}</button>
       <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
     </p>
     <h3>五维评分</h3>
@@ -484,7 +515,9 @@ function boardView() {
       </select>
     </label>
     <span class="date">当前按${state.sort==="final_score"?"综合评分":"所选指标"}排序</span>
+    <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
+  ${state.showMissions ? missionListView() : ""}
   <h2>今日候选榜</h2>
   <div class="list">${listView(b)}</div>
   ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
@@ -492,25 +525,56 @@ function boardView() {
   `;
 }
 
+function missionListView() {
+  const rows = state.missions || [];
+  if (!rows.length) return `<p class="empty">还没有进入任务。在榜上点「开始进入」。</p>`;
+  return `<div class="mission-list">${rows.map(m => `
+    <div class="row">
+      <div>
+        <div class="nm">${esc(m.full_name)}</div>
+        <div class="sub">状态 ${esc(m.status||"—")} · ${esc(m.next_step_zh || "")}</div>
+      </div>
+      <div>
+        <button type="button" class="primary" onclick="openMission(${Number(m.id)||0})">打开</button>
+      </div>
+    </div>`).join("")}</div>`;
+}
+
 function missionView(m) {
   if (!m) return "";
-  const steps = (m.steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
+  const steps = (m.steps_zh||[]).map((x,i) => `<li><strong>第 ${i+1} 步</strong> ${esc(x)}</li>`).join("");
+  const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
+  const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
+  const id = m.id;
   return `
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
   <aside class="drawer on" role="dialog" aria-label="进入任务">
     <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
     <p class="brand">FORESHADOW ENTRY MISSION</p>
     <h2>${esc(m.full_name)}</h2>
-    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会窗口 ${n(m.opportunity_window)} · 进入通道 ${n(m.access)}</p>
+    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${n(m.access)}</p>
     <p><strong>为什么现在进入：</strong>${esc((m.why_now||[]).join("；") || "—")}</p>
     <p><strong>推荐入口：</strong>${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
     <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status||"—")}</p>
+    <p class="meta"><strong>下一步：</strong>${esc(m.next_step_zh || "先阅读推荐入口")}</p>
+    <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
     <h3>行动计划</h3>
     <ol>${steps}</ol>
-    <p class="meta">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
-    <p class="meta">本地目录：${esc(m.local_path || "尚未准备")}</p>
-    <button type="button" class="primary" onclick="setupLocal(${m.id})">准备本地目录</button>
-    <button type="button" onclick="refuseRemote()">我不会让系统自动发 Issue / PR</button>
+    <p class="meta">本地目录：${esc(m.local_path || "尚未准备")} · clone：${esc(clone)}</p>
+    <p>
+      <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
+      <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
+    </p>
+    <p>
+      <button type="button" onclick="markEvent(${id}, 'maintainer_replied')">维护者已回复</button>
+      <button type="button" onclick="markEvent(${id}, 'pr_merged')">我看到已被合并</button>
+      <button type="button" onclick="markEvent(${id}, 'user_submitted')">我已自行提交</button>
+    </p>
+    <details class="git-ops">
+      <summary>展开底层 Git 操作</summary>
+      <ul>${git || "<li>仅本地 clone / 分支 / commit</li>"}</ul>
+    </details>
+    <button type="button" onclick="refuseRemote()">尝试创建 PR（应被拒绝）</button>
   </aside>`;
 }
 
@@ -570,6 +634,7 @@ async function startEnter(name) {
     const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
     state.mission = data.mission;
     render();
+    if (data.mission && data.mission.id) await setupLocal(data.mission.id);
   } catch (e) { alert(e.message); }
 }
 
@@ -577,6 +642,39 @@ async function setupLocal(id) {
   try {
     const data = await api("/api/mission/setup", { method: "POST", body: JSON.stringify({ id }) });
     state.mission = data.mission;
+    if (state.portfolio) try { state.portfolio = await api("/api/portfolio"); } catch {}
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function loadMissions() {
+  try {
+    const data = await api("/api/missions");
+    state.missions = data.missions || [];
+    state.showMissions = true;
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+function openMission(id) {
+  const found = (state.missions || []).find(x => x.id === id);
+  if (found) { state.mission = found; render(); }
+}
+
+async function openExisting(id) {
+  try {
+    const data = await api("/api/missions");
+    state.missions = data.missions || [];
+    state.showMissions = true;
+    openMission(id);
+  } catch (e) { alert(e.message); }
+}
+
+async function markEvent(id, event) {
+  try {
+    const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event }) });
+    state.mission = data.mission;
+    try { state.portfolio = await api("/api/portfolio"); } catch {}
     render();
   } catch (e) { alert(e.message); }
 }
