@@ -33,6 +33,35 @@ def test_build_mission_waits_for_user():
     assert m.strategy.steps_zh
 
 
+def test_pr_draft_only_for_code_paths_and_never_posts(tmp_path):
+    from foreshadow.mission import write_pr_draft
+
+    talk = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
+    assert write_pr_draft(tmp_path, talk) is None
+    code = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            gap_docs=1,
+            pr_accept_rate=0.5,
+            pr_review_rate=0.5,
+            maint_touch=0.5,
+            pr_merged_sample_n=4,
+            issue_sample_n=2,
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    path = write_pr_draft(tmp_path, code)
+    assert path is not None
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "PR_DRAFT.md"
+    assert "等待你的确认" in text
+    assert "不会 `create_pr`" in text or "不会 create_pr" in text or "create_pr" in text
+    assert "未发送" in text
+    assert code.strategy.allows_direct_pr is False
+
+
 def test_issue_draft_is_local_and_not_a_pr(tmp_path):
     m = build_mission(
         "acme/toy",

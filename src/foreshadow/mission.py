@@ -491,8 +491,13 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         "\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
         "同目录还有 ISSUE_DRAFT.md（本地草稿，未发送）。\n"
-        "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
-        "等待你的确认才能执行任何远程 GitHub 操作。\n"
+        + (
+            "若入口是代码向的，还有 PR_DRAFT.md（同样未发送，不是真正的 Pull Request）。\n"
+            if extra.get("pr_draft")
+            else ""
+        )
+        + "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
+        + "等待你的确认才能执行任何远程 GitHub 操作。\n"
     )
     path = dest / "FORESHADOW.md"
     path.write_text(text, encoding="utf-8")
@@ -845,6 +850,43 @@ def write_issue_draft(
     return path
 
 
+CODE_SHAPED_PATHS = frozenset(
+    {
+        "BUG_FIX",
+        "TEST",
+        "TOOLING",
+        "DOCUMENTATION",
+        "FEATURE",
+        "INTEGRATION",
+        "PERFORMANCE",
+    }
+)
+
+
+def write_pr_draft(dest: Path, mission: Mission) -> Path | None:
+    """Local patch proposal. Never create_pr. None if path is not code-shaped."""
+    if mission.strategy.path not in CODE_SHAPED_PATHS:
+        return None
+    path = Path(dest) / "PR_DRAFT.md"
+    path.write_text(
+        f"# 本地补丁草案（未发送）\n\n"
+        f"项目：{mission.full_name}\n"
+        f"入口：{mission.strategy.summary_zh}（{mission.strategy.path}）\n"
+        f"标题：{_draft_title(mission)}\n\n"
+        "## 这不是 GitHub Pull Request\n\n"
+        "- 本文件只留在本机。\n"
+        "- Foreshadow 不会 `git push`。\n"
+        "- Foreshadow 不会 `create_pr`。\n"
+        "- 等待你的确认才能发到 GitHub。\n\n"
+        "## 建议的本地工作\n\n"
+        + "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+        + "\n\n"
+        "先把改动留在 `repo/` 的 `foreshadow/entry` 分支。远程发送另说。\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def mission_from_plan(plan: dict[str, Any]) -> Mission:
     from foreshadow.pipeline.strategy import StrategyResult
 
@@ -1046,7 +1088,13 @@ def setup_local_environment(
         except (OSError, ValueError, TypeError, RuntimeError):
             cited = None
     draft = write_issue_draft(dest, mission, cited=cited)
-    extra = {"clone": clone, "inspect": inspect, "cited_issue": cited or {}}
+    pr_draft = write_pr_draft(dest, mission)
+    extra = {
+        "clone": clone,
+        "inspect": inspect,
+        "cited_issue": cited or {},
+        "pr_draft": str(pr_draft) if pr_draft else None,
+    }
     write_mission_doc(dest, mission, extra=extra)
     dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
     after_setup = str(
@@ -1068,6 +1116,7 @@ def setup_local_environment(
             "tests": tests,
             "draft_path": str(draft),
             "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
+            "pr_draft_path": str(pr_draft) if pr_draft else None,
             "cited_issue": cited or {},
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",

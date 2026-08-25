@@ -584,7 +584,7 @@ function missionView(m) {
     <ol>${steps}</ol>
     <p class="meta">本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
     ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
-    <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}</p>
+    <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}${m.pr_draft_path ? " · 补丁草案：" + esc(m.pr_draft_path) + "（未发送）" : ""}</p>
     <p>
       <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
       <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
