@@ -74,11 +74,11 @@ Star is a **recall qualifier**, not a score.
 
 **Delete:** `local_llm` (llama.cpp/ollama), `ai_infra` (cuda/rocm/tensor rt), `runtime` as vllm magnet, unscoped `help_wanted`, `breakout` (`sort:stars`), merge `compiler_os` into systems.
 
-**Pool A:** mcp, agent, memory, eval, help-wanted∩topics — all `stars:10..400 pushed:>45d sort:updated`.
+**Pool A:** mcp, agent, memory, eval, help-wanted∩terms — all `stars:10..400 pushed:>45d sort:updated`. One `topic:` per query (GitHub `topic:X OR …` is a silent 0).
 
-**Pool B:** mcp, agent, runtime (`gguf OR mlx OR candle OR "inference engine"` — **not** vllm/llama.cpp), systems (Rust embedded/riscv/osdev), help-wanted — `stars:100..3000`.
+**Pool B:** mcp, agent, runtime (`gguf OR mlx OR candle` — **not** vllm/llama.cpp; no quoted “inference engine” — it zeros the query), systems (Rust embedded/riscv/osdev), help-wanted — `stars:100..3000`.
 
-**Pool C:** mcp, agent framework, memory, benchmark — `created:>180d pushed:>45d`, **no stars qualifier**.
+**Pool C:** mcp, agent framework / mcp server, memory, benchmark — `created:>180d pushed:>45d`, **no stars qualifier**. Unquoted tokens; `topic:benchmark` not a 27k `benchmark OR evals OR leaderboard` scrape.
 
 Keep GET-only, sequential search spacing, `max_candidates=120`, no `fork:false`.
 
@@ -98,9 +98,11 @@ Drop: fork/archived/empty/disabled; empty description **and** no topics; `is_key
 
 Pool A extra (OR, not AND-to-death): `fork_count≥1` **or** topics **or** came from `A_help`.
 
+Pool C extra (宁缺毋滥): description length ≥ 20 **and** (topics or `fork_count≥1`) **and** (`stargazer_count≥1` or `fork_count≥1`). 0★/0 fork topic spam does not fill the C quota.
+
 **Do not** require `language in cfg.languages`. **Do not** sort survivors by stars.
 
-Not in this filter: C, TTR, issue census (hydrate).
+Not in this filter: contributor count, TTR, issue census (hydrate).
 
 ### `pre_rank_key` (Phase B 30)
 

@@ -24,17 +24,25 @@ DEFAULT_CONFIG_TOML = """\
 # examples/config.toml  — also the documented user schema
 
 [discovery]
-star_min = 50                 # search hint, NOT a hard gate; templates {star_min}
-star_max = 8000               # search hint; templates {star_max}
+star_min = 50                 # legacy config; v2 search uses early/rising bands
+star_max = 8000
+early_star_min = 10           # Pool A recall only, not a score
+early_star_max = 400
+rising_star_min = 100         # Pool B recall only
+rising_star_max = 3000
+pool_a_quota = 40             # max exposure, not a fill target
+pool_b_quota = 50
+pool_c_quota = 30
+per_query_floor = 6
 pushed_within_days = 45       # templates {pushed45} = today − this
-max_candidates = 120          # union of watchlist + search; watchlist is inside this cap
+max_candidates = 120          # union of watchlist + search; underfill is OK
 max_deep_hydrate = 30
 max_watchlist_deep = 20       # Phase B reserved for rankable watchlist only (watch/interested/investigate); enter does not consume
 per_page = 25                 # GraphQL search first:N; do not paginate to 1000
 exclude_forks = true          # drop forks in discovery. H2 ALWAYS vetoes Top 5 even if false
 exclude_archived = true
 # Hydrate/pre-rank language bonus only. NEVER a cartesian product of search × languages.
-# Empty = no language bonus. Queries rust_sys / compiler_os already embed language:Rust.
+# Empty = no language bonus. Pool B systems already embeds language:Rust.
 languages = ["Python", "Rust", "TypeScript", "Go", "C++"]
 
 [scoring]
@@ -78,6 +86,14 @@ class DiscoverySettings(BaseModel):
 
     star_min: int = 50
     star_max: int = 8000
+    early_star_min: int = 10
+    early_star_max: int = 400
+    rising_star_min: int = 100
+    rising_star_max: int = 3000
+    pool_a_quota: int = 40
+    pool_b_quota: int = 50
+    pool_c_quota: int = 30
+    per_query_floor: int = 6
     pushed_within_days: int = 45
     max_candidates: int = 120
     max_deep_hydrate: int = 30

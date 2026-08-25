@@ -127,7 +127,7 @@ The design is **invalid** if any of these are violated.
 | K13 | **MIT, no telemetry, DB mode 0600** | Matches `whereToken`. Local-first. |
 | K14 | **REST budget 400 / GraphQL 800 points per run** (stop discover when remaining < 80) | Architecture’s 100 REST is too tight once Phase B does contributors+commits+contents+workflows on ~30 repos. Documented divergence. |
 | K15 | **Do not send `fork:false`** | Not an official search qualifier (API research). Discovery may drop forks when `exclude_forks=true`. **H2 always vetoes forks from Top 5** regardless of that key. |
-| K16 | **GraphQL `search(type: REPOSITORY)` is primary; REST search is fallback only** | Architecture lock (avoid the 30/min REST search bucket). Diverges from API research §9 “REST Search only.” Same 1,000-result cap; put `sort:stars` in the query string, not a GraphQL `sort` argument. |
+| K16 | **GraphQL `search(type: REPOSITORY)` is primary; REST search is fallback only** | Architecture lock (avoid the 30/min REST search bucket). Diverges from API research §9 “REST Search only.” Same 1,000-result cap; put sort qualifiers in the query string, not a GraphQL `sort` argument. Engine 2.0 Discovery: `sort:updated` only; **never** `sort:stars`. |
 | K17 | **Fake growth = H1–H10 + P1–P8**, not architecture `fake_growth` vetoes | Metrics is the scoring lock. Architecture’s `Δ1d≥50 ∧ 0 commits` is covered when `S(t-1)` exists by **P8** (penalty, not silent Top 5). A 100-day-old bought-star dump with users/issues can still pass — empty Top 5 and H4/P1 remain the defense. |
 | K18 | **Contributor pagination stops early** | Stop at a short page, or 500 identified (`C_censored`), or `C≥80` (starved and `late()` already decided). Do not always take 5 pages. |
 
@@ -875,26 +875,32 @@ query SearchRepos($q: String!, $n: Int!) {
 }
 ```
 
-### Default query set (12)
+### Default query set (14, Engine 2.0 Discovery)
 
-Templates substitute from config (UTC dates): `{star_min}`, `{star_max}`, `{pushed45}` = today − `pushed_within_days`, `{created180}` = today − 180d, `{pushed14}` = today − 14d. Do **not** add `fork:false`. Keep each query ≤5 `AND`/`OR`/`NOT`. **Do not** cartesian-product `languages` onto these 12.
+Templates substitute from config (UTC dates): `{early}` = `early_star_min..early_star_max` (default `10..400`), `{rising}` = `rising_star_min..rising_star_max` (default `100..3000`), `{pushed45}` = today − `pushed_within_days`, `{created180}` = today − 180d, `{pushed14}` = today − 14d. Do **not** add `fork:false`. Keep each query ≤5 `AND`/`OR`/`NOT`. **Do not** cartesian-product `languages` onto these 14. **Never** `sort:stars`. Magnet product names (`llama.cpp`, `ollama`, `vllm`, `cuda`, `rocm`, `tensor rt`) are forbidden in templates.
+
+Star bounds are **recall qualifiers**, not a fill target. Pool quotas (`40/50/30`) are max exposure; **underfill is success**. Do not FIFO-fill to 120. Pool C has **no** `stars:` qualifier and must pass `lightweight_keep`.
 
 | Key | Query string |
 |---|---|
-| `mcp` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (topic:mcp OR "model context protocol")` |
-| `rag_memory` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (topic:rag OR "long-term memory" OR embedding)` |
-| `local_llm` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (gguf OR ggml OR "llama.cpp" OR ollama)` |
-| `agent` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (topic:agents OR "multi-agent" OR "tool use")` |
-| `runtime` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (vllm OR mlx OR candle OR "inference engine")` |
-| `eval_tools` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (topic:evaluation OR evals OR "prompt engineering")` |
-| `ai_infra` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (cuda OR kv-cache OR "tensor rt" OR rocm)` |
-| `rust_sys` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} language:Rust (embedded OR no_std OR rtos)` |
-| `riscv` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} (riscv OR risc-v OR opensbi)` |
-| `compiler_os` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} language:Rust (compiler OR llvm OR osdev)` |
-| `help_wanted` | `is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} help-wanted-issues:>0` |
-| `breakout` | `is:public archived:false stars:{star_min}..{star_max} created:>{created180} pushed:>{pushed14} sort:stars` |
+| `A_mcp` | `is:public archived:false stars:{early} pushed:>{pushed45} sort:updated topic:mcp` |
+| `A_agent` | `is:public archived:false stars:{early} pushed:>{pushed45} sort:updated topic:agents` |
+| `A_memory` | `is:public archived:false stars:{early} pushed:>{pushed45} sort:updated topic:memory` |
+| `A_eval` | `is:public archived:false stars:{early} pushed:>{pushed45} sort:updated (evals OR evaluation)` |
+| `A_help` | `is:public archived:false stars:{early} pushed:>{pushed45} sort:updated help-wanted-issues:>0 (mcp OR agent OR llm)` |
+| `B_mcp` | `is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated topic:mcp` |
+| `B_agent` | `is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated topic:agents` |
+| `B_runtime` | `is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated (gguf OR mlx OR candle)` |
+| `B_systems` | `is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated language:Rust (embedded OR riscv OR osdev)` |
+| `B_help` | `is:public archived:false stars:{rising} pushed:>{pushed45} sort:updated help-wanted-issues:>0 (mcp OR agent)` |
+| `C_mcp` | `is:public archived:false created:>{created180} pushed:>{pushed45} sort:updated topic:mcp` |
+| `C_agent` | `is:public archived:false created:>{created180} pushed:>{pushed45} sort:updated (agent framework OR mcp server)` |
+| `C_memory` | `is:public archived:false created:>{created180} pushed:>{pushed45} sort:updated topic:memory` |
+| `C_bench` | `is:public archived:false created:>{created180} pushed:>{pushed45} sort:updated topic:benchmark` |
 
-`sort:stars` lives **in the query string** (GraphQL `search` has no REST `sort=` argument). `help_wanted` is a **candidate probe**, not a score.
+GitHub search **silently returns 0** for `topic:X OR topic:Y`, `topic:X OR "phrase"`, and for quoted phrases OR’d with other tokens once `stars:`/`pushed:`/`sort:` are present. One `topic:` per query, or unquoted token `OR`, never mixed.
+
+`sort:updated` lives **in the query string** (GraphQL `search` has no REST `sort=` argument). Help-wanted queries are **candidate probes**, not a score. Cap: watchlist first inside 120; remaining seats split 40:50:30 scaled; round-robin per query inside a pool; never steal unused A quota to dump extra B.
 
 ---
 
@@ -982,14 +988,11 @@ def direction_keyword_hit(repo, bags) -> int:
     return 1 if any(kw in text for bag in bags for kw in bag.keywords) else 0
 
 def pre_rank_key(repo, cfg, bags, now) -> tuple:
-    """Sort reverse=True. Last elements break ties stably."""
-    stars = repo.stargazerCount or 0
+    """Sort reverse=True. Last elements break ties stably. Raw stars are not a key."""
     return (
         direction_keyword_hit(repo, bags),
-        int(cfg.star_min <= stars <= cfg.star_max),
         recency_bucket(repo.pushed_at, now),
         int((repo.language or "") in cfg.languages) if cfg.languages else 0,
-        stars,
         repo.node_id,  # unique, lexicographic
     )
 ```
@@ -1016,7 +1019,7 @@ Invariant (tested, not a rigid 20+10 split):
 enter ∩ phase_b == ∅
 ```
 
-Test (`test_pre_rank.py`): three fixtures with distinct keys always yield the same ordered fill. Changing only `node_id` at equal stars must not scramble the rest.
+Test (`test_pre_rank.py`): three fixtures with distinct keys always yield the same ordered fill. Changing only `node_id` at equal direction+recency+lang must not scramble the rest. Equal direction+recency: **70★ must remain Phase B eligible** and must not lose solely because 5000★ sorts higher.
 
 ### Budget skip order
 

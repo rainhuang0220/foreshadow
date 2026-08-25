@@ -116,17 +116,22 @@ def test_search_capped_is_not_degraded(tmp_home, frozen_clock):
 
     watch = [f"R_w_{i}" for i in range(50)]
     hits = [
-        SearchHit(node_id=f"R_s_{i}", full_name=f"find/s{i}", query_key="mcp")
+        SearchHit(
+            node_id=f"R_s_{i}",
+            full_name=f"find/s{i}",
+            query_key="B_mcp",
+            pool="B",
+            description="A substantial project description for discovery tests.",
+            topics=("mcp",),
+            fork_count=2,
+        )
         for i in range(120)
     ]
     cap = cap_candidates(watch, hits, max_candidates=120)
-    assert (
-        cap.candidate_count == 120
-        if hasattr(cap, "candidate_count")
-        else len(cap.candidates) == 120
-    )
-    assert len(cap.candidates) == 120
+    # Watch 50 + Pool B exposure 50 scaled by remaining seats — never FIFO-fill 120.
+    assert len(cap.candidates) < 120
     assert cap.search_capped is True
+    assert {c.node_id for c in cap.candidates if c.origin == "watchlist"} == set(watch)
     assert cap.watchlist_truncated is False
     health = {
         "search_truncated": False,
@@ -153,7 +158,9 @@ def test_search_capped_is_not_degraded(tmp_home, frozen_clock):
         search_nodes=search,
     )
     result = discover_hydrate_snapshot(conn, gh, Settings(), clock=frozen_clock)
-    assert result.candidate_count == 120
+    # Watchlist 50 + scaled Pool A exposure. Underfill is success; do not FIFO to 120.
+    assert result.candidate_count < 120
+    assert result.candidate_count > 50
     assert result.source_health["search_capped"] is True
     assert result.source_health["watchlist_truncated"] is False
     assert is_degraded(result.source_health) is False

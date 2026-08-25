@@ -3,15 +3,15 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **locks accepted**. Next code: **Discovery multi-pool (PR-D)**. Scoring still **v1**. |
-| **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Implement Discovery before `score.py`. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D Discovery landed**. Scoring still **v1**. Next code: **PR-V dual-write** (owner decide). |
+| **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not start `score.py` until PR-V + PR-T. |
 | **Scoring version** | **v1**. v2 not implemented. |
-| **Discovery version** | **v1** (12 queries, `stars:50..8000`, FIFO, star pre-rank). v2 plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
+| **Discovery version** | **v2 recall** (14 queries, pools A/B/C, exposure quotas, no star pre-rank). Official scoring still v1. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
 | **Known API limits** | Third-party stargazer listing / `starred_at` admin-only (2026-06-30). Activity windows ≠ star growth. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md) |
 | **Package** | `foreshadow-radar` `0.1.0` (local / branch only) |
-| **Date** | 2026-08-24 |
+| **Date** | 2026-08-25 |
 
 ## Completed
 
@@ -27,11 +27,12 @@
 - P1 round 2: localhost Chinese list+drawer Board, register/login, per-user reviews. P0 thresholds unchanged.
 - Opportunity Engine 2.0 research + audit. **No formula changes.**
 - Owner accepted E2-0…E2-22. Implementation plan: `docs/opportunity-engine-v2-plan.md`.
+- **PR-D Discovery:** pools A/B/C, no `sort:stars`, no magnet keywords, `pre_rank_key` without raw stars, quota exposure not FIFO fill. `score.py` / `select.py` untouched.
 
 ## In Progress
 
 - 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
-- Next: PR-D Discovery multi-pool (not `score.py`).
+- Next: **PR-V** `score_version` dual-write — only after owner review of Discovery distributions.
 
 ## Blocked
 
@@ -39,7 +40,7 @@
 
 ## Next Action
 
-Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: implement **PR-D Discovery** next; `score.py` only after dual-write + counterexample tests.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D is in tree.** Do not start PR-V until the owner says so. `score.py` only after dual-write + counterexample tests.
 
 ## Known Bugs
 

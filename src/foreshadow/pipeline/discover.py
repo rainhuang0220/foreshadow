@@ -8,10 +8,10 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from foreshadow.clock import Clock
-from foreshadow.config import Settings
+from foreshadow.config import DiscoverySettings, Settings
 from foreshadow.github.client import GitHubError, graphql_marks_incomplete
 from foreshadow.github.queries import SEARCH_REPOS
-from foreshadow.pipeline.direction import load_direction_bags
+from foreshadow.pipeline.direction import is_keyword_stuffing, load_direction_bags
 from foreshadow.pipeline.hydrate import (
     HydratedRepo,
     apply_identity,
@@ -31,56 +31,83 @@ from foreshadow.pipeline.hydrate import (
 )
 from foreshadow.pipeline.snapshot import payload_from_graphql, upsert_snapshot
 
+# Pool A/B/C recall. Stars are query bounds, never a fill target or pre-rank key.
+# No sort:stars. Magnet product names are forbidden (see MAGNET_TERMS).
+#
+# GitHub search returns 0 hits (no error) for illegal OR mixes:
+#   topic:X OR topic:Y
+#   topic:X OR "quoted phrase"
+#   (bare OR bare OR "quoted") combined with stars:/pushed:/sort:
+# Keep one topic: per query, or unquoted token OR, never both.
 SEARCH_QUERY_TEMPLATES: dict[str, str] = {
-    "mcp": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(topic:mcp OR "model context protocol")'
+    "A_mcp": (
+        "is:public archived:false stars:{early} pushed:>{pushed45} sort:updated "
+        "topic:mcp"
     ),
-    "rag_memory": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(topic:rag OR "long-term memory" OR embedding)'
+    "A_agent": (
+        "is:public archived:false stars:{early} pushed:>{pushed45} sort:updated "
+        "topic:agents"
     ),
-    "local_llm": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(gguf OR ggml OR "llama.cpp" OR ollama)'
+    "A_memory": (
+        "is:public archived:false stars:{early} pushed:>{pushed45} sort:updated "
+        "topic:memory"
     ),
-    "agent": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(topic:agents OR "multi-agent" OR "tool use")'
+    "A_eval": (
+        "is:public archived:false stars:{early} pushed:>{pushed45} sort:updated "
+        "(evals OR evaluation)"
     ),
-    "runtime": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(vllm OR mlx OR candle OR "inference engine")'
+    "A_help": (
+        "is:public archived:false stars:{early} pushed:>{pushed45} sort:updated "
+        "help-wanted-issues:>0 (mcp OR agent OR llm)"
     ),
-    "eval_tools": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(topic:evaluation OR evals OR "prompt engineering")'
+    "B_mcp": (
+        "is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated "
+        "topic:mcp"
     ),
-    "ai_infra": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        '(cuda OR kv-cache OR "tensor rt" OR rocm)'
+    "B_agent": (
+        "is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated "
+        "topic:agents"
     ),
-    "rust_sys": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        "language:Rust (embedded OR no_std OR rtos)"
+    "B_runtime": (
+        "is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated "
+        "(gguf OR mlx OR candle)"
     ),
-    "riscv": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        "(riscv OR risc-v OR opensbi)"
+    "B_systems": (
+        "is:public archived:false stars:{rising} pushed:>{pushed14} sort:updated "
+        "language:Rust (embedded OR riscv OR osdev)"
     ),
-    "compiler_os": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        "language:Rust (compiler OR llvm OR osdev)"
+    "B_help": (
+        "is:public archived:false stars:{rising} pushed:>{pushed45} sort:updated "
+        "help-wanted-issues:>0 (mcp OR agent)"
     ),
-    "help_wanted": (
-        "is:public archived:false stars:{star_min}..{star_max} pushed:>{pushed45} "
-        "help-wanted-issues:>0"
+    "C_mcp": (
+        "is:public archived:false created:>{created180} pushed:>{pushed45} "
+        "sort:updated topic:mcp"
     ),
-    "breakout": (
-        "is:public archived:false stars:{star_min}..{star_max} created:>{created180} "
-        "pushed:>{pushed14} sort:stars"
+    "C_agent": (
+        "is:public archived:false created:>{created180} pushed:>{pushed45} "
+        "sort:updated (agent framework OR mcp server)"
+    ),
+    "C_memory": (
+        "is:public archived:false created:>{created180} pushed:>{pushed45} "
+        "sort:updated topic:memory"
+    ),
+    "C_bench": (
+        "is:public archived:false created:>{created180} pushed:>{pushed45} "
+        "sort:updated topic:benchmark"
     ),
 }
+
+MAGNET_TERMS = (
+    "llama.cpp",
+    "ollama",
+    "vllm",
+    "cuda",
+    "rocm",
+    "tensor rt",
+)
+POOL_ORDER = ("A", "B", "C")
+_JUNK_NAME = ("awesome-", "cheatsheet", "chatgpt-wrapper")
 
 
 @dataclass
@@ -88,6 +115,7 @@ class SearchHit:
     node_id: str
     full_name: str
     query_key: str
+    pool: str = "B"
     database_id: int | None = None
     url: str | None = None
     description: str | None = None
@@ -122,6 +150,7 @@ class CappedCandidate:
     full_name: str
     origin: str
     query_key: str | None = None
+    pool: str | None = None
     action: str | None = None
     hit: SearchHit | None = None
 
@@ -150,6 +179,50 @@ class DiscoveryResult:
     capped: CapResult
 
 
+def pool_of(query_key: str | None) -> str:
+    key = query_key or ""
+    if key.startswith("A_"):
+        return "A"
+    if key.startswith("C_"):
+        return "C"
+    return "B"
+
+
+def boolean_operator_count(query: str) -> int:
+    tokens = query.replace("(", " ").replace(")", " ").split()
+    return sum(1 for tok in tokens if tok in {"AND", "OR", "NOT"})
+
+
+def lightweight_keep(hit: SearchHit) -> bool:
+    """Post-union quality filter. Underfill is preferred over junk.
+
+    Pool C always goes through this gate. Empty seats beat stuffed wrappers.
+    """
+    if hit.is_fork or hit.is_archived or hit.is_disabled or hit.is_empty:
+        return False
+    if hit.has_issues is False:
+        return False
+    name = (hit.full_name or "").split("/", 1)[-1].lower()
+    desc = (hit.description or "").strip()
+    if any(junk in name or junk in desc.lower() for junk in _JUNK_NAME):
+        return False
+    if is_keyword_stuffing(desc):
+        return False
+    has_topics = bool(hit.topics)
+    if not desc and not has_topics:
+        return False
+    if hit.pool == "C":
+        has_attention = hit.stargazer_count >= 1 or hit.fork_count >= 1
+        return (
+            len(desc) >= 20
+            and (has_topics or hit.fork_count >= 1)
+            and has_attention
+        )
+    if hit.pool == "A":
+        return hit.fork_count >= 1 or has_topics or hit.query_key == "A_help"
+    return True
+
+
 def is_degraded(health: dict[str, Any]) -> bool:
     return bool(
         health.get("search_truncated")
@@ -171,6 +244,8 @@ def search_candidates(
     subs = {
         "star_min": disc.star_min,
         "star_max": disc.star_max,
+        "early": f"{disc.early_star_min}..{disc.early_star_max}",
+        "rising": f"{disc.rising_star_min}..{disc.rising_star_max}",
         "pushed45": (today - timedelta(days=disc.pushed_within_days)).isoformat(),
         "created180": (today - timedelta(days=180)).isoformat(),
         "pushed14": (today - timedelta(days=14)).isoformat(),
@@ -179,6 +254,7 @@ def search_candidates(
     truncated = False
     budget_abort = False
     per_page = disc.per_page
+    pool_rank = {name: i for i, name in enumerate(POOL_ORDER)}
     for key, tmpl in SEARCH_QUERY_TEMPLATES.items():
         if getattr(client, "should_stop", lambda: False)():
             budget_abort = True
@@ -207,7 +283,10 @@ def search_candidates(
                 continue
             if disc.exclude_archived and hit.is_archived:
                 continue
-            if hit.node_id not in hits_by_id:
+            if not lightweight_keep(hit):
+                continue
+            prev = hits_by_id.get(hit.node_id)
+            if prev is None or pool_rank.get(hit.pool, 9) < pool_rank.get(prev.pool, 9):
                 hits_by_id[hit.node_id] = hit
     if health is not None:
         health["search_truncated"] = truncated
@@ -303,6 +382,7 @@ def _hit_from_graphql(node: dict[str, Any], key: str) -> SearchHit | None:
         node_id=str(nid),
         full_name=str(full),
         query_key=key,
+        pool=pool_of(key),
         database_id=node.get("databaseId"),
         url=node.get("url"),
         description=node.get("description"),
@@ -327,7 +407,9 @@ def cap_candidates(
     watchlist_ids: Sequence[Any],
     search_hits: Sequence[SearchHit],
     max_candidates: int = 120,
+    disc: DiscoverySettings | None = None,
 ) -> CapResult:
+    disc = disc or DiscoverySettings()
     watch: list[CappedCandidate] = []
     seen: set[str] = set()
     for item in watchlist_ids:
@@ -348,20 +430,30 @@ def cap_candidates(
     truncated = len(watch) > max_candidates
     out = watch[:max_candidates]
     present = {c.node_id for c in out}
-    hits_by_id = {h.node_id: h for h in search_hits}
+    kept = [h for h in search_hits if lightweight_keep(h)]
+    hits_by_id = {h.node_id: h for h in kept}
     for cand in out:
         hit = hits_by_id.get(cand.node_id)
         if hit is not None:
             cand.query_key = hit.query_key
+            cand.pool = hit.pool
             cand.hit = hit
             if not cand.full_name:
                 cand.full_name = hit.full_name
-    search_capped = False
-    for hit in search_hits:
-        if hit.node_id in present:
-            continue
+    remaining = max(0, max_candidates - len(out))
+    quotas = _scaled_quotas(
+        {
+            "A": disc.pool_a_quota,
+            "B": disc.pool_b_quota,
+            "C": disc.pool_c_quota,
+        },
+        remaining,
+        max_candidates,
+    )
+    seated, overflow = _seat_pools(kept, present, quotas, disc.per_query_floor)
+    for hit in seated:
         if len(out) >= max_candidates:
-            search_capped = True
+            overflow = True
             break
         out.append(
             CappedCandidate(
@@ -369,6 +461,7 @@ def cap_candidates(
                 full_name=hit.full_name,
                 origin="search",
                 query_key=hit.query_key,
+                pool=hit.pool,
                 hit=hit,
             )
         )
@@ -376,8 +469,97 @@ def cap_candidates(
     return CapResult(
         candidates=out,
         watchlist_truncated=truncated,
-        search_capped=search_capped,
+        search_capped=overflow,
     )
+
+
+def _scaled_quotas(
+    quotas: dict[str, int], remaining: int, max_candidates: int
+) -> dict[str, int]:
+    """Scale 40:50:30 to remaining seats. Leftover from truncation goes A→B→C.
+
+    This only sets exposure caps. Unused quota is never backfilled from another pool.
+    """
+    if remaining <= 0:
+        return {key: 0 for key in quotas}
+    if remaining >= max_candidates:
+        return dict(quotas)
+    out = {
+        key: int(quotas[key] * remaining / max(max_candidates, 1)) for key in quotas
+    }
+    leftover = remaining - sum(out.values())
+    for pool in POOL_ORDER:
+        if leftover <= 0:
+            break
+        if quotas.get(pool, 0) <= 0:
+            continue
+        out[pool] = out.get(pool, 0) + 1
+        leftover -= 1
+    return out
+
+
+def _seat_pools(
+    kept: Sequence[SearchHit],
+    present: set[str],
+    quotas: dict[str, int],
+    per_query_floor: int,
+) -> tuple[list[SearchHit], bool]:
+    """Round-robin within each pool up to quota. Never backfill unused quota."""
+    by_pool: dict[str, list[SearchHit]] = {name: [] for name in POOL_ORDER}
+    for hit in kept:
+        if hit.node_id in present:
+            continue
+        by_pool.setdefault(hit.pool, []).append(hit)
+    seated: list[SearchHit] = []
+    overflow = False
+    for pool in POOL_ORDER:
+        quota = int(quotas.get(pool, 0))
+        pool_hits = by_pool.get(pool) or []
+        chosen = _round_robin_queries(pool_hits, quota, per_query_floor)
+        seated.extend(chosen)
+        if len(chosen) < len(pool_hits):
+            overflow = True
+    return seated, overflow
+
+
+def _round_robin_queries(
+    hits: Sequence[SearchHit], quota: int, per_query_floor: int
+) -> list[SearchHit]:
+    if quota <= 0 or not hits:
+        return []
+    groups: dict[str, list[SearchHit]] = {}
+    order: list[str] = []
+    for hit in hits:
+        key = hit.query_key
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(hit)
+    taken: set[str] = set()
+    out: list[SearchHit] = []
+    floor = max(0, per_query_floor)
+    for key in order:
+        for hit in groups[key][:floor]:
+            if len(out) >= quota:
+                return out
+            if hit.node_id in taken:
+                continue
+            taken.add(hit.node_id)
+            out.append(hit)
+    progressed = True
+    while progressed and len(out) < quota:
+        progressed = False
+        for key in order:
+            for hit in groups[key]:
+                if hit.node_id in taken:
+                    continue
+                taken.add(hit.node_id)
+                out.append(hit)
+                progressed = True
+                break
+            if len(out) >= quota:
+                break
+    return out
 
 
 def identity_ids(
@@ -502,7 +684,9 @@ def discover_hydrate_snapshot(
     hits = search_candidates(client, settings, today, force=force, health=health)
     watch = load_watchlist(conn, today, settings.scoring)
     watch_by_id = {w.node_id: w for w in watch}
-    capped = cap_candidates(watch, hits, settings.discovery.max_candidates)
+    capped = cap_candidates(
+        watch, hits, settings.discovery.max_candidates, disc=settings.discovery
+    )
     health["watchlist_truncated"] = capped.watchlist_truncated
     health["search_capped"] = capped.search_capped
     ids = identity_ids(capped, conn)

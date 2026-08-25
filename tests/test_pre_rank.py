@@ -132,10 +132,50 @@ def test_pre_rank_key_spec_order():
     k_g = pre_rank_key(giant, cfg=CFG, bags=BAGS, now=NOW)
     k_w = pre_rank_key(wrapper, cfg=CFG, bags=BAGS, now=NOW)
     assert k_m[0] == 1  # direction hit
-    assert k_m[1] == 1  # in star band
-    assert k_m[2] == 2  # recency <=14
-    assert k_g[1] == 0  # 100k out of band
+    assert k_m[1] == 2  # recency <=14
+    assert k_g[0] == 0
     assert k_w[0] == 0
-    assert k_w[2] == 0
+    assert k_w[1] == 0  # stale push
     assert k_m > k_g
     assert k_m > k_w
+    assert len(k_m) == 4
+    assert all(not isinstance(part, int) or part < 10_000 for part in k_m[:-1])
+
+
+def test_pre_rank_does_not_order_by_raw_stars():
+    small = _repo(
+        node_id="R_small",
+        name="memkit",
+        full_name="acme/smallkit",
+        description="long-term memory embedding layer",
+        topics=["memory", "rag"],
+        stargazerCount=70,
+        pushed_at=datetime(2026, 8, 23, tzinfo=UTC),
+        language="Python",
+    )
+    large = _repo(
+        node_id="R_large",
+        name="memkit",
+        full_name="acme/largekit",
+        description="long-term memory embedding layer",
+        topics=["memory", "rag"],
+        stargazerCount=5000,
+        pushed_at=datetime(2026, 8, 23, tzinfo=UTC),
+        language="Python",
+    )
+    k_s = pre_rank_key(small, cfg=CFG, bags=BAGS, now=NOW)
+    k_l = pre_rank_key(large, cfg=CFG, bags=BAGS, now=NOW)
+    assert k_s[0] == k_l[0] == 1
+    assert k_s[1] == k_l[1]
+    assert k_s[2] == k_l[2]
+    phase = phase_b_shortlist(
+        [large, small, *_fillers(28)],
+        {},
+        max_deep=30,
+        cfg=CFG,
+        bags=BAGS,
+        now=NOW,
+    )
+    ids = {c.node_id for c in phase}
+    assert "R_small" in ids
+    assert "R_large" in ids

@@ -12,7 +12,7 @@
 - [ ] P0 post-run review, then decide PR #1 merge
 - [x] Opportunity Engine 2.0 research + scoring audit (no formula changes)
 - [x] Owner accepted E2-0…E2-22; plan in `docs/opportunity-engine-v2-plan.md`
-- [ ] **PR-D** Discovery: pools A/B/C, no `sort:stars`, pre_rank without raw stars, reserved seats
+- [x] **PR-D** Discovery: pools A/B/C, no `sort:stars`, pre_rank without raw stars, reserved seats
 - [ ] PR-V `score_version` dual-write (`003_score_version.sql`)
 - [ ] PR-T counterexample tests (E2-16)
 - [ ] PR-S1…S5 scoring / preview (not before D+V+T)

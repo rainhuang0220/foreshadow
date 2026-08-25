@@ -163,18 +163,13 @@ def pre_rank_key(
     cfg = cfg or DiscoverySettings()
     bags = list(bags) if bags is not None else load_direction_bags()
     now = now or datetime.now(UTC)
-    stars = int(
-        _get(repo, "stargazerCount", "stargazer_count", "stars", default=0) or 0
-    )
     language = _get(repo, "language", default="") or ""
     lang_bonus = int(language in cfg.languages) if cfg.languages else 0
     node_id = str(_get(repo, "node_id", "id", default="") or "")
     return (
         direction_keyword_hit(repo, bags),
-        int(cfg.star_min <= stars <= cfg.star_max),
         recency_bucket(_get(repo, "pushed_at", "pushedAt"), now),
         lang_bonus,
-        stars,
         node_id,
     )
 
