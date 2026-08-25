@@ -919,6 +919,7 @@ def _begin_run(
     )
     conn.execute("DELETE FROM candidates WHERE run_id=?", (run_id,))
     conn.execute("DELETE FROM scores WHERE run_id=?", (run_id,))
+    conn.execute("DELETE FROM score_compare WHERE run_id=?", (run_id,))
     conn.execute("DELETE FROM source_failures WHERE run_id=?", (run_id,))
     conn.commit()
     return run_id

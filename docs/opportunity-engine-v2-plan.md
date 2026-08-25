@@ -143,7 +143,11 @@ Cold-start 120 **can** contain filtered 10–400★ Pool A seats. Phase B is not
 
 ---
 
-## PR-V — Dual-write plumbing
+## PR-V — Dual-write plumbing (in tree)
+
+Official still v1. Preview `score_v2.py` + `score_compare`. Review: [`opportunity-engine-v2-v1v2.md`](opportunity-engine-v2-v1v2.md). Do not cut over.
+
+## PR-V — Dual-write plumbing (spec)
 
 `003_score_version.sql`: rebuild `scores` with `score_version` and `UNIQUE(run_id, repo_id, score_version)`. Copy existing rows as `v1`.
 

@@ -21,10 +21,9 @@ HTML Daily Board + 100→20→3 reviewers→10→Chair. Official Top 5 still req
 Official scoring remains **v1**. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md).
 
 ```
-PR-D Discovery pools A/B/C          ← in tree; scoring unchanged
- → PR-V score_version dual-write    ← next, owner decide
- → PR-T counterexample tests
- → PR-S1 Entry Window
+PR-D Discovery pools A/B/C          ← in tree
+ → PR-V score_version dual-write    ← in tree; official still v1
+ → PR-S1 Entry Window               ← owner decide after v1 vs v2 review
  → PR-S2 Maintainer / Community
  → PR-S3 Contributor Access
  → PR-S4 Contribution Opportunity + Entry Strategy

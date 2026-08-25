@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Product** | Foreshadow (伏笔) |
-| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D Discovery landed**. Scoring still **v1**. Next code: **PR-V dual-write** (owner decide). |
-| **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not start `score.py` until PR-V + PR-T. |
-| **Scoring version** | **v1**. v2 not implemented. |
+| **Current Phase** | P0 dogfood + P1 Board. Engine 2.0 **PR-D + PR-V landed**. Official scoring still **v1**. Next: owner reads v1 vs v2 review, then decide PR-S1. |
+| **Current Goal** | Dogfood through 2026-08-31 UTC. Do not merge to main. Do not change 55/35/local v7. Do not cut over Official to v2. |
+| **Scoring version** | **Official v1**. Preview **v2** dual-written; never Official. |
 | **Discovery version** | **v2 recall** (14 queries, pools A/B/C, exposure quotas, no star pre-rank). Official scoring still v1. Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md). |
 | **Known API limits** | Third-party stargazer listing / `starred_at` admin-only (2026-06-30). Activity windows ≠ star growth. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/p0-implementation` |
@@ -28,11 +28,12 @@
 - Opportunity Engine 2.0 research + audit. **No formula changes.**
 - Owner accepted E2-0…E2-22. Implementation plan: `docs/opportunity-engine-v2-plan.md`.
 - **PR-D Discovery:** pools A/B/C, no `sort:stars`, no magnet keywords, `pre_rank_key` without raw stars, quota exposure not FIFO fill. `score.py` / `select.py` untouched.
+- **PR-V dual-write:** `score_version` v1+v2, `score_compare` rank deltas, preview `score_v2.py`. Official Top 5 still v1. Review: `docs/opportunity-engine-v2-v1v2.md`.
 
 ## In Progress
 
 - 7-day dogfood: `./scripts/dogfood-run.sh` (gitignored). Empty Top 5 is success.
-- Next: **PR-V** `score_version` dual-write — only after owner review of Discovery distributions.
+- Next: owner review of [`docs/opportunity-engine-v2-v1v2.md`](docs/opportunity-engine-v2-v1v2.md), then decide **PR-S1**. Do not cut over Official.
 
 ## Blocked
 
@@ -40,7 +41,7 @@
 
 ## Next Action
 
-Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D is in tree.** Do not start PR-V until the owner says so. `score.py` only after dual-write + counterexample tests.
+Keep the worktree. Dogfood daily. Do **not** change `min_opportunity` / `min_explosion` or fabricate snapshots. Engine 2.0: **PR-D and PR-V are in tree.** Official remains v1. Do not start PR-S1 until the owner says so.
 
 ## Known Bugs
 

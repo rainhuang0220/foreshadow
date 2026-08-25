@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -19,6 +20,7 @@ from foreshadow.config import (
 from foreshadow.db import connect, migrate
 from foreshadow.models import ReportJSON
 from foreshadow.paths import resolve_data_dir
+from foreshadow.pipeline.compare import assign_pool_ranks, identity_key, rank_delta
 from foreshadow.pipeline.discover import (
     discover_hydrate_snapshot,
     is_degraded,
@@ -33,6 +35,7 @@ from foreshadow.pipeline.report import (
     write_reports,
 )
 from foreshadow.pipeline.score import ScoredRepo, score_repo
+from foreshadow.pipeline.score_v2 import score_repo_v2
 from foreshadow.pipeline.select import select_top
 
 __all__ = [
@@ -212,7 +215,9 @@ def show_repo(ref: str) -> str | None:
         """
         SELECT opportunity, explosion, contribution, confidence,
                components_json, evidence_json, flags_json
-        FROM scores WHERE repo_id=? ORDER BY scored_at DESC, id DESC LIMIT 1
+        FROM scores
+        WHERE repo_id=? AND score_version='v1'
+        ORDER BY scored_at DESC, id DESC LIMIT 1
         """,
         (repo_id,),
     ).fetchone()
@@ -321,6 +326,7 @@ def _run(
 
     bags = None
     scored_rows: list[tuple[int, ScoredRepo, dict[str, Any]]] = []
+    scored_v2_rows: list[tuple[int, ScoredRepo, dict[str, Any]]] = []
     blocked = 0
     pool: list[ScoredRepo] = []
     for repo_id, status, _name in cand_rows:
@@ -332,15 +338,42 @@ def _run(
         if not _has_today_snapshot(data, today_s):
             continue
         scored = score_repo(data, clock=clock, scoring=settings.scoring, bags=bags)
+        scored_v2 = score_repo_v2(
+            data, clock=clock, scoring=settings.scoring, bags=bags
+        )
         scored_rows.append((repo_id, scored, data))
+        scored_v2_rows.append((repo_id, scored_v2, data))
         if _review_blocked(conn, repo_id, today, settings.scoring):
             blocked += 1
             continue
         pool.append(scored)
 
     now_iso = clock.now().isoformat()
-    for repo_id, scored, _data in scored_rows:
-        _insert_score(conn, run_id, repo_id, scored, now_iso)
+    v1_ranks = assign_pool_ranks([(s, d) for _, s, d in scored_rows])
+    v2_ranks = assign_pool_ranks([(s, d) for _, s, d in scored_v2_rows])
+    for repo_id, scored, data in scored_rows:
+        key = identity_key(scored, data)
+        _insert_score(
+            conn,
+            run_id,
+            repo_id,
+            scored,
+            now_iso,
+            score_version="v1",
+            pool_rank=v1_ranks.get(key),
+        )
+    for repo_id, scored, data in scored_v2_rows:
+        key = identity_key(scored, data)
+        _insert_score(
+            conn,
+            run_id,
+            repo_id,
+            scored,
+            now_iso,
+            score_version="v2",
+            pool_rank=v2_ranks.get(key),
+        )
+    _upsert_score_compare(conn, run_id, scored_rows, scored_v2_rows, v1_ranks, v2_ranks)
 
     selected = select_top(
         pool,
@@ -361,7 +394,10 @@ def _run(
         if repo_id is None:
             continue
         conn.execute(
-            "UPDATE scores SET selected_rank=? WHERE run_id=? AND repo_id=?",
+            """
+            UPDATE scores SET selected_rank=?
+            WHERE run_id=? AND repo_id=? AND score_version='v1'
+            """,
             (row.breakdown.selected_rank, run_id, repo_id),
         )
 
@@ -536,6 +572,9 @@ def _insert_score(
     repo_id: int,
     scored: ScoredRepo,
     scored_at: str,
+    *,
+    score_version: str = "v1",
+    pool_rank: int | None = None,
 ) -> None:
     bd = scored.breakdown
     components = {
@@ -553,14 +592,15 @@ def _insert_score(
     conn.execute(
         """
         INSERT INTO scores(
-          run_id, repo_id, opportunity, explosion, contribution, confidence,
-          components_json, evidence_json, flags_json, vetoed, veto_reason,
-          exceptional, selected_rank, scored_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          run_id, repo_id, score_version, opportunity, explosion, contribution,
+          confidence, components_json, evidence_json, flags_json, vetoed,
+          veto_reason, exceptional, selected_rank, pool_rank, scored_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             run_id,
             repo_id,
+            score_version,
             bd.opportunity.value,
             bd.explosion.value,
             bd.contribution.value,
@@ -571,10 +611,52 @@ def _insert_score(
             int(bd.vetoed),
             bd.veto_reason,
             bd.exceptional,
-            bd.selected_rank,
+            None if score_version != "v1" else bd.selected_rank,
+            pool_rank,
             scored_at,
         ),
     )
+
+
+def _upsert_score_compare(
+    conn: sqlite3.Connection,
+    run_id: int,
+    v1_rows: Sequence[tuple[int, ScoredRepo, dict[str, Any]]],
+    v2_rows: Sequence[tuple[int, ScoredRepo, dict[str, Any]]],
+    v1_ranks: dict[str, int],
+    v2_ranks: dict[str, int],
+) -> None:
+    v2_by_id = {repo_id: scored for repo_id, scored, _ in v2_rows}
+    v2_data = {repo_id: data for repo_id, _, data in v2_rows}
+    for repo_id, scored, data in v1_rows:
+        key = identity_key(scored, data)
+        other = v2_by_id.get(repo_id)
+        other_data = v2_data.get(repo_id, data)
+        r1 = v1_ranks.get(key)
+        r2 = v2_ranks.get(identity_key(other, other_data) if other else key)
+        conn.execute(
+            """
+            INSERT INTO score_compare(
+              run_id, repo_id, v1_rank, v2_rank, rank_delta,
+              v1_opportunity, v2_opportunity
+            ) VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(run_id, repo_id) DO UPDATE SET
+              v1_rank=excluded.v1_rank,
+              v2_rank=excluded.v2_rank,
+              rank_delta=excluded.rank_delta,
+              v1_opportunity=excluded.v1_opportunity,
+              v2_opportunity=excluded.v2_opportunity
+            """,
+            (
+                run_id,
+                repo_id,
+                r1,
+                r2,
+                rank_delta(r1, r2),
+                scored.breakdown.opportunity.value,
+                other.breakdown.opportunity.value if other else None,
+            ),
+        )
 
 
 def _review_blocked(

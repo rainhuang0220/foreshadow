@@ -57,6 +57,7 @@ direction_fit_weight = 10
 maintainer_weight = 5
 min_opportunity = 55
 min_explosion = 35
+score_version = "v1"          # official reader; dual-write always persists v1+v2
 reject_cooldown_days = 90
 later_skip_days = 14
 max_per_owner = 2             # diversity in Top 5
@@ -116,6 +117,7 @@ class ScoringSettings(BaseModel):
     maintainer_weight: int = 5
     min_opportunity: int = 55
     min_explosion: int = 35
+    score_version: str = "v1"
     reject_cooldown_days: int = 90
     later_skip_days: int = 14
     max_per_owner: int = 2

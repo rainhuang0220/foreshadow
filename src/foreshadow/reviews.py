@@ -605,11 +605,11 @@ def _upsert_score(
     conn.execute(
         """
         INSERT INTO scores(
-          run_id, repo_id, opportunity, explosion, contribution, confidence,
-          components_json, evidence_json, flags_json, vetoed, veto_reason,
-          exceptional, selected_rank, scored_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(run_id, repo_id) DO UPDATE SET
+          run_id, repo_id, score_version, opportunity, explosion, contribution,
+          confidence, components_json, evidence_json, flags_json, vetoed,
+          veto_reason, exceptional, selected_rank, pool_rank, scored_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(run_id, repo_id, score_version) DO UPDATE SET
           opportunity=excluded.opportunity,
           explosion=excluded.explosion,
           contribution=excluded.contribution,
@@ -625,6 +625,7 @@ def _upsert_score(
         (
             run_id,
             repo_id,
+            "v1",
             bd.opportunity.value,
             bd.explosion.value,
             bd.contribution.value,
@@ -636,6 +637,7 @@ def _upsert_score(
             bd.veto_reason,
             bd.exceptional,
             bd.selected_rank,
+            None,
             scored_at,
         ),
     )

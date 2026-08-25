@@ -13,8 +13,8 @@
 - [x] Opportunity Engine 2.0 research + scoring audit (no formula changes)
 - [x] Owner accepted E2-0…E2-22; plan in `docs/opportunity-engine-v2-plan.md`
 - [x] **PR-D** Discovery: pools A/B/C, no `sort:stars`, pre_rank without raw stars, reserved seats
-- [ ] PR-V `score_version` dual-write (`003_score_version.sql`)
-- [ ] PR-T counterexample tests (E2-16)
+- [x] PR-V `score_version` dual-write (`003_score_version.sql`) + preview v2 + rank delta
+- [x] PR-V counterexamples (small active vs large mature; small stagnant does not win)
 - [ ] PR-S1…S5 scoring / preview (not before D+V+T)
 - [ ] PR-R Replay 120; ask whether 10–300★ can enter shortlist
 
