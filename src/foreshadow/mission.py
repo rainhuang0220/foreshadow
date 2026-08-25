@@ -55,6 +55,7 @@ USER_EVENTS = frozenset(
         "pr_rejected",
         "user_submitted",
         "abandoned",
+        "draft_approved",
     }
 )
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -470,7 +471,8 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"行动计划：\n{steps}\n\n"
         f"本地 clone：{clone.get('status') or '尚未尝试'}\n"
         f"README：{'有' if inspect.get('has_readme') else '未知'} · "
-        f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n\n"
+        f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
+        f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
         "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         "等待你的确认才能执行任何远程 GitHub 操作。\n"
@@ -546,11 +548,14 @@ def clone_public_repo(
 def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     if clone_dir is None or not Path(clone_dir).is_dir():
         return {"has_readme": False, "has_contributing": False, "has_tests": False}
-    names = {p.name.lower() for p in Path(clone_dir).iterdir()}
+    entries = list(Path(clone_dir).iterdir())
+    names = {p.name.lower() for p in entries}
+    top = sorted(p.name for p in entries)[:20]
     return {
         "has_readme": any(n.startswith("readme") for n in names),
         "has_contributing": "contributing.md" in names,
         "has_tests": bool({"tests", "test", "spec"} & names),
+        "top_entries": top,
     }
 
 
@@ -896,6 +901,7 @@ def record_user_event(
         "pr_merged": "MERGED",
         "maintainer_replied": "WAITING_MAINTAINER",
         "pr_rejected": "BLOCKED",
+        "draft_approved": "DRAFT_READY",
     }
     dest = status_map.get(event)
     current = str(plan.get("status") or "")

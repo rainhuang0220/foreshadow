@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - S5 Observed Access overlay (`/api/portfolio.observed_access`). Does not retune Access weights. UNKNOWN ≠ 0.
 - Medium-tier closed-PR REST page feeds Access merge rate (review rate stays UNKNOWN).
 - Board: **查看任务**, **停止任务**, outcome buttons, review radio **进入** relabeled so it is not 开始进入.
+- Local `foreshadow/entry` branch + `ISSUE_DRAFT.md` after clone. `foreshadow outcome` records learning events.
 - Strategy: long-term potential; hard-language repos stay on Issue / docs / reproduction.
 
 ### Changed

@@ -404,7 +404,7 @@ function listView(board) {
       <div>
         <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
-      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 早期 ${n(c.s1_earlyness)} · 证据 ${n(c.s1_evidence)} · 窗口 ${n(c.s1_window)} · ${esc(c.s1_pool_zh || "")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
+      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(c.access_class_zh || "未知")} · 入口 ${esc(c.strategy_summary_zh || "先阅读")} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
     </div>`).join("");
 }
 
@@ -568,6 +568,7 @@ function missionView(m) {
       <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
     </p>
     <p>
+      <button type="button" onclick="markEvent(${id}, 'draft_approved')">草稿可以，仍不要发送</button>
       <button type="button" onclick="markEvent(${id}, 'maintainer_replied')">维护者已回复</button>
       <button type="button" onclick="markEvent(${id}, 'pr_merged')">我看到已被合并</button>
       <button type="button" onclick="markEvent(${id}, 'user_submitted')">我已自行提交</button>

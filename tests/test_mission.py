@@ -187,6 +187,21 @@ def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
     assert n == 1
 
 
+def test_draft_approved_stays_local(tmp_home):
+    from foreshadow.mission import persist_mission, record_user_event, transition
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    plan = record_user_event(conn, user_id=uid, mission_id=mid, event="draft_approved")
+    assert plan["status"] == "DRAFT_READY"
+    with pytest.raises(ValueError, match="cannot"):
+        transition(conn, mid, uid, "SUBMITTED")
+
+
 def test_local_branch_never_pushes(tmp_path):
     from foreshadow.mission import create_local_branch
 
