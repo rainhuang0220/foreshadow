@@ -47,6 +47,15 @@ reject_cooldown_days = 90
 later_skip_days = 14
 max_per_owner = 2             # diversity in Top 5
 window_slack_days = 1         # nearest snapshot ≤ t-N within this slack; else NA
+# Activity Momentum (v2 Preview only). Not Opportunity v1. Not windows.v7.
+activity_commit_7d_weight = 40
+activity_commit_30d_weight = 25
+activity_contributor_weight = 25
+activity_release_weight = 10
+activity_sat_commits_7d = 15
+activity_sat_commits_30d = 30
+activity_sat_contributors_7d = 4
+activity_sat_releases_30d = 2
 
 [github]
 api_url = "https://api.github.com"

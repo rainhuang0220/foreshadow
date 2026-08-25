@@ -66,6 +66,16 @@ maintainer_weight = 5
 min_opportunity = 55
 min_explosion = 35
 score_version = "v1"          # official reader; dual-write always persists v1+v2
+# Activity Momentum (v2 Preview only). Not star growth. Not windows.v7.
+# Weights here are the Activity mix, not Opportunity WEIGHT_KEYS.
+activity_commit_7d_weight = 40
+activity_commit_30d_weight = 25
+activity_contributor_weight = 25
+activity_release_weight = 10
+activity_sat_commits_7d = 15
+activity_sat_commits_30d = 30
+activity_sat_contributors_7d = 4
+activity_sat_releases_30d = 2
 reject_cooldown_days = 90
 later_skip_days = 14
 max_per_owner = 2             # diversity in Top 5
@@ -138,6 +148,14 @@ class ScoringSettings(BaseModel):
     later_skip_days: int = 14
     max_per_owner: int = 2
     window_slack_days: int = 1
+    activity_commit_7d_weight: int = 40
+    activity_commit_30d_weight: int = 25
+    activity_contributor_weight: int = 25
+    activity_release_weight: int = 10
+    activity_sat_commits_7d: int = 15
+    activity_sat_commits_30d: int = 30
+    activity_sat_contributors_7d: int = 4
+    activity_sat_releases_30d: int = 2
 
 
 class GitHubSettings(BaseModel):

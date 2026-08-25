@@ -12,6 +12,7 @@ from typing import Any
 from foreshadow.clock import Clock
 from foreshadow.config import ScoringSettings
 from foreshadow.models import ComponentScore, FeaturesBlob, ScoreBreakdown
+from foreshadow.pipeline.activity import ACTIVITY_NOTE, compute_activity
 from foreshadow.pipeline.features import clip, clip01
 from foreshadow.pipeline.h_rules import apply_penalties, evaluate_h
 from foreshadow.pipeline.score import (
@@ -46,6 +47,16 @@ def score_repo_v2(
     windows = ctx.windows
 
     momentum, accel_term, size_term = _momentum(ctx, windows, scoring)
+    activity = compute_activity(feat, scoring)
+    if windows.v7 is None and activity.momentum is not None:
+        # Fill the NA momentum slot with Activity Momentum. Not star growth.
+        momentum = ComponentScore(
+            value=activity.momentum,
+            confidence=activity.confidence,
+            missing=list(activity.missing),
+            weight=float(scoring.momentum_weight),
+            why=activity.why,
+        )
     direction = _direction_fit(ctx, feat, bags)
     real_user = _real_user(ctx, feat)
     gap = _gap_access(ctx, feat)
@@ -151,9 +162,9 @@ def score_repo_v2(
         "star_growth": None,
         "star_growth_status": "UNKNOWN",
         "activity": {
-            "source": "last_pushed_at",
+            **activity.as_dict(),
             "pushed_age_days": ctx.pushed_age_days,
-            "note": "pushed_at is activity, not star growth",
+            "note": ACTIVITY_NOTE,
         },
         "unknown_fields": unknown,
         "h_fired": list(h.fired),

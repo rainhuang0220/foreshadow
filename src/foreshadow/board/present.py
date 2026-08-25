@@ -43,6 +43,13 @@ STATUS_LABELS = {
 DISAGREE_LABELS = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
 CONF_LABELS = {"low": "低", "medium": "中", "high": "高"}
 COMPLETENESS_LABELS = {"low": "低", "medium": "中", "high": "高"}
+ACTIVITY_CLASS_LABELS = {
+    "VERY_LOW": "极低",
+    "LOW": "低",
+    "MEDIUM": "中",
+    "HIGH": "高",
+    "VERY_HIGH": "极高",
+}
 REC_LABELS = {
     "strong_candidate": "强候选",
     "candidate": "候选",
@@ -502,6 +509,16 @@ def present_card(
         ),
         "p0_confidence": card.p0_confidence,
         "p0_confidence_zh": CONF_LABELS.get(card.p0_confidence or "low", "低"),
+        "activity_momentum": card.activity_momentum,
+        "activity_class": card.activity_class,
+        "activity_class_zh": ACTIVITY_CLASS_LABELS.get(card.activity_class or "", "未知"),
+        "activity_confidence": card.activity_confidence,
+        "activity_concentration": card.activity_concentration,
+        "commits_7d": card.commits_7d,
+        "commits_30d": card.commits_30d,
+        "releases_30d": card.releases_30d,
+        "recent_contributors_7d": card.recent_contributors_7d,
+        "activity_note": "活跃度反映开发与社区活动，不代表 Star 增长。",
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {

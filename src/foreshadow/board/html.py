@@ -30,6 +30,13 @@ def _score(v: object) -> str:
     return str(v)
 
 
+def _activity_score(card: dict) -> str:
+    raw = card.get("activity_momentum")
+    if raw is None:
+        return ""
+    return f" {_score(raw)} / 100"
+
+
 def render_board_html(board: BoardDocument) -> str:
     view = present_board(board)
     preview = view["mode"] != "official"
@@ -88,6 +95,11 @@ def render_board_html(board: BoardDocument) -> str:
        · <span class="stamp">{_e(card["rank_kind_zh"])}</span>
        {" · 不是正式预测" if card["not_official"] else ""}</p>
     <p>数据完整度：{_e(card.get("data_completeness_zh") or "低")} · 置信度：{_e(card.get("p0_confidence_zh") or "低")}（完整度低不是低分）</p>
+    <p>活跃度：{_e(card.get("activity_class_zh") or "未知")}{_activity_score(card)}</p>
+    <p>近 7 天提交：{_score(card.get("commits_7d"))} · 近 30 天提交：{_score(card.get("commits_30d"))}
+       · 近 30 天 Release：{_score(card.get("releases_30d"))} · 近 7 天贡献者：{_score(card.get("recent_contributors_7d"))}
+       · 活动集中度：{_score(card.get("activity_concentration"))}</p>
+    <p class="muted">{_e(card.get("activity_note") or "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
     <p><a class="gh" href="{gh}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
        Stars {_e(card["stars"])} · Forks {_e(card["forks"])} · 贡献者 {_e(card["contributors"])}
        · Open Issues {_e(card["open_issues"])}</p>

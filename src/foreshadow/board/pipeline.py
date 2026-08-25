@@ -21,6 +21,7 @@ from foreshadow.config import BoardSettings, ScoringSettings, Settings, load_con
 from foreshadow.db import connect, migrate
 from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline import load_score_input
+from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.direction import load_direction_bags
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import is_official_eligible
@@ -92,6 +93,18 @@ def _card(
         p0_contribution=row.breakdown.contribution.value,
         p0_confidence=row.breakdown.opportunity.confidence,
         data_completeness=_completeness_of(extra_meta),
+        activity_momentum=_float_or_none(extra_meta.get("activity_momentum")),
+        activity_class=(
+            str(extra_meta["activity_class"])
+            if extra_meta.get("activity_class")
+            else None
+        ),
+        activity_confidence=_conf_or_none(extra_meta.get("activity_confidence")),
+        activity_concentration=_float_or_none(extra_meta.get("activity_concentration")),
+        commits_7d=_int_or_none(extra_meta.get("commits_7d")),
+        commits_30d=_int_or_none(extra_meta.get("commits_30d")),
+        releases_30d=_int_or_none(extra_meta.get("releases_30d")),
+        recent_contributors_7d=_int_or_none(extra_meta.get("recent_contributors_7d")),
         momentum_na=mom_na,
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
@@ -330,6 +343,9 @@ def load_scored_from_db(
         row = score_repo(data, clock=clock, scoring=settings.scoring, bags=bags)
         scored.append(row)
         features = data.get("features") or {}
+        act = compute_activity(
+            features if isinstance(features, dict) else {}, settings.scoring
+        )
         extras[full_name] = {
             "html_url": html_url or data.get("html_url"),
             "stars": data.get("S"),
@@ -348,6 +364,14 @@ def load_scored_from_db(
                 if isinstance(features, dict)
                 else None
             ),
+            "activity_momentum": act.momentum,
+            "activity_class": act.classification,
+            "activity_confidence": act.confidence,
+            "activity_concentration": act.concentration,
+            "commits_7d": act.commits_7d,
+            "commits_30d": act.commits_30d,
+            "releases_30d": act.releases_30d,
+            "recent_contributors_7d": act.recent_contributors_7d,
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days
@@ -358,6 +382,30 @@ def _completeness_of(extra: dict[str, Any]) -> str | None:
     if raw in {"high", "medium", "low"}:
         return raw
     return None
+
+
+def _conf_or_none(raw: Any) -> str | None:
+    if raw in {"low", "medium", "high"}:
+        return raw
+    return None
+
+
+def _float_or_none(raw: Any) -> float | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(raw: Any) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _last_release(features: Any) -> str | None:

@@ -369,7 +369,7 @@ function listView(board) {
       <div class="final">${n(c.final_score)}</div>
       <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
       <div></div>
-      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 数据完整度 ${esc(c.data_completeness_zh || "低")} · 置信度 ${esc(c.p0_confidence_zh || "低")}</div>
+      <div class="sub">${esc(c.headline)} · ${esc(c.status_zh)} · 数据完整度 ${esc(c.data_completeness_zh || "低")} · 置信度 ${esc(c.p0_confidence_zh || "低")} · 活跃度 ${esc(c.activity_class_zh || "未知")}${c.activity_momentum != null ? " " + n(c.activity_momentum) + " / 100" : ""}</div>
     </div>`).join("");
 }
 
@@ -411,6 +411,9 @@ function drawerView(card) {
     <p><strong>最终综合评分：</strong>${n(card.final_score)}
       <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
     <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.p0_confidence_zh || "低")}（完整度低不是低分）</p>
+    <p class="meta">活跃度：${esc(card.activity_class_zh || "未知")}${card.activity_momentum != null ? "　" + n(card.activity_momentum) + " / 100" : ""}</p>
+    <p class="meta">近 7 天提交：${n(card.commits_7d)} · 近 30 天提交：${n(card.commits_30d)} · 近 30 天 Release：${n(card.releases_30d)} · 近 7 天贡献者：${n(card.recent_contributors_7d)}${card.activity_concentration != null ? " · 活动集中度：" + n(card.activity_concentration) : ""}</p>
+    <p class="meta">${esc(card.activity_note || "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
     <p class="meta">
       Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
       · Open Issues ${n(card.open_issues)}<br/>

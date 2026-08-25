@@ -74,4 +74,15 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | H5 | Activity raw (`commits_7d`, …) is not `windows.v7` and is not scored this PR. |
 | H6 | `data_completeness` is a quality label for Board / audit / routing. Not Opportunity. |
 | H7 | Confidence and Opportunity stay independent. HIGH completeness + LOW confidence is legal. |
-| H8 | PR-S1 / Entry Window / Activity *scoring* stay suspended until the owner reads [`docs/opportunity-engine-v2-hydration-report.md`](docs/opportunity-engine-v2-hydration-report.md). |
+| H8 | PR-S1 / Entry Window stay suspended until Activity observability exists. |
+
+## PR-A Activity Momentum (2026-08-25)
+
+| ID | Decision |
+|---|---|
+| A1 | Activity Momentum is v2 Preview only. Never v1, never Official, never `windows.v7`. |
+| A2 | UNKNOWN if `commits_30d` missing; known 0 is 0. Do not call it Growth. |
+| A3 | When v7 is NA and AM is known, v2 fills the existing momentum slot. No new WEIGHT_KEYS. |
+| A4 | `activity_concentration = c7 / max(c30, 1)` is explainable evidence, not acceleration. |
+| A5 | Board shows 活跃度 + four raw counts + disclaimer 不代表 Star 增长. |
+| A6 | Next after this report: S1 Entry Window (lightweight UNKNOWN youth), not more AM tuning. |

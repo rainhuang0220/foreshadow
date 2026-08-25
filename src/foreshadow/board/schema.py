@@ -111,6 +111,14 @@ class BoardCard(BaseModel):
     p0_contribution: float | None = None
     p0_confidence: Literal["low", "medium", "high"] | None = None
     data_completeness: Literal["high", "medium", "low"] | None = None
+    activity_momentum: float | None = None
+    activity_class: str | None = None
+    activity_confidence: Literal["low", "medium", "high"] | None = None
+    activity_concentration: float | None = None
+    commits_7d: int | None = None
+    commits_30d: int | None = None
+    releases_30d: int | None = None
+    recent_contributors_7d: int | None = None
     momentum_na: bool = False
     vetoed: bool = False
     veto_reason: str | None = None
