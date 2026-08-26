@@ -439,7 +439,7 @@ function header(board) {
     <div class="ribbon ${preview ? "" : "official"}">
       ${preview ? "预览模式｜历史不足 v7｜不是正式预测" : "正式模式｜v7 历史完整"}
     </div>
-    <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭") : ""}</p>
+    <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
     <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
     <div class="counts">
