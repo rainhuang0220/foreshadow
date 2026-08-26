@@ -1260,11 +1260,13 @@ def setup_local_environment(
                 title = line.split("建议先看：", 1)[1].strip()
                 break
         cited = {"number": issue_n, "title": title}
+    inspect_steps = dict(inspect)
+    inspect_steps["tests"] = tests
     mission.strategy.steps_zh = customize_steps(
         mission.strategy.path,
         language=mission.strategy.language,
         full_name=full_name,
-        inspect=inspect,
+        inspect=inspect_steps,
         cited=cited,
         cloned=bool(clone.get("ok")),
         blurb=str(plan.get("blurb") or "") or None,

@@ -319,7 +319,18 @@ def customize_steps(
         language=language,
         blurb=blurb,
     )
-    return _label_steps(lines)
+    if cloned:
+        lines = [ln for ln in lines if "克隆仓库" not in ln]
+    kind = str((inspect.get("tests") or {}).get("kind") or "")
+    if kind == "node":
+        lines.append("已跳过 Node 测试（不执行 npm）")
+    elif kind == "cargo":
+        lines.append("已跳过 Cargo 测试（不执行 cargo）")
+    labeled = _label_steps(lines)
+    first = labeled[0].lower() if labeled else ""
+    if any(tok in first for tok in ("push", "create_pr", "open pr", "开 pr", "创建 pr")):
+        labeled.insert(0, "第一步：打开本机 FORESHADOW.md 和 ISSUE_DRAFT.md")
+    return labeled
 
 
 def _label_steps(lines: list[str]) -> list[str]:
@@ -437,8 +448,8 @@ def _path_lines(
     open_readme = f"打开 {project} 的 README{about}{readme_bit}"
     if cloned:
         first_read = (
-            f"打开本机 FORESHADOW.md，对照 README{about}"
-            f"{readme_bit or ' 了解项目怎么跑'}"
+            "打开本机 FORESHADOW.md 和 ISSUE_DRAFT.md，"
+            f"对照 README{about}{readme_bit or ' 了解项目怎么跑'}"
         )
     else:
         first_read = f"把 {project} 下到本机后，打开 README{about}{readme_bit}"

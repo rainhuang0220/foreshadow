@@ -181,6 +181,28 @@ def test_wrapper_app_py_counts_as_source_for_benchmark():
     assert strat.allows_direct_pr is False
 
 
+def test_cloned_first_step_is_local_files_not_pr():
+    from foreshadow.pipeline.strategy import customize_steps
+
+    steps = customize_steps(
+        "ISSUE",
+        full_name="acme/toy",
+        inspect={
+            "clone_ok": True,
+            "readme_headings": ["Install"],
+            "tests": {"kind": "node", "status": "skipped"},
+        },
+        cloned=True,
+    )
+    assert "FORESHADOW.md" in steps[0]
+    assert "ISSUE_DRAFT.md" in steps[0]
+    assert "克隆仓库" not in " ".join(steps)
+    first = steps[0].lower()
+    assert "push" not in first
+    assert "create_pr" not in first
+    assert any("npm" in s and "跳过" in s for s in steps)
+
+
 def test_default_issue_cites_number_and_language():
     strat = recommend_entry(
         FeaturesBlob(open_issue_titles=["#88 latency on first token"]),
