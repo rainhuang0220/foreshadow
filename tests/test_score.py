@@ -1,3 +1,4 @@
+import inspect
 from copy import deepcopy
 
 import pytest
@@ -149,3 +150,9 @@ def test_zero_contributors_low_contribution(frozen_clock, repo_fixture):
 def test_12a_opportunity_confidence_high(frozen_clock, repo_fixture):
     scored = score_repo(repo_fixture("memkit.json"), clock=frozen_clock)
     assert scored.breakdown.opportunity.confidence == "high"
+
+
+def test_official_score_still_na_gates_missing_v7():
+    src = inspect.getsource(score_repo)
+    assert "windows.v7 is None" in src
+    assert 'missing=["v7"]' in src

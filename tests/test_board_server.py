@@ -167,11 +167,20 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert mission["needs_user_approval"] is True
         assert mission["status"] == "MISSION_READY"
         assert mission["strategy"]["allows_direct_pr"] is False
-        remote = a.post(
-            f"{base}/api/mission/remote", json={"action": "create_pr"}
+        from foreshadow.mission import REMOTE_ACTIONS, refuse_remote_action
+
+        for action in sorted(REMOTE_ACTIONS):
+            remote = a.post(
+                f"{base}/api/mission/remote", json={"action": action}
+            )
+            assert remote.status_code == 200
+            assert remote.json() == refuse_remote_action(action)
+        anon = httpx.Client()
+        guest = anon.post(
+            f"{base}/api/mission/remote", json={"action": "push_branch"}
         )
-        assert remote.status_code == 200
-        assert remote.json()["blocked"] is True
+        assert guest.status_code == 200
+        assert guest.json() == refuse_remote_action("push_branch")
         setup = a.post(
             f"{base}/api/mission/setup", json={"id": mission["id"]}
         )

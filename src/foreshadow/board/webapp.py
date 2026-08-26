@@ -733,8 +733,8 @@ function missionView(m) {
     <p>
       ${cloneOk || paused || abandoned ? "" : `<button type="button" class="primary" onclick="setupLocal(${id})">把项目下载到本机</button>`}
       ${abandoned ? "" : (paused
-        ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button><button type="button" onclick="pauseMission(${id})">暂停任务</button>`
-        : `<button type="button" onclick="pauseMission(${id})">暂停任务</button><button type="button" onclick="resumeMission(${id})">继续任务</button>`)}
+        ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button> <button type="button" onclick="pauseMission(${id})">暂停任务</button>`
+        : `<button type="button" onclick="pauseMission(${id})">暂停任务</button> <button type="button" onclick="resumeMission(${id})">继续任务</button>`)}
       <button type="button" class="ghost" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
     </p>
     <h3>行动计划</h3>

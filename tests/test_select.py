@@ -1,6 +1,8 @@
+import inspect
+
 from foreshadow.models import ComponentScore, ScoreBreakdown
 from foreshadow.pipeline.score import ScoredRepo
-from foreshadow.pipeline.select import select_top
+from foreshadow.pipeline.select import is_official_eligible, select_top
 
 
 def passing(owner: str, name: str, opp: float) -> ScoredRepo:
@@ -103,3 +105,10 @@ def test_exceptional_override_weak_fit_may_select():
     top = select_top([row])
     assert [r.full_name for r in top] == ["a/r1"]
     assert top[0].breakdown.selected_rank == 1
+
+
+def test_official_select_thresholds_frozen_at_55_35():
+    for fn in (select_top, is_official_eligible):
+        params = inspect.signature(fn).parameters
+        assert params["min_opportunity"].default == 55
+        assert params["min_explosion"].default == 35
