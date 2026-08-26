@@ -1260,6 +1260,13 @@ def setup_local_environment(
                 title = line.split("建议先看：", 1)[1].strip()
                 break
         cited = {"number": issue_n, "title": title}
+    from foreshadow.inspect_repo import enrich_inspect
+
+    inspect = enrich_inspect(
+        Path(clone["path"]) if clone.get("path") else dest / "repo",
+        inspect,
+        cited,
+    )
     inspect_steps = dict(inspect)
     inspect_steps["tests"] = tests
     mission.strategy.steps_zh = customize_steps(

@@ -181,6 +181,37 @@ def test_wrapper_app_py_counts_as_source_for_benchmark():
     assert strat.allows_direct_pr is False
 
 
+def test_cloned_steps_cite_real_file_and_issue_command():
+    from foreshadow.pipeline.strategy import customize_steps
+
+    steps = customize_steps(
+        "REPRODUCTION",
+        full_name="acme/toy",
+        inspect={
+            "related_files": ["src/retriever.py"],
+            "test_files": ["tests/test_retriever.py"],
+            "issue_commands": ["pytest tests/test_retriever.py"],
+        },
+        cited={"number": 123, "title": "empty retriever", "body": "pytest tests/test_retriever.py"},
+        cloned=True,
+    )
+    blob = " ".join(steps)
+    assert "src/retriever.py" in blob
+    assert "#123" in blob
+    assert "pytest tests/test_retriever.py" in blob
+    assert "src/memory/missing.py" not in blob
+    assert "open a pr" not in blob.lower()
+
+
+def test_cloned_steps_mark_unknown_when_no_files():
+    from foreshadow.pipeline.strategy import customize_steps
+
+    steps = customize_steps("ISSUE", full_name="acme/toy", inspect={}, cloned=True)
+    blob = " ".join(steps)
+    assert "UNKNOWN" in blob
+    assert "src/memory/retriever.py" not in blob
+
+
 def test_cloned_first_step_is_local_files_not_pr():
     from foreshadow.pipeline.strategy import customize_steps
 
