@@ -94,4 +94,6 @@ The system **stops** before any third-party GitHub write. **尝试创建 PR** is
 
 Live GET-only replay of `recommend_entry` on the 2026-08-25 dogfood 120 (features from latest snapshots, no GitHub writes): **ISSUE 81 / DISCUSSION 25 / BUG_FIX 8 / REPRODUCTION 6 / BENCHMARK 0 / direct PR 0**. BENCHMARK is implemented (`screenshot_only` + `tree_kind=has_source`) but this day’s sample has no screenshot-only repos. Phase B 30 steps cite README headings and/or `#N` tickets; lightweight rows cite `full_name` plus the GitHub description when present.
 
-Tests: **338 passed**. Access weights were not changed.
+Tests: **344 passed**. Access weights were not changed.
+
+HITL is sealed: Board `startEnter` → local mission/setup; `/api/mission/remote` always `refuse_remote_action`; clone is `git clone --depth 1` only; cited issues are GET-only; drafts never POST. Regression: `test_entry_mission_cannot_post_to_github`.
