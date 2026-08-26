@@ -34,6 +34,7 @@ Status = Literal[
     "IMPLEMENTING",
     "DRAFT_READY",
     "WAITING_USER_APPROVAL",
+    "PAUSED",
     "SUBMITTED",
     "REVIEWING",
     "MERGED",
@@ -60,6 +61,8 @@ USER_EVENTS = frozenset(
         "pr_rejected",
         "user_submitted",
         "abandoned",
+        "paused",
+        "resumed",
         "draft_approved",
     }
 )
@@ -341,18 +344,41 @@ def create_for_user(
 
 
 ALLOWED = {
-    "MISSION_READY": {"LOCAL_SETUP", "INVESTIGATING", "ABANDONED"},
-    "LOCAL_SETUP": {"WAITING_USER_APPROVAL", "DRAFT_READY", "ABANDONED", "BLOCKED"},
+    "MISSION_READY": {"LOCAL_SETUP", "INVESTIGATING", "ABANDONED", "PAUSED"},
+    "LOCAL_SETUP": {
+        "WAITING_USER_APPROVAL",
+        "DRAFT_READY",
+        "ABANDONED",
+        "BLOCKED",
+        "PAUSED",
+    },
     "WAITING_USER_APPROVAL": {
         "ABANDONED",
         "BLOCKED",
         "WAITING_MAINTAINER",
         "DRAFT_READY",
         "IMPLEMENTING",
+        "PAUSED",
     },
-    "DRAFT_READY": {"WAITING_USER_APPROVAL", "ABANDONED"},
-    "INVESTIGATING": {"MISSION_READY", "ABANDONED"},
-    "IMPLEMENTING": {"DRAFT_READY", "WAITING_USER_APPROVAL", "ABANDONED", "BLOCKED"},
+    "DRAFT_READY": {"WAITING_USER_APPROVAL", "ABANDONED", "PAUSED"},
+    "INVESTIGATING": {"MISSION_READY", "ABANDONED", "PAUSED"},
+    "IMPLEMENTING": {
+        "DRAFT_READY",
+        "WAITING_USER_APPROVAL",
+        "ABANDONED",
+        "BLOCKED",
+        "PAUSED",
+    },
+    "REPRODUCING": {"PAUSED", "ABANDONED"},
+    "DISCUSSING": {"PAUSED", "ABANDONED"},
+    "PAUSED": {
+        "LOCAL_SETUP",
+        "WAITING_USER_APPROVAL",
+        "DRAFT_READY",
+        "IMPLEMENTING",
+        "REPRODUCING",
+        "DISCUSSING",
+    },
     "WAITING_MAINTAINER": {"FOLLOW_UP", "ABANDONED", "BLOCKED", "REVIEWING"},
     "REVIEWING": {"FOLLOW_UP", "MERGED", "ABANDONED", "BLOCKED"},
     "FOLLOW_UP": {"ABANDONED", "MERGED"},
@@ -439,6 +465,7 @@ def status_zh(status: str | None) -> str:
         "MISSION_READY": "任务已就绪",
         "LOCAL_SETUP": "正在准备本地环境",
         "WAITING_USER_APPROVAL": "等待你确认远程操作",
+        "PAUSED": "已暂停",
         "DRAFT_READY": "本地草稿已好",
         "IMPLEMENTING": "本地实现中",
         "WAITING_MAINTAINER": "等待维护者",
@@ -457,6 +484,7 @@ def next_step_zh(status: str | None) -> str:
         "MISSION_READY": "准备本地环境（clone / 读文档），不要发 Issue 或 PR",
         "LOCAL_SETUP": "看本地仓库与第一步，确认后再决定是否沟通",
         "WAITING_USER_APPROVAL": "等待你的确认才能执行任何远程 GitHub 操作",
+        "PAUSED": "可以继续任务；暂停不会向 GitHub 发请求",
         "DRAFT_READY": "草稿已在本地。远程发送仍需你确认",
         "IMPLEMENTING": "在本地实现最小改动，不要 push",
         "WAITING_MAINTAINER": "等待维护者。不要反复催促或自动评论",
@@ -536,22 +564,32 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"Issue 命令：{'; '.join(inspect.get('issue_commands') or []) or 'UNKNOWN'}\n"
     )
     why_not = "\n".join(f"- {w}" for w in mission.strategy.why) or "- 默认先沟通，不默认提 PR"
-    text += f"\n为什么不是直接 PR：\n{why_not}\n"
+    if mission.strategy.allows_direct_pr:
+        text += f"\n## 可以直接 PR\n\n{why_not}\n"
+    else:
+        text += f"\n## 为什么不是直接 PR\n\n{why_not}\n"
     cited = extra.get("cited_issue") or {}
     if cited.get("number"):
         text += (
             f"\n引用 Issue #{cited['number']}：{cited.get('title') or ''}\n"
             f"{(cited.get('body') or '')[:400]}\n"
         )
+    extra_files = ""
+    if extra.get("pr_draft"):
+        extra_files += (
+            "若入口是代码向的，还有 PR_DRAFT.md（同样未发送，不是真正的 Pull Request）。\n"
+        )
+    if extra.get("reproduction_path"):
+        extra_files += "还有 REPRODUCTION.md（复现记录，只在本机，未发送）。\n"
+    if extra.get("benchmark_path"):
+        extra_files += "还有 BENCHMARK.md（测量记录，只在本机；Foreshadow 不会代跑基准）。\n"
+    if extra.get("discussion_draft_path"):
+        extra_files += "还有 DISCUSSION_DRAFT.md（讨论草稿，只在本机，未发送）。\n"
     text += (
         "\n"
         "成功标准：完成推荐入口的第一步，并等你确认后才向 GitHub 发任何内容。\n\n"
         "同目录还有 ISSUE_DRAFT.md（本地草稿，未发送）。\n"
-        + (
-            "若入口是代码向的，还有 PR_DRAFT.md（同样未发送，不是真正的 Pull Request）。\n"
-            if extra.get("pr_draft")
-            else ""
-        )
+        + extra_files
         + "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         + "等待你的确认才能执行任何远程 GitHub 操作。\n"
     )
@@ -1056,6 +1094,119 @@ def write_pr_draft(dest: Path, mission: Mission) -> Path | None:
     return path
 
 
+_LOCAL_ONLY = "等待你的确认才能发到 GitHub。\n这只是本地文件。\n"
+
+
+def _reproduction_issue_block(
+    cited: dict[str, Any] | None, mission: Mission
+) -> str:
+    cited = cited or {}
+    number = cited.get("number")
+    title = str(cited.get("title") or "")
+    body = str(cited.get("body") or "")
+    if number is None:
+        number = cited_issue_number(mission)
+        if number is not None and not title:
+            for line in [*mission.why_now, *mission.strategy.why]:
+                if "建议先看：" in line:
+                    title = line.split("建议先看：", 1)[1].strip()
+                    break
+    if number is None:
+        return "UNKNOWN"
+    lines = [f"#{int(number)} {title}".rstrip()]
+    if body:
+        lines.append(body[:800])
+    return "\n".join(lines)
+
+
+def write_reproduction_doc(
+    dest: Path,
+    mission: Mission,
+    cited: dict[str, Any] | None = None,
+) -> Path | None:
+    """Local reproduction notes. Never posts. None if path is not REPRODUCTION."""
+    if mission.strategy.path != "REPRODUCTION":
+        return None
+    path = Path(dest) / "REPRODUCTION.md"
+    steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+    path.write_text(
+        f"# 复现记录（本地）\n\n"
+        f"项目：{mission.full_name}\n"
+        f"入口：{mission.strategy.summary_zh}（REPRODUCTION）\n\n"
+        f"## 针对的 Issue\n\n"
+        f"{_reproduction_issue_block(cited, mission)}\n\n"
+        f"## 本机怎么做\n\n"
+        f"{steps}\n\n"
+        "先把复现说明给维护者看，不要先改代码发到网上。\n"
+        "Foreshadow 不会自动 post Issue / Discussion / PR。\n"
+        f"{_LOCAL_ONLY}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_benchmark_doc(
+    dest: Path,
+    mission: Mission,
+    inspect: dict[str, Any] | None = None,
+) -> Path | None:
+    """Local measurement notes. Never runs benches. None if path is not BENCHMARK."""
+    if mission.strategy.path != "BENCHMARK":
+        return None
+    path = Path(dest) / "BENCHMARK.md"
+    inspect = inspect or {}
+    hint = str(inspect.get("install_hint") or "").strip()
+    heads = [
+        str(h).strip()
+        for h in (inspect.get("readme_headings") or [])
+        if str(h).strip()
+    ]
+    hint_line = (
+        f"README 安装命令（你自己执行，Foreshadow 不会代跑）：`{hint}`"
+        if hint
+        else "README 安装命令：UNKNOWN"
+    )
+    heads_line = (
+        "README 目录：" + "；".join(heads) if heads else "README 目录：UNKNOWN"
+    )
+    steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+    path.write_text(
+        f"# 测量记录（本地）\n\n"
+        f"项目：{mission.full_name}\n"
+        f"入口：{mission.strategy.summary_zh}（BENCHMARK）\n\n"
+        f"{hint_line}\n"
+        f"{heads_line}\n\n"
+        "Foreshadow 不会代跑基准，也不会执行 benchmark 命令。\n"
+        "记下可重复的一组数字，先讨论，不要发优化补丁。\n\n"
+        f"## 建议怎么做\n\n{steps}\n\n"
+        f"{_LOCAL_ONLY}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_discussion_draft(dest: Path, mission: Mission) -> Path | None:
+    """Local discussion notes. Never posts. None if path is not DISCUSSION."""
+    if mission.strategy.path != "DISCUSSION":
+        return None
+    path = Path(dest) / "DISCUSSION_DRAFT.md"
+    why = "\n".join(f"- {w}" for w in mission.why_now) or "- （待补充）"
+    steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
+    path.write_text(
+        f"# 讨论草稿（本地）\n\n"
+        f"项目：{mission.full_name}\n"
+        f"入口：{mission.strategy.summary_zh}（DISCUSSION）\n"
+        f"标题：{_draft_title(mission)}\n\n"
+        f"## 为什么先讨论\n{why}\n\n"
+        f"## 建议怎么说\n{steps}\n\n"
+        "先观察维护者会不会回应，不要改代码。\n"
+        "Foreshadow 不会自动 post Issue / Discussion / PR。\n"
+        f"{_LOCAL_ONLY}",
+        encoding="utf-8",
+    )
+    return path
+
+
 def mission_from_plan(plan: dict[str, Any]) -> Mission:
     from foreshadow.pipeline.strategy import StrategyResult
 
@@ -1285,11 +1436,17 @@ def setup_local_environment(
     )
     draft = write_issue_draft(dest, mission, cited=cited)
     pr_draft = write_pr_draft(dest, mission)
+    repro = write_reproduction_doc(dest, mission, cited=cited)
+    bench = write_benchmark_doc(dest, mission, inspect=inspect)
+    discuss = write_discussion_draft(dest, mission)
     extra = {
         "clone": clone,
         "inspect": inspect,
         "cited_issue": cited or {},
         "pr_draft": str(pr_draft) if pr_draft else None,
+        "reproduction_path": str(repro) if repro else None,
+        "benchmark_path": str(bench) if bench else None,
+        "discussion_draft_path": str(discuss) if discuss else None,
         "branch": branch,
         "tests": tests,
     }
@@ -1315,6 +1472,9 @@ def setup_local_environment(
             "draft_path": str(draft),
             "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
             "pr_draft_path": str(pr_draft) if pr_draft else None,
+            "reproduction_path": str(repro) if repro else None,
+            "benchmark_path": str(bench) if bench else None,
+            "discussion_draft_path": str(discuss) if discuss else None,
             "cited_issue": cited or {},
             "strategy": mission.strategy.as_dict(),
             "steps_zh": list(mission.strategy.steps_zh),
@@ -1382,9 +1542,15 @@ def record_user_event(
         "maintainer_replied": "WAITING_MAINTAINER",
         "pr_rejected": "BLOCKED",
         "draft_approved": "DRAFT_READY",
+        "paused": "PAUSED",
     }
     dest = status_map.get(event)
     current = str(plan.get("status") or "")
+    if event == "resumed" and current == "PAUSED":
+        clone = plan.get("clone") if isinstance(plan.get("clone"), dict) else {}
+        dest = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
+    if dest == "SUBMITTED":
+        dest = None
     if dest and dest in ALLOWED.get(current, set()):
         transition(conn, mission_id, user_id, dest)
     elif event == "abandoned":

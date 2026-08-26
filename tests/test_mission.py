@@ -13,9 +13,34 @@ from foreshadow.mission import (
     prepare_local_dir,
     refuse_remote_action,
     setup_local_environment,
+    write_benchmark_doc,
+    write_discussion_draft,
     write_issue_draft,
+    write_pr_draft,
+    write_reproduction_doc,
 )
 from foreshadow.models import FeaturesBlob
+
+_HITL = "等待你的确认才能发到 GitHub。"
+_LOCAL_FILE = "这只是本地文件。"
+
+
+def _assert_local_only(text: str) -> None:
+    assert _HITL in text
+    assert _LOCAL_FILE in text
+    assert "open a pr" not in text.lower()
+
+
+def _noop_clone_runner(readme: str = "# toy\n"):
+    def runner(cmd, **_k):
+        if "clone" in cmd:
+            clone_dest = Path(cmd[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text(readme, encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    return runner
 
 
 def test_build_mission_waits_for_user():
@@ -34,7 +59,6 @@ def test_build_mission_waits_for_user():
 
 
 def test_pr_draft_only_for_code_paths_and_never_posts(tmp_path):
-    from foreshadow.mission import write_pr_draft
 
     talk = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
     assert write_pr_draft(tmp_path, talk) is None
@@ -247,10 +271,16 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     assert "不会自动" in md
     assert "toy" in md.lower() or "README" in md
     assert (dest / "ISSUE_DRAFT.md").is_file()
+    assert (dest / "REPRODUCTION.md").is_file()
+    assert not (dest / "PR_DRAFT.md").exists()
     assert (dest / "FORK.md").is_file()
     assert "不会" in (dest / "FORK.md").read_text(encoding="utf-8")
     draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
     assert "等待你的确认" in draft
+    _assert_local_only((dest / "REPRODUCTION.md").read_text(encoding="utf-8"))
+    assert out["mission"].get("reproduction_path")
+    assert out["mission"].get("benchmark_path") is None
+    assert out["mission"].get("discussion_draft_path") is None
     assert out["branch"]["ok"] is True
 
 
@@ -438,7 +468,6 @@ def test_inspect_finds_github_contributing_and_rst_title(tmp_path):
 
 
 def test_benchmark_mission_has_no_pr_draft(tmp_path):
-    from foreshadow.mission import write_pr_draft
 
     m = build_mission(
         "acme/demo",
@@ -519,7 +548,8 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
     assert "这是 Python 仓库。" in md
     assert "本地分支：foreshadow/entry" in md
     assert "README：有" in md
-    assert "为什么不是直接 PR" in md
+    assert "## 为什么不是直接 PR" in md
+    assert "可以直接 PR" not in md
     assert "相关文件：" in md
     assert "不会自动 push / 开 Issue / 开 PR" in md
     assert "等待你的确认才能执行任何远程 GitHub 操作。" in md
@@ -544,6 +574,11 @@ def test_write_mission_doc_quotes_install_hint(tmp_path):
     assert "这是 Python 仓库。" in text
     assert "等待你的确认才能执行任何远程 GitHub 操作。" in text
     assert "不会自动 push / 开 Issue / 开 PR" in text
+    assert "## 为什么不是直接 PR" in text
+    assert "可以直接 PR" not in text
+    for reason in m.strategy.why:
+        assert reason in text
+    assert m.strategy.allows_direct_pr is False
     empty = write_mission_doc(tmp_path, m).read_text(encoding="utf-8")
     assert "README 安装命令" not in empty
     assert "这是 Python 仓库。" not in empty
@@ -556,7 +591,9 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     from foreshadow.board.server import BoardHandler
     from foreshadow.board.webapp import render_app_html
     from foreshadow.cli import app, enter
-    from foreshadow.mission import _load_cited_issue, write_pr_draft
+    from foreshadow.mission import (
+        _load_cited_issue,
+    )
 
     html = render_app_html()
     start_js = html[
@@ -583,7 +620,15 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
 
     clone_src = inspect.getsource(clone_public_repo)
     assert '["git", "clone", "--depth", "1", "--", url, str(clone_dir)]' in clone_src
-    for fn in (write_issue_draft, write_pr_draft, enter, _load_cited_issue):
+    for fn in (
+        write_issue_draft,
+        write_pr_draft,
+        write_reproduction_doc,
+        write_benchmark_doc,
+        write_discussion_draft,
+        enter,
+        _load_cited_issue,
+    ):
         src = inspect.getsource(fn)
         assert "GitHubClient" not in src or fn is _load_cited_issue
         assert "request(\"POST\"" not in src
@@ -692,4 +737,110 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     assert out["mission"]["needs_user_approval"] is True
     assert "api.github.com" not in inspect.getsource(write_issue_draft)
     assert "api.github.com" not in inspect.getsource(write_pr_draft)
+    assert "api.github.com" not in inspect.getsource(write_reproduction_doc)
+    assert "api.github.com" not in inspect.getsource(write_benchmark_doc)
+    assert "api.github.com" not in inspect.getsource(write_discussion_draft)
+
+
+def test_pause_then_resume_stays_local(tmp_home):
+    from foreshadow.mission import (
+        patch_mission_plan,
+        persist_mission,
+        record_user_event,
+        transition,
+    )
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    paused = record_user_event(conn, user_id=uid, mission_id=mid, event="paused")
+    assert paused["status"] == "PAUSED"
+    assert paused["status_zh"] == "已暂停"
+    assert paused["next_step_zh"] == "可以继续任务；暂停不会向 GitHub 发请求"
+    assert paused["status"] != "SUBMITTED"
+    resumed = record_user_event(conn, user_id=uid, mission_id=mid, event="resumed")
+    assert resumed["status"] == "LOCAL_SETUP"
+    assert resumed["status"] != "SUBMITTED"
+    with pytest.raises(ValueError, match="cannot"):
+        transition(conn, mid, uid, "SUBMITTED")
+
+    waiting = build_mission(
+        "acme/wait", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    wid = persist_mission(conn, waiting, user_id=uid, repo_id=None)
+    transition(conn, wid, uid, "LOCAL_SETUP")
+    transition(conn, wid, uid, "WAITING_USER_APPROVAL")
+    patch_mission_plan(conn, wid, uid, {"clone": {"ok": True, "status": "exists"}})
+    paused_ok = record_user_event(conn, user_id=uid, mission_id=wid, event="paused")
+    assert paused_ok["status"] == "PAUSED"
+    after = record_user_event(conn, user_id=uid, mission_id=wid, event="resumed")
+    assert after["status"] == "WAITING_USER_APPROVAL"
+    assert after["status"] != "SUBMITTED"
+
+
+def test_cannot_resume_to_submitted(tmp_home):
+    from foreshadow.mission import (
+        ALLOWED,
+        persist_mission,
+        record_user_event,
+        transition,
+    )
+
+    assert "SUBMITTED" not in ALLOWED["PAUSED"]
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    paused = record_user_event(conn, user_id=uid, mission_id=mid, event="paused")
+    assert paused["status"] == "PAUSED"
+    with pytest.raises(ValueError, match="cannot"):
+        transition(conn, mid, uid, "SUBMITTED")
+    plan = record_user_event(conn, user_id=uid, mission_id=mid, event="resumed")
+    assert plan["status"] != "SUBMITTED"
+    assert plan["status"] == "LOCAL_SETUP"
+
+
+def test_paused_event_does_not_call_github(tmp_home, monkeypatch):
+    from foreshadow.mission import persist_mission, record_user_event, transition
+
+    class BoomClient:
+        def __init__(self, *_a, **_k):
+            raise AssertionError("paused must not call GitHub")
+
+        def get(self, *_a, **_k):
+            raise AssertionError("paused must not call GitHub")
+
+        def request(self, *_a, **_k):
+            raise AssertionError("paused must not call GitHub")
+
+        def graphql(self, *_a, **_k):
+            raise AssertionError("paused must not call GitHub")
+
+    monkeypatch.setattr("foreshadow.github.client.GitHubClient", BoomClient)
+    src = inspect.getsource(record_user_event)
+    assert "GitHubClient" not in src
+    assert "api.github.com" not in src
+    assert "request(\"POST\"" not in src
+    assert "graphql" not in src.lower()
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    plan = record_user_event(conn, user_id=uid, mission_id=mid, event="paused")
+    assert plan["status"] == "PAUSED"
+    resumed = record_user_event(conn, user_id=uid, mission_id=mid, event="resumed")
+    assert resumed["status"] != "SUBMITTED"
 
