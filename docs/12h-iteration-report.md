@@ -91,3 +91,7 @@ FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview
 Click **开始进入** (not 记入观察清单). Expect a **project-specific 行动计划** (第一步 / 第二步), local `git clone --depth 1`, and `FORESHADOW.md` + `ISSUE_DRAFT.md` under `$FORESHADOW_HOME/work/{owner}__{repo}/`. Copy stays in 第一步/第二步; do not describe this as “open a PR”.
 
 The system **stops** before any third-party GitHub write. **尝试创建 PR** is refused.
+
+Live GET-only replay of `recommend_entry` on the 2026-08-25 dogfood 120 (features from latest snapshots, no GitHub writes): **ISSUE 81 / DISCUSSION 25 / BUG_FIX 8 / REPRODUCTION 6 / BENCHMARK 0 / direct PR 0**. BENCHMARK is implemented (`screenshot_only` + `tree_kind=has_source`) but this day’s sample has no screenshot-only repos. Phase B 30 steps cite README headings and/or `#N` tickets; lightweight rows cite `full_name` plus the GitHub description when present.
+
+Tests: **338 passed**. Access weights were not changed.
