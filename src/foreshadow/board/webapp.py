@@ -604,7 +604,7 @@ function missionListView() {
     <div class="row">
       <div>
         <div class="nm">${esc(m.full_name)}</div>
-        <div class="sub">状态 ${esc(m.status_zh || m.status || "—")} · ${esc(m.next_step_zh || "")}</div>
+        <div class="sub">状态 ${esc(m.status_zh || m.status || "—")} · ${esc((m.steps_zh && m.steps_zh[0]) || m.next_step_zh || "")}</div>
       </div>
       <div>
         <button type="button" class="primary" onclick="openMission(${Number(m.id)||0})">打开</button>
