@@ -934,6 +934,7 @@ def run_local_tests(
     *,
     runner: Any | None = None,
     execute: bool = False,
+    extra_args: list[str] | None = None,
 ) -> dict[str, Any]:
     """Allowlisted python -m pytest only. Default collect-only. No installs."""
     import sys
@@ -945,12 +946,23 @@ def run_local_tests(
             "status": "skipped",
             "kind": detected["kind"],
             "reason": detected["reason"],
+            "command": None,
+            "returncode": None,
         }
     if os.environ.get("FORESHADOW_SKIP_TESTS") == "1":
-        return {"ok": False, "status": "skipped", "kind": "pytest", "reason": "skipped"}
+        return {
+            "ok": False,
+            "status": "skipped",
+            "kind": "pytest",
+            "reason": "skipped",
+            "command": None,
+            "returncode": None,
+        }
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", "--maxfail=1"]
     if not execute:
         cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
+    if extra_args:
+        cmd.extend(extra_args)
     blocked = refuse_unsafe_local_cmd(cmd)
     if blocked is not None:
         return blocked
@@ -966,9 +978,9 @@ def run_local_tests(
             env=_git_env(),
         )
     except FileNotFoundError:
-        return {"ok": False, "status": "no_runner", "kind": "pytest"}
+        return {"ok": False, "status": "no_runner", "kind": "pytest", "command": " ".join(cmd)}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "status": "timeout", "kind": "pytest"}
+        return {"ok": False, "status": "timeout", "kind": "pytest", "command": " ".join(cmd)}
     code = getattr(completed, "returncode", 1)
     summary = (getattr(completed, "stdout", None) or "")[:400]
     if execute:
@@ -980,6 +992,8 @@ def run_local_tests(
         "status": status,
         "kind": "pytest",
         "summary": summary or None,
+        "command": " ".join(cmd),
+        "returncode": code,
     }
 
 
@@ -1337,6 +1351,196 @@ def _load_cited_issue(full_name: str, number: int) -> dict[str, Any] | None:
     return {"number": number, "title": title, "body": body, "html_url": html}
 
 
+_PYTEST_HEAD = re.compile(
+    r"^\s*(?:pytest|python3?\s+-m\s+pytest)\b",
+    re.IGNORECASE,
+)
+_PIPELINE_LABELS = {
+    "clone": "克隆仓库",
+    "branch": "本地分支",
+    "inspect": "阅读仓库",
+    "issue": "引用 Issue",
+    "tests": "收集测试",
+    "drafts": "写本地草稿",
+    "waiting_approval": "等待你确认远程操作",
+}
+_HITL_NEXT = "等待你的确认才能执行任何远程 GitHub 操作。"
+
+
+def _pipeline_step(step_id: str, status: str, evidence: Any) -> dict[str, Any]:
+    return {
+        "id": step_id,
+        "label_zh": _PIPELINE_LABELS.get(step_id, step_id),
+        "status": status,
+        "evidence": evidence,
+    }
+
+
+def _clone_pipeline_status(clone: dict[str, Any]) -> str:
+    if clone.get("ok"):
+        return "done"
+    if str(clone.get("status") or "") in {"skipped", "no_git"}:
+        return "skipped"
+    return "failed"
+
+
+def _branch_pipeline_status(branch: dict[str, Any], *, cloned: bool) -> str:
+    if branch.get("ok"):
+        return "done"
+    if not cloned or str(branch.get("status") or "") == "skipped":
+        return "skipped"
+    return "failed"
+
+
+def _tests_pipeline_status(tests: dict[str, Any]) -> str:
+    st = str(tests.get("status") or "")
+    if tests.get("ok") or st in {"collect_ok", "passed"}:
+        return "done"
+    if st in {"collect_failed", "failed", "timeout"}:
+        return "failed"
+    return "skipped"
+
+
+def _build_setup_pipeline(
+    *,
+    clone: dict[str, Any],
+    branch: dict[str, Any],
+    inspect: dict[str, Any],
+    cited: dict[str, Any] | None,
+    tests: dict[str, Any],
+    drafts_ok: bool,
+    waiting: bool,
+) -> list[dict[str, Any]]:
+    cited = cited or {}
+    issue_n = cited.get("number")
+    return [
+        _pipeline_step("clone", _clone_pipeline_status(clone), clone.get("status") or "unknown"),
+        _pipeline_step(
+            "branch",
+            _branch_pipeline_status(branch, cloned=bool(clone.get("ok"))),
+            branch.get("name") or branch.get("status") or "skipped",
+        ),
+        _pipeline_step(
+            "inspect",
+            "done" if inspect.get("inspected") else "skipped",
+            inspect.get("readme_title") or ("inspected" if inspect.get("inspected") else "skipped"),
+        ),
+        _pipeline_step(
+            "issue",
+            "done" if issue_n else "skipped",
+            f"#{issue_n}" if issue_n else "none",
+        ),
+        _pipeline_step(
+            "tests",
+            _tests_pipeline_status(tests),
+            tests.get("status") or tests.get("kind") or "skipped",
+        ),
+        _pipeline_step(
+            "drafts",
+            "done" if drafts_ok else "failed",
+            "ISSUE_DRAFT.md" if drafts_ok else "missing",
+        ),
+        _pipeline_step(
+            "waiting_approval",
+            "pending" if waiting else "skipped",
+            _HITL_NEXT if waiting else "clone unfinished",
+        ),
+    ]
+
+
+def _pipeline_command(step_id: str) -> str:
+    return {
+        "clone": "git clone --depth 1",
+        "branch": "git checkout -b foreshadow/entry",
+        "inspect": "inspect worktree",
+        "issue": "GET issue (read-only)",
+        "tests": "python -m pytest --collect-only -q",
+        "drafts": "write FORESHADOW.md ISSUE_DRAFT.md",
+        "waiting_approval": "",
+    }.get(step_id, "")
+
+
+def _log_setup_pipeline(
+    dest: Path,
+    pipeline: list[dict[str, Any]],
+    *,
+    skip_ids: set[str] | None = None,
+) -> None:
+    from foreshadow.tasks import append_task_log
+
+    skip = skip_ids or set()
+    for step in pipeline:
+        step_id = str(step.get("id") or "")
+        if not step_id or step_id in skip:
+            continue
+        append_task_log(
+            dest,
+            task=step_id,
+            command=_pipeline_command(step_id),
+            result=str(step.get("evidence") or step.get("status") or ""),
+            verdict="UNKNOWN",
+            next_step=_HITL_NEXT if step_id == "waiting_approval" else "继续本地流水线",
+        )
+
+
+def _tests_from_task(collect: Any, detected: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": bool(getattr(collect, "ok", False)),
+        "status": str(getattr(collect, "status", None) or "skipped"),
+        "kind": detected.get("kind"),
+        "summary": (getattr(collect, "stdout", None) or "")[:400] or None,
+        "error": (getattr(collect, "stderr", None) or "")[:400] or None,
+        "returncode": getattr(collect, "exit_code", None),
+        "artifact": getattr(collect, "artifact", None),
+    }
+
+
+def _pytest_collect_args(command: str, clone_dir: Path) -> list[str] | None:
+    line = (command or "").strip().lstrip("$").strip("`").strip()
+    if not line or not _PYTEST_HEAD.match(line):
+        return None
+    low = line.lower()
+    if any(
+        tok in low
+        for tok in ("pip install", "npm install", "yarn ", "pnpm ", "curl ", "| sh", "| bash")
+    ):
+        return None
+    rest = _PYTEST_HEAD.sub("", line).strip()
+    if not rest:
+        return []
+    root = Path(clone_dir).resolve()
+    args: list[str] = []
+    for part in rest.split():
+        if part.startswith("-"):
+            continue
+        cand = (root / part).resolve()
+        try:
+            cand.relative_to(root)
+        except ValueError:
+            continue
+        if cand.exists():
+            args.append(part)
+    return args
+
+
+def _maybe_collect_issue_pytest(
+    clone_dir: Path,
+    inspect: dict[str, Any],
+    *,
+    runner: Any | None,
+) -> dict[str, Any] | None:
+    if detect_local_tests(clone_dir).get("kind") != "pytest":
+        return None
+    extra: list[str] = []
+    for cmd in inspect.get("issue_commands") or []:
+        args = _pytest_collect_args(str(cmd), clone_dir)
+        if args:
+            extra.extend(path for path in args if path not in extra)
+    if not extra:
+        return None
+    return run_local_tests(clone_dir, runner=runner, execute=False, extra_args=extra)
+
+
 def setup_local_environment(
     conn: sqlite3.Connection,
     mission_id: int,
@@ -1393,10 +1597,10 @@ def setup_local_environment(
         if clone.get("ok")
         else {"ok": False, "status": "skipped"}
     )
-    tests = (
-        run_local_tests(clone_dir, runner=runner)
+    detected = (
+        detect_local_tests(clone_dir)
         if clone.get("ok")
-        else {"ok": False, "status": "skipped"}
+        else {"kind": "none", "reason": "no_clone"}
     )
     write_fork_note(dest, full_name)
     issue_n = cited_issue_number(mission)
@@ -1424,7 +1628,7 @@ def setup_local_environment(
         cited,
     )
     inspect_steps = dict(inspect)
-    inspect_steps["tests"] = tests
+    inspect_steps["tests"] = detected
     mission.strategy.steps_zh = customize_steps(
         mission.strategy.path,
         language=mission.strategy.language,
@@ -1439,6 +1643,51 @@ def setup_local_environment(
     repro = write_reproduction_doc(dest, mission, cited=cited)
     bench = write_benchmark_doc(dest, mission, inspect=inspect)
     discuss = write_discussion_draft(dest, mission)
+    from foreshadow.tasks import append_task_log, run_task
+
+    logged_tests = False
+    if clone.get("ok"):
+        collect = run_task(clone_dir, "collect_tests", runner=runner)
+        tests = _tests_from_task(collect, detected)
+        logged_tests = True
+        issue_collect = _maybe_collect_issue_pytest(clone_dir, inspect, runner=runner)
+        if issue_collect is not None:
+            tests["issue_collect"] = {
+                "ok": issue_collect.get("ok"),
+                "status": issue_collect.get("status"),
+                "summary": issue_collect.get("summary"),
+                "command": issue_collect.get("command"),
+            }
+            append_task_log(
+                dest,
+                task="collect_tests",
+                command=str(issue_collect.get("command") or ""),
+                exit_code=issue_collect.get("returncode"),
+                result=str(
+                    issue_collect.get("summary") or issue_collect.get("status") or ""
+                ),
+                verdict="UNKNOWN",
+                next_step=_HITL_NEXT,
+            )
+    else:
+        tests = {
+            "ok": False,
+            "status": "skipped",
+            "kind": detected.get("kind") or "none",
+        }
+    dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
+    pipeline = _build_setup_pipeline(
+        clone=clone,
+        branch=branch,
+        inspect=inspect,
+        cited=cited,
+        tests=tests,
+        drafts_ok=(dest / "ISSUE_DRAFT.md").is_file(),
+        waiting=dest_status == "WAITING_USER_APPROVAL",
+    )
+    _log_setup_pipeline(
+        dest, pipeline, skip_ids={"tests"} if logged_tests else None
+    )
     extra = {
         "clone": clone,
         "inspect": inspect,
@@ -1449,9 +1698,9 @@ def setup_local_environment(
         "discussion_draft_path": str(discuss) if discuss else None,
         "branch": branch,
         "tests": tests,
+        "pipeline": pipeline,
     }
     write_mission_doc(dest, mission, extra=extra)
-    dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
     after_setup = str(
         conn.execute(
             "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
@@ -1469,6 +1718,7 @@ def setup_local_environment(
             "inspect": inspect,
             "branch": branch,
             "tests": tests,
+            "pipeline": pipeline,
             "draft_path": str(draft),
             "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
             "pr_draft_path": str(pr_draft) if pr_draft else None,
@@ -1505,6 +1755,7 @@ def setup_local_environment(
     updated["inspect"] = inspect
     updated["branch"] = branch
     updated["tests"] = tests
+    updated["pipeline"] = pipeline
     updated["needs_user_approval"] = True
     return {
         "mission": updated,
@@ -1512,6 +1763,7 @@ def setup_local_environment(
         "inspect": inspect,
         "branch": branch,
         "tests": tests,
+        "pipeline": pipeline,
     }
 
 

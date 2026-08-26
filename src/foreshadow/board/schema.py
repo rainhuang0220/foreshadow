@@ -22,6 +22,7 @@ Recommendation = Literal[
 Consensus = Literal["HIGH CONSENSUS", "MEDIUM CONSENSUS", "LOW CONSENSUS"]
 Disagreement = Literal["HIGH", "MEDIUM", "LOW"]
 BoardMode = Literal["official", "provisional"]
+IntroSource = Literal["github", "readme", "limited"]
 
 
 class EvidenceItem(BaseModel):
@@ -93,6 +94,10 @@ class BoardCard(BaseModel):
     last_release: str | None = None
     first_seen_at: str | None = None
     description: str | None = None
+    intro_zh: str | None = None
+    intro_source: IntroSource = "limited"
+    match_score: int | None = None
+    match_reasons: list[str] = Field(default_factory=list)
     language: str | None = None
     list_rank: int | None = None
     official_eligible: bool

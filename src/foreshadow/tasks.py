@@ -43,6 +43,38 @@ class TaskResult:
         }
 
 
+def append_task_log(
+    dest: Path,
+    *,
+    task: str,
+    command: str = "",
+    exit_code: int | None = None,
+    result: str = "",
+    verdict: str = "UNKNOWN",
+    next_step: str = "",
+) -> str | None:
+    """Append a TASK/COMMAND/EXIT/RESULT/VERDICT/NEXT block. dest is sidecar dir or file."""
+    path = Path(dest)
+    if path.suffix.lower() != ".md":
+        path = path / "TASK_LOG.md"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        exit_s = "—" if exit_code is None else str(exit_code)
+        block = (
+            f"TASK: {task}\n"
+            f"COMMAND: {command or '—'}\n"
+            f"EXIT: {exit_s}\n"
+            f"RESULT: {(result or '—')[:LOG_LIMIT]}\n"
+            f"VERDICT: {verdict or 'UNKNOWN'}\n"
+            f"NEXT: {next_step or '—'}\n\n"
+        )
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(block)
+    except OSError:
+        return None
+    return str(path)
+
+
 def run_task(
     clone_dir: Path,
     task: str,
@@ -69,17 +101,36 @@ def run_task(
 def _run_tests(clone_dir: Path, task: str, *, runner: Any | None) -> TaskResult:
     detected = detect_local_tests(clone_dir)
     kind = detected.get("kind")
+    sidecar = Path(clone_dir).parent
     if kind in {"node", "cargo"}:
+        msg = f"{kind} tests skipped; Foreshadow will not run npm/cargo"
+        log = append_task_log(
+            sidecar,
+            task=task,
+            command="",
+            result=msg,
+            verdict="UNKNOWN",
+            next_step="等待你的确认才能执行任何远程 GitHub 操作。",
+        )
         return TaskResult(
             task=task,
             action="skip",
             ok=False,
             blocked=False,
             status="skipped",
-            stderr=f"{kind} tests skipped; Foreshadow will not run npm/cargo",
+            stderr=msg,
+            artifact=log,
         )
     out = run_local_tests(clone_dir, runner=runner, execute=False)
-    log = _append_log(clone_dir, task, out)
+    log = append_task_log(
+        sidecar,
+        task=task,
+        command=str(out.get("command") or ""),
+        exit_code=out.get("returncode"),
+        result=str(out.get("summary") or out.get("error") or out.get("status") or ""),
+        verdict="UNKNOWN",
+        next_step="等待你的确认才能执行任何远程 GitHub 操作。",
+    )
     return TaskResult(
         task=task,
         action="run_test",
@@ -200,14 +251,3 @@ def local_commit(
         stdout=stdout,
         stderr=stderr,
     )
-
-
-def _append_log(clone_dir: Path, task: str, payload: dict[str, Any]) -> str | None:
-    dest = Path(clone_dir).parent / "TASK_LOG.md"
-    try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with dest.open("a", encoding="utf-8") as handle:
-            handle.write(f"## {task}\n{payload}\n")
-    except OSError:
-        return None
-    return str(dest)

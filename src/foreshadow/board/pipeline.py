@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -15,7 +16,7 @@ from foreshadow.board.dimensions import (
 )
 from foreshadow.board.html import render_board_html
 from foreshadow.board.reviewers import run_three_reviewers
-from foreshadow.board.schema import BoardCard, BoardDocument, PoolRow
+from foreshadow.board.schema import BoardCard, BoardDocument, IntroSource, PoolRow
 from foreshadow.clock import Clock
 from foreshadow.config import BoardSettings, ScoringSettings, Settings, load_config
 from foreshadow.db import connect, migrate
@@ -24,7 +25,7 @@ from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline import load_score_input
 from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import compute_activity
-from foreshadow.pipeline.direction import load_direction_bags
+from foreshadow.pipeline.direction import load_direction_bags, score_direction
 from foreshadow.pipeline.hydrate import parse_dt
 from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import ScoredRepo, score_repo
@@ -73,6 +74,15 @@ def _card(
     elif row.contribution_bullets:
         suggested = row.contribution_bullets[0]
     extra_meta = extra or {}
+    description = extra_meta.get("description")
+    intro_zh, intro_source = _intro_fields(
+        description, extra_meta.get("readme_excerpt")
+    )
+    match_score, match_reasons = _direction_match(
+        description=description,
+        language=extra_meta.get("language"),
+        topics=_topics_of(extra_meta),
+    )
     return BoardCard(
         full_name=row.full_name,
         owner=row.owner,
@@ -84,7 +94,11 @@ def _card(
         last_pushed_at=extra_meta.get("last_pushed_at"),
         last_release=extra_meta.get("last_release"),
         first_seen_at=extra_meta.get("first_seen_at"),
-        description=extra_meta.get("description"),
+        description=description,
+        intro_zh=intro_zh,
+        intro_source=intro_source,
+        match_score=match_score,
+        match_reasons=match_reasons,
         language=extra_meta.get("language"),
         official_eligible=is_official_eligible(row),
         lightweight_score=lightweight_score(dims),
@@ -418,6 +432,8 @@ def load_scored_from_db(
             "first_seen_at": first_seen,
             "description": description,
             "language": language,
+            "topics": list(data.get("topics") or []),
+            "readme_excerpt": blob.readme_excerpt,
             "node_id": node_id,
             "hydrate_status": status,
             "data_completeness": (
@@ -457,6 +473,164 @@ def load_scored_from_db(
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     return scored, extras, snap_days
+
+
+_MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]+\)")
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_HTML_TAG = re.compile(r"</?[^>]+>")
+
+
+def _nonempty(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _topics_of(extra: dict[str, Any]) -> list[str]:
+    raw = extra.get("topics")
+    if isinstance(raw, str):
+        text = raw.strip()
+        return [text] if text else []
+    if isinstance(raw, list | tuple):
+        return [str(item) for item in raw if item]
+    return []
+
+
+def _intro_fields(
+    description: Any, readme_excerpt: Any
+) -> tuple[str | None, IntroSource]:
+    desc = _nonempty(description)
+    if desc:
+        return desc, "github"
+    para = _first_readme_paragraph(readme_excerpt)
+    if para:
+        return para, "readme"
+    return None, "limited"
+
+
+def _first_readme_paragraph(raw: Any) -> str | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            text = text[end + 4 :]
+    in_fence = False
+    buf: list[str] = []
+    paragraphs: list[str] = []
+
+    def flush() -> None:
+        if buf:
+            paragraphs.append(" ".join(buf))
+            buf.clear()
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if not stripped:
+            flush()
+            continue
+        if stripped.startswith("#"):
+            flush()
+            continue
+        if stripped in {"---", "***", "___"}:
+            continue
+        if stripped.startswith("<!--"):
+            continue
+        if stripped.startswith("|"):
+            continue
+        if stripped.startswith(">"):
+            stripped = stripped.lstrip("> ").strip()
+            if not stripped:
+                continue
+        no_img = _MD_IMAGE.sub("", stripped)
+        no_html = _HTML_TAG.sub("", no_img).strip()
+        if not no_html:
+            continue
+        cleaned = _strip_md_line(stripped)
+        if not cleaned:
+            continue
+        buf.append(cleaned)
+    flush()
+    for para in paragraphs:
+        cleaned = " ".join(para.split())
+        if _meaningful_intro(cleaned):
+            return cleaned
+    return None
+
+
+def _strip_md_line(line: str) -> str:
+    text = _MD_IMAGE.sub("", line)
+    text = _MD_LINK.sub(r"\1", text)
+    text = _HTML_TAG.sub("", text)
+    text = text.replace("**", "").replace("__", "")
+    return " ".join(text.split()).strip()
+
+
+def _meaningful_intro(text: str) -> bool:
+    if len(text) < 20:
+        return False
+    letters = sum(1 for ch in text if ch.isalpha())
+    return letters >= 12
+
+
+def _direction_match(
+    *,
+    description: Any,
+    language: Any,
+    topics: list[str] | None,
+) -> tuple[int | None, list[str]]:
+    desc = _nonempty(description) or ""
+    lang = _nonempty(language)
+    topic_list = [item for item in (topics or []) if item]
+    if not desc and not lang and not topic_list:
+        return None, []
+    bags = load_direction_bags()
+    if not bags:
+        return None, []
+    score = score_direction(
+        name="",
+        description=desc,
+        topics=topic_list,
+        headings=[],
+        language=lang,
+        bags=bags,
+    )
+    reasons: list[str] = []
+    seen: set[str] = set()
+
+    def add(item: str) -> None:
+        key = item.strip()
+        if not key:
+            return
+        fold = key.lower()
+        if fold in seen:
+            return
+        seen.add(fold)
+        reasons.append(key)
+
+    hay = " ".join([desc, " ".join(topic_list), lang or ""]).lower()
+    for bag in bags:
+        repo_topics = {t.lower() for t in topic_list}
+        bag_topics = {t.lower() for t in bag.topics if t}
+        hits: list[str] = sorted(repo_topics & bag_topics)
+        for needle in (*bag.topics, *bag.keywords):
+            n = (needle or "").strip()
+            if n and n.lower() in hay:
+                hits.append(needle)
+        if lang and any(lang.lower() == item.lower() for item in bag.languages):
+            hits.append(lang)
+        if hits:
+            add(bag.name)
+            for hit in hits:
+                add(hit)
+    return score, reasons
 
 
 def _completeness_of(extra: dict[str, Any]) -> str | None:

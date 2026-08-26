@@ -149,11 +149,57 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         existing_js = html[
             html.index("async function openExisting") : html.index("async function markEvent")
         ]
-        assert "setupLocal" in start_js
+        resume_js = html[
+            html.index("async function resumeMission") : html.index("async function refuseRemote")
+        ]
+        assert "await setupLocal" in start_js
+        assert 'api("/api/mission"' in start_js
+        assert "/api/mission/setup" not in start_js
         assert "setupLocal" not in existing_js
+        assert "/api/mission/setup" not in existing_js
+        assert 'api("/api/missions"' in existing_js
+        assert "setupLocal" not in resume_js
+        assert "/api/mission/setup" not in resume_js
         bg = a.get(f"{base}/static/board-bg.jpg")
         assert bg.status_code == 200
         assert "image/jpeg" in bg.headers.get("content-type", "")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
+    import inspect as _inspect
+
+    from foreshadow.mission import create_for_user
+
+    assert "clone_public_repo" not in _inspect.getsource(create_for_user)
+    monkeypatch.delenv("FORESHADOW_SKIP_CLONE", raising=False)
+
+    def explode(*_a, **_k):
+        raise AssertionError("POST /api/mission must not invoke clone_public_repo")
+
+    monkeypatch.setattr("foreshadow.mission.clone_public_repo", explode)
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        a = httpx.Client()
+        reg = a.post(
+            f"{base}/api/register",
+            json={
+                "username": "erin",
+                "email": "erin@example.com",
+                "password": "password1",
+            },
+        )
+        assert reg.status_code == 200
+        created = a.post(f"{base}/api/mission", json={"full_name": "acme/x"})
+        assert created.status_code == 200
+        mission = created.json()["mission"]
+        assert mission["status"] == "MISSION_READY"
+        dest = tmp_home / "work" / "acme__x"
+        assert (dest / "FORESHADOW.md").is_file()
+        assert not (dest / "repo").exists()
+        assert not (dest / "repo" / ".git").exists()
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -179,8 +225,18 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert mission["needs_user_approval"] is True
         assert mission["status"] == "MISSION_READY"
         assert mission["strategy"]["allows_direct_pr"] is False
-        assert not (tmp_home / "work" / "acme__x" / "repo" / ".git").exists()
-        from foreshadow.mission import REMOTE_ACTIONS, refuse_remote_action
+        dest = tmp_home / "work" / "acme__x"
+        assert not (dest / "repo").exists()
+        assert not (dest / "repo" / ".git").exists()
+        import inspect as _inspect
+
+        from foreshadow.mission import (
+            REMOTE_ACTIONS,
+            create_for_user,
+            refuse_remote_action,
+        )
+
+        assert "clone_public_repo" not in _inspect.getsource(create_for_user)
 
         for action in sorted(REMOTE_ACTIONS):
             remote = a.post(
@@ -238,11 +294,15 @@ def test_resolve_static_serves_assets_only(tmp_path, monkeypatch):
     monkeypatch.setattr("foreshadow.board.server._ASSETS_DIR", assets)
 
     jpg = _resolve_static("/static/board-bg.jpg")
+    png = _resolve_static("/static/board-bg.png")
+    webp = _resolve_static("/static/board-bg.webp")
     assert jpg is not None
+    assert png is not None
+    assert webp is not None
     assert jpg[1] == "image/jpeg"
     assert jpg[0].read_bytes() == b"\xff\xd8\xff\xd9"
-    assert _resolve_static("/static/board-bg.png")[1] == "image/png"
-    assert _resolve_static("/static/board-bg.webp")[1] == "image/webp"
+    assert png[1] == "image/png"
+    assert webp[1] == "image/webp"
     assert _resolve_static("/static/../secret.jpg") is None
     assert _resolve_static("/static/%2e%2e/secret.jpg") is None
     assert _resolve_static("/static/%2e%2e%2fsecret.jpg") is None
@@ -257,12 +317,11 @@ def test_static_board_bg_and_login_get(tmp_home, frozen_clock):
         page = httpx.get(f"{base}/")
         assert page.status_code == 200
         bg = httpx.get(f"{base}/static/board-bg.jpg")
-        assert bg.status_code in (200, 404)
-        assert bg.status_code != 500
-        if bg.status_code == 200:
-            assert "image/jpeg" in bg.headers.get("content-type", "")
+        assert bg.status_code == 200
+        assert "image/jpeg" in bg.headers.get("content-type", "")
         missing = httpx.get(f"{base}/static/no-such.webp")
         assert missing.status_code == 404
+        assert missing.status_code != 500
         client = httpx.Client()
         reg = client.post(
             f"{base}/api/register",
@@ -278,8 +337,7 @@ def test_static_board_bg_and_login_get(tmp_home, frozen_clock):
         board = client.get(f"{base}/api/board")
         assert board.status_code == 200
         still = client.get(f"{base}/static/board-bg.jpg")
-        assert still.status_code in (200, 404)
-        assert still.status_code != 500
+        assert still.status_code == 200
     finally:
         httpd.shutdown()
         httpd.server_close()

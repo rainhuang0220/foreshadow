@@ -253,6 +253,184 @@ def test_preview_does_not_create_fake_history(tmp_path, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 1
 
 
+def test_github_description_is_intro_source():
+    extras = {
+        "acme/x": {
+            "description": "Local RAG memory for LLM agents",
+            "readme_excerpt": "# other\n\nThis README must not replace a GitHub description.\n",
+            "language": "Python",
+        }
+    }
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    assert card.description == "Local RAG memory for LLM agents"
+    assert card.intro_zh == "Local RAG memory for LLM agents"
+    assert card.intro_source == "github"
+
+
+def test_readme_paragraph_used_only_when_description_empty():
+    extras = {
+        "acme/x": {
+            "description": "  ",
+            "readme_excerpt": (
+                "# memkit\n\n"
+                "![ci](https://img.shields.io/badge/ci-passing-green)\n\n"
+                "A tiny local-first memory layer for RAG pipelines.\n\n"
+                "## Install\n\npip install memkit\n"
+            ),
+        }
+    }
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    assert card.intro_source == "readme"
+    assert card.intro_zh == "A tiny local-first memory layer for RAG pipelines."
+
+
+def test_intro_never_invented_when_both_missing():
+    extras = {
+        "acme/x": {
+            "description": "",
+            "readme_excerpt": "# memkit\n\n![demo](demo.gif)\n",
+        }
+    }
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    assert card.intro_zh is None
+    assert card.intro_source == "limited"
+    assert card.match_score is None
+    assert card.match_reasons == []
+
+
+def test_match_score_from_direction_bags_with_reasons():
+    extras = {
+        "acme/x": {
+            "description": "",
+            "language": "",
+            "topics": ["memory", "rag", "llm"],
+        }
+    }
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    assert card.match_score is not None
+    assert 0 <= card.match_score <= 100
+    assert card.match_score >= 70
+    folded = {item.lower() for item in card.match_reasons}
+    assert "rag/memory" in folded
+    assert {"rag", "memory", "llm"} <= folded
+
+
+def test_match_score_unknown_is_none_not_zero():
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras={"acme/x": {"description": None, "language": None, "topics": []}},
+    )
+    card = board.shortlist[0]
+    assert card.match_score is None
+    assert card.match_reasons == []
+    assert card.final_score is not None
+
+
+def test_match_score_does_not_blend_into_final_score():
+    row = _row("x")
+    extras = {
+        "acme/x": {
+            "description": "long-term memory embedding for rag and llm",
+            "topics": ["rag", "memory", "llm"],
+            "language": "Python",
+        }
+    }
+    plain = assemble_board([row], date="2026-08-25", preview=True, snapshot_days=1)
+    matched = assemble_board(
+        [row],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    assert plain.shortlist[0].final_score == matched.shortlist[0].final_score
+    assert matched.shortlist[0].match_score is not None
+    assert matched.shortlist[0].match_score != matched.shortlist[0].final_score
+
+
+def test_load_scored_from_db_passes_intro_and_topics(tmp_path, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_HOME", str(tmp_path))
+    from datetime import UTC, datetime
+
+    from foreshadow.board.pipeline import load_scored_from_db
+    from foreshadow.config import load_config
+
+    conn = connect(tmp_path / "foreshadow.sqlite3")
+    migrate(conn)
+    conn.execute(
+        "INSERT INTO repos(node_id, full_name, owner, name, first_seen_at, "
+        "last_seen_at, description, language) "
+        "VALUES ('N1','acme/x','acme','x','t','t',"
+        "'Local RAG memory for LLMs','Python')"
+    )
+    conn.execute(
+        "INSERT INTO snapshots(repo_id, snapshot_date, captured_at, stars, "
+        "completeness, topics_json, features_json) "
+        "VALUES (1,'2026-08-24','t',100,1,'[\"rag\",\"memory\"]',"
+        '\'{"readme_excerpt":"# Title\\n\\nUnused when description exists."}\')'
+    )
+    conn.execute(
+        "INSERT INTO daily_runs(run_date, started_at, status, budget_cap) "
+        "VALUES ('2026-08-24','t','complete',800)"
+    )
+    conn.execute(
+        "INSERT INTO candidates(run_id, repo_id, discovery_source, hydrate_status) "
+        "VALUES (1,1,'search','ok')"
+    )
+    conn.commit()
+    clock = Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC))
+    scored, extras, _days = load_scored_from_db(conn, "2026-08-24", clock, load_config())
+    assert scored
+    extra = extras["acme/x"]
+    assert extra["description"] == "Local RAG memory for LLMs"
+    assert extra["language"] == "Python"
+    assert extra["topics"] == ["rag", "memory"]
+    assert extra["readme_excerpt"].startswith("# Title")
+    board = assemble_board(
+        [_row("x")],
+        date="2026-08-24",
+        preview=True,
+        snapshot_days=1,
+        extras={"acme/x": extra},
+    )
+    card = board.shortlist[0]
+    assert card.intro_source == "github"
+    assert card.intro_zh == "Local RAG memory for LLMs"
+    assert card.match_score is not None
+    assert card.match_reasons
+
+
 def test_to_dim20_and_lightweight_na_drop():
     assert to_dim20(None) is None
     assert to_dim20(100) == 20

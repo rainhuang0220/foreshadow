@@ -1,6 +1,6 @@
 from foreshadow.board.html import render_board_html
 from foreshadow.board.pipeline import assemble_board
-from foreshadow.board.present import present_board
+from foreshadow.board.present import present_board, present_card
 from test_board_pipeline import _cs, _row
 
 
@@ -22,6 +22,12 @@ def test_present_board_is_chinese_and_sorted():
     assert top["rank"] == 1
     assert top["rank_kind_zh"] == "预览排名"
     assert top["not_official"] is True
+    assert "description" in top
+    assert top["intro_zh"] is None
+    assert top["intro_source"] == "limited"
+    assert top["match_score"] is None
+    assert top["match_reasons"] == []
+    assert "language" in top
     assert "detail" in top
     d = top["detail"]
     labels = [x["label"] for x in d["dimensions"]]
@@ -71,3 +77,33 @@ def test_present_board_is_chinese_and_sorted():
     assert '<html lang="zh-CN">' in html
     # list is summary-first: details live inside <details>, not as a wall of cards
     assert html.count("<details") >= 1
+
+
+def test_present_card_includes_intro_and_match_overlay():
+    row = _row("mem")
+    extras = {
+        "acme/mem": {
+            "description": "Local-first long-term memory for RAG pipelines",
+            "language": "Python",
+            "topics": ["rag", "memory", "llm"],
+        }
+    }
+    board = assemble_board(
+        [row],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    view = present_card(card, board)
+    assert view["description"] == extras["acme/mem"]["description"]
+    assert view["intro_zh"] == extras["acme/mem"]["description"]
+    assert view["intro_source"] == "github"
+    assert view["language"] == "Python"
+    assert view["match_score"] is not None
+    assert 0 <= view["match_score"] <= 100
+    assert "RAG/memory" in view["match_reasons"]
+    assert view["final_score"] == (
+        round(card.final_score) if card.final_score is not None else None
+    )
