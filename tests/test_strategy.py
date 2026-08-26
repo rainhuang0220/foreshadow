@@ -196,6 +196,8 @@ def test_cloned_steps_cite_real_file_and_issue_command():
         cloned=True,
     )
     blob = " ".join(steps)
+    assert "pytest tests/test_retriever.py" in steps[0]
+    assert "FORESHADOW.md" not in steps[0]
     assert "src/retriever.py" in blob
     assert "#123" in blob
     assert "pytest tests/test_retriever.py" in blob
@@ -225,8 +227,7 @@ def test_cloned_first_step_is_local_files_not_pr():
         },
         cloned=True,
     )
-    assert "FORESHADOW.md" in steps[0]
-    assert "ISSUE_DRAFT.md" in steps[0]
+    assert "FORESHADOW.md" not in steps[0]
     assert "克隆仓库" not in " ".join(steps)
     first = steps[0].lower()
     assert "push" not in first

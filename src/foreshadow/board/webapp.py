@@ -7,44 +7,42 @@ APP_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>伏笔 · 今日机会榜</title>
+<title>伏笔 · 今日机会</title>
+<link rel="preconnect" href="https://fonts.bunny.net"/>
+<link href="https://fonts.bunny.net/css?family=source-serif-4:500,600|source-sans-3:400,500" rel="stylesheet"/>
 <style>
 :root {
-  --ink: #f3ead4;
-  --ink-dim: #b7aa93;
-  --night: #12100c;
-  --night-2: #1b1711;
-  --rule: rgba(214, 186, 122, .28);
-  --cinnabar: #e24a32;
-  --cinnabar-dim: #9a2f22;
-  --jade: #7ea586;
-  --gold: #d6ba7a;
-  --paper: #f4ead3;
-  --paper-ink: #1a140c;
-  --paper-muted: #6d6254;
-  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", "Iowan Old Style", Palatino, serif;
-  --font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Songti SC", sans-serif;
+  --ink: #1c1917;
+  --ink-dim: #6b645c;
+  --night: #f6f3ec;
+  --night-2: #fffdf8;
+  --rule: rgba(28, 25, 23, .12);
+  --cinnabar: #9f2d20;
+  --cinnabar-dim: #7a241a;
+  --jade: #3f6b52;
+  --gold: #8a6a2f;
+  --paper: #fffdf8;
+  --paper-ink: #1c1917;
+  --paper-muted: #6b645c;
+  --font-display: "Source Serif 4", "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", Palatino, serif;
+  --font-ui: "PingFang SC", "Hiragino Sans GB", "Source Sans 3", "Noto Sans CJK SC", sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(226,74,50,.16), transparent 50%),
-    radial-gradient(900px 400px at 100% 0%, rgba(214,186,122,.08), transparent 45%),
-    var(--night);
   color: var(--ink);
   font-family: var(--font-ui);
   letter-spacing: .01em;
+  background-color: var(--night);
+  background-image:
+    linear-gradient(180deg, rgba(246,243,236,.88), rgba(246,243,236,.92)),
+    url("/static/board-bg.jpg");
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
 }
-body::before {
-  content: "";
-  pointer-events: none;
-  position: fixed; inset: 0;
-  opacity: .07;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><filter id='n'><feTurbulence baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  mix-blend-mode: overlay;
-}
+body::before { display: none; }
 a { color: inherit; }
 button, input, select { font: inherit; }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 1.4rem 1.5rem 4rem; }
@@ -424,7 +422,7 @@ function authView() {
   return `
   <header class="mast">
     <div class="brand">FORESHADOW · 伏笔</div>
-    <h1>今日机会审查</h1>
+    <h1>今日机会</h1>
     <p class="date">人审工作台。先登录，再看今日候选榜。</p>
   </header>
   <form class="auth" onsubmit="return submitAuth(event)">
@@ -450,7 +448,7 @@ function header(board) {
   </div>
   <header class="mast">
     <div class="brand">FORESHADOW · 伏笔</div>
-    <h1>今日机会审查</h1>
+    <h1>今日机会</h1>
     <p class="date">${esc(board.date)}</p>
     <div class="ribbon ${preview ? "" : "official"}">
       ${preview ? "预览模式｜历史不足 v7｜不是正式预测" : "正式模式｜v7 历史完整"}
@@ -468,10 +466,29 @@ function header(board) {
   </header>`;
 }
 
+function cardIntro(c) {
+  return (c && (c.description || c.intro_zh)) || "";
+}
+function cardWhy(c) {
+  if (c && c.strategy_why && c.strategy_why[0]) return String(c.strategy_why[0]);
+  return (c && c.headline) || "";
+}
+function enterOrMissionBtn(c) {
+  const id = Number(c.mission_id) || 0;
+  if (id && cloneOkFor(c)) {
+    return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})">查看任务</button>`;
+  }
+  return `<button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>`;
+}
+
 function listView(board) {
   const rows = applySortFilter(board.candidates || []);
   if (!rows.length) return `<p class="empty">今日没有可展示的候选。空 Top 5 是成功。</p>`;
-  return rows.map(c => `
+  return rows.map(c => {
+    const why = cardWhy(c);
+    const desc = cardIntro(c);
+    const match = (c.match_score != null && c.match_score !== "") ? ` · 匹配度 ${n(c.match_score)}` : "";
+    return `
     <div class="row ${state.open===c.full_name?"active":""}" onclick="openCard('${esc(c.full_name)}')">
       <div class="rk">#${esc(c.rank)}</div>
       <div>
@@ -481,11 +498,14 @@ function listView(board) {
       </div>
       <div class="act">
         <div class="final">${n(c.final_score)}</div>
-        <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
+        <button type="button" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">查看详情</button>
+        ${enterOrMissionBtn(c)}
       </div>
-      <div class="sub entry"><strong>入口</strong> ${esc(c.strategy_summary_zh || "先阅读再决定")} · 预计 ${esc(c.strategy_effort || "—")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""}</div>
-      <div class="sub">阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(accessLine(c))}</div>
-    </div>`).join("");
+      <div class="sub">${esc(desc || "—")}</div>
+      <div class="sub">阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
+      ${why ? `<div class="sub">${esc(why)}</div>` : ""}
+    </div>`;
+  }).join("");
 }
 
 function dimBlock(d) {
@@ -497,6 +517,13 @@ function dimBlock(d) {
     ${d.na ? `<p class="meta">${esc(d.na_note)}</p>` : ""}
     ${ev ? `<ul class="ev">${ev}</ul>` : ""}
   </div>`;
+}
+
+function drawerWhyNow(card) {
+  if (Array.isArray(card.why_now) && card.why_now.length) return card.why_now.join("；");
+  if (card.why_now) return String(card.why_now);
+  if (card.strategy_why && card.strategy_why.length) return card.strategy_why.join("；");
+  return card.headline || "—";
 }
 
 function drawerView(card) {
@@ -517,6 +544,8 @@ function drawerView(card) {
     <label><input type="radio" name="decision" value="${esc(a.id)}"
       ${card.my_action===a.id?"checked":""}
       onchange="saveReview('${esc(card.full_name)}','${esc(a.id)}')"> ${esc(a.label)}</label>`).join("");
+  const intro = cardIntro(card) || "—";
+  const match = card.match_score != null && card.match_score !== "" ? n(card.match_score) : "N/A";
   return `
   <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
   <aside class="drawer ${state.open?"on":""}" role="dialog" aria-label="项目详情">
@@ -524,13 +553,16 @@ function drawerView(card) {
     <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
     <section class="enter-plan">
-      <h3>进入计划</h3>
-      <p><strong>${esc(card.strategy_summary_zh || "先阅读再决定")}</strong>
+      <p><strong>项目简介：</strong>${esc(intro)}</p>
+      <p><strong>为什么现在进入：</strong>${esc(drawerWhyNow(card))}</p>
+      <p><strong>匹配度：</strong>${esc(match)}</p>
+      <p><strong>机会：</strong>${n(card.s1_window)}</p>
+      <p><strong>Access：</strong>${esc(accessLine(card))}</p>
+      <p><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}
         （${esc(card.strategy_path || "")}） · 预计 ${esc(card.strategy_effort || "—")} · 难度 ${esc(card.strategy_difficulty || "—")}</p>
-      <p class="meta">${esc((card.strategy_why||[]).join("；") || "")}</p>
       <ol class="plan">${(card.strategy_steps_zh||[]).map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("")}</ol>
       <p>
-        <button type="button" class="primary" onclick="event.stopPropagation(); ${card.mission_id ? `openExisting(${Number(card.mission_id)||0})` : `startEnter('${esc(card.full_name)}')`}">${card.mission_id ? "查看任务" : "开始进入"}</button>
+        ${enterOrMissionBtn(card)}
         <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
       </p>
       <p class="meta">「记入观察清单」不会创建任务，只记个人立场。</p>
@@ -646,13 +678,50 @@ function factLine(ok, label, detail) {
   return `${ok ? "✓" : "○"} ${label}：${esc(detail)}`;
 }
 
+function currentNeed(m) {
+  if (state.busy || (m && m.status === "LOCAL_SETUP")) return "无需操作";
+  if (m && m.status === "WAITING_USER_APPROVAL") return "本地已准备，远程写入需你确认";
+  if (m && m.status === "MISSION_READY") return "点击开始进入才会 clone";
+  return (m && (m.next_step_zh || m.status_zh)) || "—";
+}
+
+function pipelineStepOk(step, cloneOk) {
+  const id = String((step && (step.id || step.key || step.name || step.label)) || "");
+  const label = String((step && (step.label || step.name || step.id)) || "");
+  if (/clone/i.test(id + " " + label)) return !!cloneOk;
+  if (!step || typeof step !== "object") return false;
+  const st = String(step.status || "");
+  return !!(step.ok || step.done || step.complete || st === "ok" || st === "done" || st === "cloned");
+}
+
+function renderPipelineStep(step, cloneOk) {
+  const id = String((step && (step.id || step.key || step.name || step.label)) || "");
+  const rawLabel = String((step && (step.label || step.name || step.id)) || "step");
+  const cloneish = /clone/i.test(id + " " + rawLabel);
+  const ok = pipelineStepOk(step, cloneOk);
+  const label = cloneish ? (ok ? "Clone done" : "Clone") : rawLabel;
+  const detail = (step && (step.detail || step.status || step.text)) || (ok ? "完成" : "未完成");
+  return `<li>${factLine(ok, label, detail)}</li>`;
+}
+
 function progressChecklist(m) {
   const inspected = !!(m.inspect && m.inspect.inspected);
   const hasClone = m.clone != null && typeof m.clone === "object";
   const cloneOk = !!(hasClone && m.clone.ok);
   const cloneMap = {cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"};
-  let cloneText = "未知";
+  if (Array.isArray(m.pipeline) && m.pipeline.length) {
+    return `<ul class="checklist">${m.pipeline.map(step => renderPipelineStep(step, cloneOk)).join("")}</ul>`;
+  }
+  if (m.pipeline && typeof m.pipeline === "object") {
+    const items = Object.entries(m.pipeline).map(([key, step]) => {
+      const s = (step && typeof step === "object") ? Object.assign({id: key}, step) : {id: key, detail: step};
+      return renderPipelineStep(s, cloneOk);
+    });
+    if (items.length) return `<ul class="checklist">${items.join("")}</ul>`;
+  }
+  let cloneText = "未完成";
   if (hasClone) cloneText = cloneMap[m.clone.status] || m.clone.status || (cloneOk ? "已克隆" : "未完成");
+  const cloneLabel = cloneOk ? "Clone done" : "Clone";
 
   const hasBranch = m.branch != null && typeof m.branch === "object";
   const branchOk = !!(hasBranch && m.branch.ok);
@@ -685,7 +754,7 @@ function progressChecklist(m) {
   else if (hasCited && (hasClone || inspected) && !cited.number) issueText = "无";
 
   return `<ul class="checklist">
-    <li>${factLine(cloneOk, "Clone", cloneText)}</li>
+    <li>${factLine(cloneOk, cloneLabel, cloneText)}</li>
     <li>${factLine(branchOk, "Branch", branchText)}</li>
     <li>${factLine(testsOk, "Tests collected", testsText)}</li>
     <li>${factLine(issueOk, "Issue fetched", issueText)}</li>
@@ -720,10 +789,11 @@ function missionView(m) {
     <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>
     <section class="enter-brief">
+      <p class="now"><strong>当前需要你做什么：</strong>${esc(currentNeed(m))}</p>
       <p><strong>为什么进入：</strong>${esc(why)}</p>
       <p><strong>推荐入口：</strong>${esc(entry)}</p>
       <p><strong>难度</strong> ${esc(diff)} · <strong>预计</strong> ${esc(effort)}</p>
-      <p class="now"><strong>第一步：</strong>${esc(first)}</p>
+      <p><strong>第一步：</strong>${esc(first)}</p>
       <p><strong>当前状态：</strong>${esc(statusLine)}</p>
     </section>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
@@ -790,6 +860,8 @@ async function loadBoard() {
   try {
     state.board = await api("/api/board");
     try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+    stampMissionOnCards(state.mission);
+    for (const m of (state.missions || [])) stampMissionOnCards(m);
   } catch (e) {
     state.error = e.message || String(e);
     throw e;
@@ -825,6 +897,23 @@ async function logout() {
 function openCard(name) { state.open = name; render(); }
 function closeCard() { state.open = null; render(); }
 
+function cloneOkFor(c) {
+  if (!c) return false;
+  if (c.clone && c.clone.ok) return true;
+  if (state.mission && (state.mission.full_name === c.full_name || Number(state.mission.id) === Number(c.mission_id))
+      && state.mission.clone && state.mission.clone.ok) return true;
+  const found = (state.missions || []).find(x => Number(x.id) === Number(c.mission_id) || x.full_name === c.full_name);
+  return !!(found && found.clone && found.clone.ok);
+}
+
+function stampMissionOnCards(m) {
+  if (!m || !state.board) return;
+  const card = (state.board.candidates || []).find(c => c.full_name === m.full_name);
+  if (!card) return;
+  if (m.id) card.mission_id = m.id;
+  if (m.clone) card.clone = m.clone;
+}
+
 async function startEnter(name) {
   if (state.busy) return;
   state.busy = true;
@@ -832,6 +921,7 @@ async function startEnter(name) {
   try {
     const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
     state.mission = data.mission;
+    stampMissionOnCards(data.mission);
     render();
     state.open = null;
     const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
@@ -849,6 +939,7 @@ async function setupLocal(id) {
   try {
     const data = await api("/api/mission/setup", { method: "POST", body: JSON.stringify({ id }) });
     state.mission = data.mission;
+    stampMissionOnCards(data.mission);
     if (state.mission && (state.pausedIds[id] || state.pausedIds[Number(id)])) state.mission.paused = true;
     if (state.portfolio) try { state.portfolio = await api("/api/portfolio"); } catch {}
     try { await loadBoard(); } catch {}
@@ -860,6 +951,7 @@ async function loadMissions() {
   try {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
+    for (const m of state.missions) stampMissionOnCards(m);
     state.showMissions = true;
     render();
   } catch (e) { alert(e.message); }
@@ -886,13 +978,7 @@ async function openExisting(id) {
   try {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
-    const found = (state.missions || []).find(x => x.id === id);
-    const paused = missionPaused(found) || !!(state.pausedIds && (state.pausedIds[id] || state.pausedIds[Number(id)]));
-    const needsSetup = found && found.status !== "ABANDONED" && !paused && !(found.clone && found.clone.ok);
-    if (needsSetup) {
-      await setupLocal(id);
-      return;
-    }
+    for (const m of state.missions) stampMissionOnCards(m);
     state.showMissions = true;
     openMission(id);
   } catch (e) { alert(e.message); }
@@ -949,7 +1035,8 @@ async function resumeMission(id) {
     try { state.portfolio = await api("/api/portfolio"); } catch {}
     render();
   } catch {
-    await openExisting(id);
+    openMission(id);
+    render();
   }
 }
 

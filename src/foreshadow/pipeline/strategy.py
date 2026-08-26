@@ -320,10 +320,20 @@ def customize_steps(
         blurb=blurb,
     )
     if cloned:
-        lines = [ln for ln in lines if "克隆仓库" not in ln]
-    concrete = _concrete_evidence(inspect, cited, cloned=cloned)
-    if concrete:
-        lines = [lines[0], *concrete, *lines[1:]] if lines else concrete
+        lines = [
+            ln
+            for ln in lines
+            if "克隆仓库" not in ln and "打开本机 FORESHADOW.md" not in ln
+        ]
+        first = _cloned_first_work(inspect, cited)
+        extra = _cloned_side_evidence(inspect, cited)
+        lines = [first, *extra, *lines]
+        backend = "后台记录在 FORESHADOW.md"
+        if backend not in lines:
+            if _STOP in lines:
+                lines.insert(lines.index(_STOP), backend)
+            else:
+                lines.append(backend)
     kind = str((inspect.get("tests") or {}).get("kind") or "")
     if kind == "node":
         lines.append("已跳过 Node 测试（不执行 npm）")
@@ -332,7 +342,7 @@ def customize_steps(
     labeled = _label_steps(lines)
     first = labeled[0].lower() if labeled else ""
     if any(tok in first for tok in ("push", "create_pr", "open pr", "开 pr", "创建 pr")):
-        labeled.insert(0, "第一步：打开本机 FORESHADOW.md 和 ISSUE_DRAFT.md")
+        labeled.insert(0, "第一步：先完成本机验证，不要发到 GitHub")
     return labeled
 
 
@@ -386,44 +396,43 @@ def _useful_headings(feat: FeaturesBlob, inspect: dict[str, Any]) -> list[str]:
     return (preferred + other)[:5]
 
 
-def _concrete_evidence(
-    inspect: dict[str, Any],
-    cited: dict[str, Any],
-    *,
-    cloned: bool,
-) -> list[str]:
-    """Only cite files/commands that inspect actually found. UNKNOWN otherwise."""
-    if not cloned:
-        return []
-    lines: list[str] = []
-    files = list(inspect.get("related_files") or inspect.get("source_files") or [])
-    tests = list(inspect.get("test_files") or [])
-    cmds = list(inspect.get("issue_commands") or [])
-    ticket = None
-    if cited.get("number"):
-        title = str(cited.get("title") or "").strip()
-        ticket = f"Issue #{cited['number']}" + (f"「{title}」" if title else "")
-    if files:
-        extra = f"，也可看 `{files[1]}`" if len(files) > 1 else ""
-        lines.append(f"打开本机已有文件 `{files[0]}`{extra}（来自 clone，不是编造）")
-    else:
-        lines.append("UNKNOWN：clone 后没有找到可引用的源码文件。不要猜测路径。")
-    if ticket and cmds:
-        lines.append(
-            f"按 {ticket} 正文里的命令在本机跑：`{cmds[0]}`。"
-            "记下实际输出和预期差异。缺依赖就停，不要擅自安装。"
+def _first_present(items: Any) -> str | None:
+    for item in items or []:
+        text = str(item).strip()
+        if text:
+            return text
+    return None
+
+
+def _cloned_first_work(inspect: dict[str, Any], cited: dict[str, Any]) -> str:
+    """第一步 is the work. FORESHADOW.md / ISSUE_DRAFT.md are backend evidence."""
+    cmd = _first_present(inspect.get("issue_commands"))
+    test = _first_present(inspect.get("test_files"))
+    related = _first_present(inspect.get("related_files"))
+    if cmd:
+        number = cited.get("number")
+        issue_ref = f"Issue #{number}" if number not in (None, "") else "Issue"
+        return (
+            f"运行 `{cmd}`，核对 {issue_ref} 描述的行为。"
+            "缺依赖就停，不要擅自安装。"
         )
-    elif cmds:
-        lines.append(
-            f"Issue 正文里的命令：`{cmds[0]}`。你自己跑；缺依赖就停。"
-        )
-    elif tests:
-        lines.append(
-            f"仓库里有测试文件 `{tests[0]}`。Foreshadow 默认只 collect-only，不会替你装依赖。"
-        )
-    else:
-        lines.append("UNKNOWN：Issue 正文没有可执行命令，也没有找到测试文件。")
-    return lines
+    if test:
+        return f"对仓库已有 `{test}` 做安全检查（collect-only）。"
+    if related:
+        return f"对照 Issue，验证 `{related}` 中的行为（路径仅作证据）。"
+    return "UNKNOWN：不要编造。"
+
+
+def _cloned_side_evidence(inspect: dict[str, Any], cited: dict[str, Any]) -> list[str]:
+    """Cite a real related file after 第一步 when the work was a command or test."""
+    del cited
+    if _first_present(inspect.get("issue_commands")) or _first_present(
+        inspect.get("test_files")
+    ):
+        related = _first_present(inspect.get("related_files"))
+        if related:
+            return [f"对照 Issue，验证 `{related}` 中的行为（路径仅作证据）。"]
+    return []
 
 
 def _clip_blurb(blurb: str | None) -> str:
@@ -490,10 +499,7 @@ def _path_lines(
     about = f"（{clipped}）" if clipped else ""
     open_readme = f"打开 {project} 的 README{about}{readme_bit}"
     if cloned:
-        first_read = (
-            "打开本机 FORESHADOW.md 和 ISSUE_DRAFT.md，"
-            f"对照 README{about}{readme_bit or ' 了解项目怎么跑'}"
-        )
+        first_read = f"对照 README{about}{readme_bit or ' 了解项目怎么跑'}"
     else:
         first_read = f"把 {project} 下到本机后，打开 README{about}{readme_bit}"
     ticket_line = (

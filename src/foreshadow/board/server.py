@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from foreshadow.auth import (
     AuthError,
@@ -36,6 +38,39 @@ from foreshadow.reviews import (
 
 LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 MAX_BODY = 64 * 1024
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_STATIC_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+_SAFE_STATIC = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpg|jpeg|png|webp)$", re.IGNORECASE
+)
+
+
+def _resolve_static(url_path: str) -> tuple[Path, str] | None:
+    """Map /static/<name> to a file inside _ASSETS_DIR. Rejects traversal."""
+    rel = unquote(url_path)
+    prefix = "/static/"
+    if not rel.startswith(prefix):
+        return None
+    name = rel[len(prefix) :]
+    if not _SAFE_STATIC.fullmatch(name):
+        return None
+    try:
+        root = _ASSETS_DIR.resolve()
+        target = (root / name).resolve()
+        target.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    if not target.is_file():
+        return None
+    ctype = _STATIC_TYPES.get(target.suffix.lower())
+    if ctype is None:
+        return None
+    return target, ctype
 
 
 class BoardState:
@@ -156,9 +191,25 @@ class BoardHandler(BaseHTTPRequestHandler):
         status, body, ctype = _json_bytes(payload, status)
         self._send(status, body, ctype, [("Set-Cookie", cookie)])
 
+    def _serve_static(self, path: str) -> None:
+        resolved = _resolve_static(path)
+        if resolved is None:
+            self._send(*_json_bytes({"error": "not found"}, 404))
+            return
+        target, ctype = resolved
+        try:
+            body = target.read_bytes()
+        except OSError:
+            self._send(*_json_bytes({"error": "not found"}, 404))
+            return
+        self._send(200, body, ctype)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        if path.startswith("/static/"):
+            self._serve_static(path)
+            return
         if path in {"/", "/index.html"}:
             from foreshadow.board.webapp import render_app_html
 

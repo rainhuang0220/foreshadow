@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from fakes import seed_repo
-from foreshadow.board.server import make_server, validate_host
+from foreshadow.board.server import _resolve_static, make_server, validate_host
 from foreshadow.clock import Clock
 from foreshadow.db import connect, migrate
 from foreshadow.pipeline.snapshot import upsert_snapshot
@@ -73,7 +73,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
     try:
         page = httpx.get(f"{base}/")
         assert page.status_code == 200
-        assert "今日机会审查" in page.text
+        assert "今日机会" in page.text
         assert "FORESHADOW" in page.text
 
         anon = httpx.get(f"{base}/api/board")
@@ -142,6 +142,18 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "/api/mission" in page.text
         assert "正在准备本地环境" in page.text
         assert "clone.error" in page.text or "cloneErr" in page.text
+        html = page.text
+        start_js = html[
+            html.index("async function startEnter") : html.index("async function setupLocal")
+        ]
+        existing_js = html[
+            html.index("async function openExisting") : html.index("async function markEvent")
+        ]
+        assert "setupLocal" in start_js
+        assert "setupLocal" not in existing_js
+        bg = a.get(f"{base}/static/board-bg.jpg")
+        assert bg.status_code == 200
+        assert "image/jpeg" in bg.headers.get("content-type", "")
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -167,6 +179,7 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert mission["needs_user_approval"] is True
         assert mission["status"] == "MISSION_READY"
         assert mission["strategy"]["allows_direct_pr"] is False
+        assert not (tmp_home / "work" / "acme__x" / "repo" / ".git").exists()
         from foreshadow.mission import REMOTE_ACTIONS, refuse_remote_action
 
         for action in sorted(REMOTE_ACTIONS):
@@ -210,6 +223,63 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         )
         assert ev.status_code == 200
         assert ev.json()["mission"]["status"] == "ABANDONED"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_resolve_static_serves_assets_only(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "board-bg.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+    (assets / "board-bg.png").write_bytes(b"png")
+    (assets / "board-bg.webp").write_bytes(b"webp")
+    (tmp_path / "secret.jpg").write_bytes(b"nope")
+    monkeypatch.setattr("foreshadow.board.server._ASSETS_DIR", assets)
+
+    jpg = _resolve_static("/static/board-bg.jpg")
+    assert jpg is not None
+    assert jpg[1] == "image/jpeg"
+    assert jpg[0].read_bytes() == b"\xff\xd8\xff\xd9"
+    assert _resolve_static("/static/board-bg.png")[1] == "image/png"
+    assert _resolve_static("/static/board-bg.webp")[1] == "image/webp"
+    assert _resolve_static("/static/../secret.jpg") is None
+    assert _resolve_static("/static/%2e%2e/secret.jpg") is None
+    assert _resolve_static("/static/%2e%2e%2fsecret.jpg") is None
+    assert _resolve_static("/static/foo/board-bg.jpg") is None
+    assert _resolve_static("/static/missing.png") is None
+    assert _resolve_static("/static/") is None
+
+
+def test_static_board_bg_and_login_get(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        page = httpx.get(f"{base}/")
+        assert page.status_code == 200
+        bg = httpx.get(f"{base}/static/board-bg.jpg")
+        assert bg.status_code in (200, 404)
+        assert bg.status_code != 500
+        if bg.status_code == 200:
+            assert "image/jpeg" in bg.headers.get("content-type", "")
+        missing = httpx.get(f"{base}/static/no-such.webp")
+        assert missing.status_code == 404
+        client = httpx.Client()
+        reg = client.post(
+            f"{base}/api/register",
+            json={
+                "username": "dana",
+                "email": "dana@example.com",
+                "password": "password1",
+            },
+        )
+        assert reg.status_code == 200
+        after = client.get(f"{base}/")
+        assert after.status_code == 200
+        board = client.get(f"{base}/api/board")
+        assert board.status_code == 200
+        still = client.get(f"{base}/static/board-bg.jpg")
+        assert still.status_code in (200, 404)
+        assert still.status_code != 500
     finally:
         httpd.shutdown()
         httpd.server_close()

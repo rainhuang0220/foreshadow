@@ -44,6 +44,14 @@ def _noop_clone_runner(readme: str = "# toy\n"):
     return runner
 
 
+def test_create_for_user_does_not_clone():
+    from foreshadow.mission import create_for_user
+
+    src = inspect.getsource(create_for_user)
+    assert "clone_public_repo" not in src
+    assert "setup_local_environment" not in src
+
+
 def test_build_mission_waits_for_user():
     m = build_mission(
         "acme/toy",
@@ -428,7 +436,7 @@ def test_local_branch_idempotent_if_exists(tmp_path):
 def test_hitl_git_helpers_never_force_reset_commit_or_push():
     import re
 
-    import foreshadow.mission as mission
+    from foreshadow import mission
 
     commit_fns = [
         n
@@ -438,7 +446,7 @@ def test_hitl_git_helpers_never_force_reset_commit_or_push():
     assert commit_fns == []
 
     branch_src = inspect.getsource(mission.create_local_branch)
-    git_calls = re.findall(r"git\((.*?)\)", branch_src, flags=re.S)
+    git_calls = re.findall(r"git\((.*?)\)", branch_src, flags=re.DOTALL)
     blob = "\n".join(git_calls)
     assert git_calls
     assert "-B" not in blob
@@ -612,9 +620,11 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
         conn, mid, uid, tmp_home, runner=runner, fetch_issue=fake_fetch
     )
     steps = " ".join(out["mission"].get("steps_zh") or [])
+    first = (out["mission"].get("steps_zh") or [""])[0]
     assert "第一步" in steps
     assert "#73" in steps
-    assert "Install" in steps
+    assert "FORESHADOW.md" not in first
+    assert "Install" in steps or "pip install toy" in steps
     assert "ISSUE_DRAFT.md" in steps
     assert "open a pr" not in steps.lower()
     md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
