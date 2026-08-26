@@ -317,6 +317,21 @@ pre.meta {
   margin: .8rem 0;
   font-size: .88rem;
 }
+.enter-brief {
+  background: rgba(226,74,50,.07);
+  border: 1px solid rgba(226,74,50,.28);
+  padding: .75rem .85rem .9rem;
+  margin: .55rem 0 .7rem;
+}
+.enter-brief p { margin: .28rem 0; }
+.enter-brief .now { margin: .5rem 0 .35rem; }
+ul.checklist {
+  list-style: none;
+  margin: .35rem 0 1rem;
+  padding: 0;
+  font-size: .95rem;
+}
+ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
   .counts { grid-template-columns: repeat(2, 1fr); }
   .wrap { padding: 1rem 1rem 5rem; }
@@ -343,6 +358,7 @@ const state = {
   missions: [],
   showMissions: false,
   portfolio: null,
+  pausedIds: {},
 };
 
 async function api(path, opts={}) {
@@ -619,6 +635,63 @@ function labeledStep(x, i) {
   return `<strong>${zh[i] || ("第"+(i+1)+"步")}</strong> ${esc(s)}`;
 }
 
+function missionPaused(m) {
+  if (!m || m.status === "ABANDONED") return false;
+  if (m.paused || m.status === "PAUSED") return true;
+  const id = Number(m.id);
+  return !!(state.pausedIds && (state.pausedIds[m.id] || (Number.isFinite(id) && state.pausedIds[id])));
+}
+
+function factLine(ok, label, detail) {
+  return `${ok ? "✓" : "○"} ${label}：${esc(detail)}`;
+}
+
+function progressChecklist(m) {
+  const inspected = !!(m.inspect && m.inspect.inspected);
+  const hasClone = m.clone != null && typeof m.clone === "object";
+  const cloneOk = !!(hasClone && m.clone.ok);
+  const cloneMap = {cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"};
+  let cloneText = "未知";
+  if (hasClone) cloneText = cloneMap[m.clone.status] || m.clone.status || (cloneOk ? "已克隆" : "未完成");
+
+  const hasBranch = m.branch != null && typeof m.branch === "object";
+  const branchOk = !!(hasBranch && m.branch.ok);
+  let branchText = "未知";
+  if (hasBranch && branchOk) {
+    branchText = m.branch.name || "foreshadow/entry";
+  } else if (hasBranch && cloneOk) {
+    branchText = m.branch.name || m.branch.status || (inspected ? "无" : "未知");
+  } else if (hasBranch && m.branch.status && m.branch.status !== "skipped") {
+    branchText = m.branch.status;
+  }
+
+  const hasTests = m.tests != null && typeof m.tests === "object";
+  const testsStatus = hasTests ? m.tests.status : null;
+  const testsOk = !!(hasTests && (m.tests.ok || testsStatus === "collect_ok" || testsStatus === "passed"));
+  let testsText = "未知";
+  if (hasTests && testsStatus && testsStatus !== "skipped") {
+    testsText = testsStatus;
+  } else if (hasTests && cloneOk) {
+    testsText = testsStatus || "未知";
+    if (m.tests.kind && m.tests.kind !== "none") testsText = (testsStatus || "未知") + "（" + m.tests.kind + "）";
+    else if (inspected && m.inspect && m.inspect.has_tests === false) testsText = "无";
+  }
+
+  const cited = m.cited_issue;
+  const hasCited = cited != null && typeof cited === "object";
+  const issueOk = !!(hasCited && cited.number);
+  let issueText = "未知";
+  if (issueOk) issueText = "#" + cited.number;
+  else if (hasCited && (hasClone || inspected) && !cited.number) issueText = "无";
+
+  return `<ul class="checklist">
+    <li>${factLine(cloneOk, "Clone", cloneText)}</li>
+    <li>${factLine(branchOk, "Branch", branchText)}</li>
+    <li>${factLine(testsOk, "Tests collected", testsText)}</li>
+    <li>${factLine(issueOk, "Issue fetched", issueText)}</li>
+  </ul>`;
+}
+
 function missionView(m) {
   if (!m) return "";
   const cloneOk = m.clone && m.clone.ok;
@@ -628,27 +701,48 @@ function missionView(m) {
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
   const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"}[clone] || clone);
-  const first = cloneOk ? "打开本地 FORESHADOW.md，按里面的第一步做" : ((m.steps_zh && m.steps_zh[0]) || "阅读本地 FORESHADOW.md");
+  const first = (m.steps_zh && m.steps_zh[0]) || "未知";
   const root = m.local_path || "";
   const id = m.id;
+  const paused = missionPaused(m);
+  const abandoned = m.status === "ABANDONED";
+  const strat = m.strategy || {};
+  const why = (m.why_now && m.why_now.length) ? m.why_now.join("；") : "未知";
+  const entryBits = [strat.summary_zh, strat.path].filter(Boolean);
+  const entry = entryBits.length ? entryBits.join(" / ") : "未知";
+  const diff = m.difficulty || strat.difficulty || "未知";
+  const effort = m.effort || strat.effort || "未知";
+  const statusLine = (m.status_zh || m.status || "未知") + (paused ? " · 已暂停" : "");
   return `
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
   <aside class="drawer on" role="dialog" aria-label="进入任务">
     <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
     <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>
-    <p class="now"><strong>你现在做：</strong>${esc(first)}</p>
+    <section class="enter-brief">
+      <p><strong>为什么进入：</strong>${esc(why)}</p>
+      <p><strong>推荐入口：</strong>${esc(entry)}</p>
+      <p><strong>难度</strong> ${esc(diff)} · <strong>预计</strong> ${esc(effort)}</p>
+      <p class="now"><strong>第一步：</strong>${esc(first)}</p>
+      <p><strong>当前状态：</strong>${esc(statusLine)}</p>
+    </section>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
+    <h3>本地进度</h3>
+    ${progressChecklist(m)}
+    <p class="meta">暂停只停本地工作，不会向 GitHub 发请求。</p>
+    <p>
+      ${cloneOk || paused || abandoned ? "" : `<button type="button" class="primary" onclick="setupLocal(${id})">把项目下载到本机</button>`}
+      ${abandoned ? "" : (paused
+        ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button><button type="button" onclick="pauseMission(${id})">暂停任务</button>`
+        : `<button type="button" onclick="pauseMission(${id})">暂停任务</button><button type="button" onclick="resumeMission(${id})">继续任务</button>`)}
+      <button type="button" class="ghost" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
+    </p>
     <h3>行动计划</h3>
     <ol class="plan">${steps}</ol>
     <p class="meta">按本地 FORESHADOW.md 和 ISSUE_DRAFT.md 执行。${root ? "打开 " + esc(root) + "/FORESHADOW.md 和 " + esc(root) + "/ISSUE_DRAFT.md。代码在 " + esc(root) + "/repo ，分支 foreshadow/entry。不要 push。" : "把项目下载到本机后会生成这两份文件。"}</p>
     ${m.cited_issue && m.cited_issue.number ? `<p><strong>建议先看 Issue #${esc(m.cited_issue.number)}</strong> ${esc(m.cited_issue.title||"")}</p>` : ""}
     ${m.cited_issue && m.cited_issue.body ? `<pre class="meta">${esc(String(m.cited_issue.body).slice(0,400))}</pre>` : ""}
     ${m.draft_excerpt ? `<h3>本地草稿（未发送）</h3><pre class="meta">${esc(m.draft_excerpt)}</pre>` : ""}
-    <p>
-      ${cloneOk ? "" : `<button type="button" class="primary" onclick="setupLocal(${id})">把项目下载到本机</button>`}
-      <button type="button" class="ghost" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
-    </p>
     <p>
       <p class="meta">要改草稿：编辑本地 ISSUE_DRAFT.md。点「草稿可以」只记账，仍不会发送。</p>
       <button type="button" onclick="markEvent(${id}, 'draft_approved')">草稿可以，仍不要发送</button>
@@ -724,6 +818,7 @@ async function logout() {
   state.user = null;
   state.board = null;
   state.open = null;
+  state.pausedIds = {};
   render();
 }
 
@@ -741,16 +836,20 @@ async function startEnter(name) {
     state.open = null;
     const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     if (card && data.mission && data.mission.id) card.mission_id = data.mission.id;
-    if (data.mission && data.mission.id) await setupLocal(data.mission.id);
+    if (data.mission && data.mission.id && !missionPaused(data.mission)) await setupLocal(data.mission.id);
     try { await loadBoard(); } catch {}
   } catch (e) { alert(e.message); }
   finally { state.busy = false; render(); }
 }
 
 async function setupLocal(id) {
+  const pausedHere = !!(state.pausedIds[id] || state.pausedIds[Number(id)]
+    || (missionPaused(state.mission) && Number(state.mission && state.mission.id) === Number(id)));
+  if (pausedHere) return;
   try {
     const data = await api("/api/mission/setup", { method: "POST", body: JSON.stringify({ id }) });
     state.mission = data.mission;
+    if (state.mission && (state.pausedIds[id] || state.pausedIds[Number(id)])) state.mission.paused = true;
     if (state.portfolio) try { state.portfolio = await api("/api/portfolio"); } catch {}
     try { await loadBoard(); } catch {}
     render();
@@ -769,7 +868,12 @@ async function loadMissions() {
 function openMission(id) {
   const nid = Number(id);
   const found = (state.missions || []).find(x => Number(x.id) === nid);
-  if (found) { state.open = null; state.mission = found; render(); }
+  if (found) {
+    state.open = null;
+    state.mission = found;
+    if (missionPaused(found)) state.mission.paused = true;
+    render();
+  }
 }
 
 async function retryBoard() {
@@ -783,7 +887,8 @@ async function openExisting(id) {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
     const found = (state.missions || []).find(x => x.id === id);
-    const needsSetup = found && found.status !== "ABANDONED" && !(found.clone && found.clone.ok);
+    const paused = missionPaused(found) || !!(state.pausedIds && (state.pausedIds[id] || state.pausedIds[Number(id)]));
+    const needsSetup = found && found.status !== "ABANDONED" && !paused && !(found.clone && found.clone.ok);
     if (needsSetup) {
       await setupLocal(id);
       return;
@@ -797,9 +902,55 @@ async function markEvent(id, event) {
   try {
     const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event }) });
     state.mission = data.mission;
+    if (event === "abandoned") {
+      delete state.pausedIds[id];
+      delete state.pausedIds[Number(id)];
+    }
+    if (event === "paused" && state.mission) {
+      state.pausedIds[id] = true;
+      state.mission.paused = true;
+    }
+    if (event === "resumed" && state.mission) {
+      delete state.pausedIds[id];
+      delete state.pausedIds[Number(id)];
+      state.mission.paused = false;
+    }
     try { state.portfolio = await api("/api/portfolio"); } catch {}
     render();
   } catch (e) { alert(e.message); }
+}
+
+async function pauseMission(id) {
+  state.pausedIds[id] = true;
+  state.pausedIds[Number(id)] = true;
+  if (state.mission && Number(state.mission.id) === Number(id)) state.mission.paused = true;
+  render();
+  try {
+    const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event: "paused" }) });
+    if (data.mission) {
+      state.mission = data.mission;
+      state.mission.paused = true;
+    }
+    try { state.portfolio = await api("/api/portfolio"); } catch {}
+  } catch {}
+  render();
+}
+
+async function resumeMission(id) {
+  delete state.pausedIds[id];
+  delete state.pausedIds[Number(id)];
+  if (state.mission && Number(state.mission.id) === Number(id)) state.mission.paused = false;
+  try {
+    const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event: "resumed" }) });
+    if (data.mission) {
+      state.mission = data.mission;
+      state.mission.paused = false;
+    }
+    try { state.portfolio = await api("/api/portfolio"); } catch {}
+    render();
+  } catch {
+    await openExisting(id);
+  }
 }
 
 async function refuseRemote() {
