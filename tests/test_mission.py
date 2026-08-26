@@ -545,3 +545,149 @@ def test_write_mission_doc_quotes_install_hint(tmp_path):
     empty = write_mission_doc(tmp_path, m).read_text(encoding="utf-8")
     assert "README 安装命令" not in empty
     assert "这是 Python 仓库。" not in empty
+
+
+def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
+    """HITL: Board enter, CLI enter, clone, drafts — no GitHub writes."""
+    from typer.testing import CliRunner
+
+    from foreshadow.board.server import BoardHandler
+    from foreshadow.board.webapp import render_app_html
+    from foreshadow.cli import app, enter
+    from foreshadow.mission import _load_cited_issue, write_pr_draft
+
+    html = render_app_html()
+    start_js = html[
+        html.index("async function startEnter") : html.index("async function setupLocal")
+    ]
+    setup_js = html[
+        html.index("async function setupLocal") : html.index("async function loadMissions")
+    ]
+    remote_js = html[
+        html.index("async function refuseRemote") : html.index("async function saveReview")
+    ]
+    assert 'api("/api/mission"' in start_js
+    assert "/api/mission/setup" not in start_js
+    assert "setupLocal(" in start_js
+    assert 'api("/api/mission/setup"' in setup_js
+    assert 'api("/api/mission/remote"' in remote_js
+    assert '"create_pr"' in remote_js
+    assert "api.github.com" not in html
+
+    post_src = inspect.getsource(BoardHandler.do_POST)
+    remote_src = post_src[post_src.index("/api/mission/remote") :]
+    assert "refuse_remote_action" in remote_src
+    assert "GitHubClient" not in remote_src
+
+    clone_src = inspect.getsource(clone_public_repo)
+    assert '["git", "clone", "--depth", "1", "--", url, str(clone_dir)]' in clone_src
+    for fn in (write_issue_draft, write_pr_draft, enter, _load_cited_issue):
+        src = inspect.getsource(fn)
+        assert "GitHubClient" not in src or fn is _load_cited_issue
+        assert "request(\"POST\"" not in src
+        assert "request('POST'" not in src
+        assert "graphql" not in src.lower()
+        assert "mutation" not in src.lower()
+
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    monkeypatch.setenv("GITHUB_TOKEN", "x")
+
+    def boom(*_a, **_k):
+        raise AssertionError("git must not run when FORESHADOW_SKIP_CLONE=1")
+
+    monkeypatch.setattr("foreshadow.mission.subprocess.run", boom)
+
+    skipped = clone_public_repo("acme/toy", tmp_home)
+    assert skipped["ok"] is False
+    assert skipped["status"] == "skipped"
+    assert skipped["path"] is None
+
+    class BoomClient:
+        def __init__(self, *_a, **_k):
+            raise AssertionError("GitHubClient must not be used when clone is skipped")
+
+    monkeypatch.setattr("foreshadow.github.client.GitHubClient", BoomClient)
+    entered = CliRunner().invoke(app, ["enter", "acme/toy"])
+    assert entered.exit_code == 0, entered.output
+    dest = tmp_home / "work" / "acme__toy"
+    assert (dest / "ISSUE_DRAFT.md").is_file()
+    draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
+    assert "等待你的确认" in draft
+    assert "不会自动 post" in draft
+    if (dest / "PR_DRAFT.md").is_file():
+        pr = (dest / "PR_DRAFT.md").read_text(encoding="utf-8")
+        assert "不会 `create_pr`" in pr or "不会 create_pr" in pr
+        assert "未发送" in pr
+    for action in REMOTE_ACTIONS:
+        blocked = refuse_remote_action(action)
+        assert blocked["blocked"] is True
+        assert blocked["ok"] is False
+
+    monkeypatch.delenv("FORESHADOW_SKIP_CLONE")
+    calls: list[tuple[str, str]] = []
+
+    class RecordingClient:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def get(self, path, params=None):
+            calls.append(("GET", str(path)))
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {"number": 73, "title": "crash", "body": "repro"},
+            )
+
+        def request(self, method, url, **_k):
+            calls.append((str(method).upper(), str(url)))
+            if str(method).upper() not in {"GET", "HEAD"}:
+                raise AssertionError(f"GitHub write {method} {url}")
+            return SimpleNamespace(status_code=200, json=dict)
+
+        def graphql(self, document, variables, **_k):
+            calls.append(("GRAPHQL", str(document)[:80]))
+            raise AssertionError("GraphQL is not allowed on the enter path")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("foreshadow.github.client.GitHubClient", RecordingClient)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/bug",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    work = prepare_local_dir(tmp_home, "acme/bug")
+    m.local_path = str(work)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        argv = list(cmd)
+        assert "push" not in argv
+        if "clone" in argv:
+            assert argv[:4] == ["git", "clone", "--depth", "1"]
+            clone_dest = Path(argv[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# bug\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert out["clone"]["ok"] is True
+    assert out["mission"]["status"] != "SUBMITTED"
+    assert calls, "cited issue GET should run when clone is not skipped"
+    assert all(method in {"GET", "HEAD"} for method, _path in calls)
+    assert any("issues/73" in path for _method, path in calls)
+    assert (work / "ISSUE_DRAFT.md").is_file()
+    assert out["mission"]["needs_user_approval"] is True
+    assert "api.github.com" not in inspect.getsource(write_issue_draft)
+    assert "api.github.com" not in inspect.getsource(write_pr_draft)
+
