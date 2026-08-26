@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import threading
 
 import httpx
@@ -169,11 +170,9 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
 
 
 def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
-    import inspect as _inspect
-
     from foreshadow.mission import create_for_user
 
-    assert "clone_public_repo" not in _inspect.getsource(create_for_user)
+    assert "clone_public_repo" not in inspect.getsource(create_for_user)
     monkeypatch.delenv("FORESHADOW_SKIP_CLONE", raising=False)
 
     def explode(*_a, **_k):
@@ -228,15 +227,13 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         dest = tmp_home / "work" / "acme__x"
         assert not (dest / "repo").exists()
         assert not (dest / "repo" / ".git").exists()
-        import inspect as _inspect
-
         from foreshadow.mission import (
             REMOTE_ACTIONS,
             create_for_user,
             refuse_remote_action,
         )
 
-        assert "clone_public_repo" not in _inspect.getsource(create_for_user)
+        assert "clone_public_repo" not in inspect.getsource(create_for_user)
 
         for action in sorted(REMOTE_ACTIONS):
             remote = a.post(

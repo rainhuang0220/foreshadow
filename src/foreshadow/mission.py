@@ -978,9 +978,19 @@ def run_local_tests(
             env=_git_env(),
         )
     except FileNotFoundError:
-        return {"ok": False, "status": "no_runner", "kind": "pytest", "command": " ".join(cmd)}
+        return {
+            "ok": False,
+            "status": "no_runner",
+            "kind": "pytest",
+            "command": " ".join(cmd),
+        }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "status": "timeout", "kind": "pytest", "command": " ".join(cmd)}
+        return {
+            "ok": False,
+            "status": "timeout",
+            "kind": "pytest",
+            "command": " ".join(cmd),
+        }
     code = getattr(completed, "returncode", 1)
     summary = (getattr(completed, "stdout", None) or "")[:400]
     if execute:
@@ -1414,7 +1424,11 @@ def _build_setup_pipeline(
     cited = cited or {}
     issue_n = cited.get("number")
     return [
-        _pipeline_step("clone", _clone_pipeline_status(clone), clone.get("status") or "unknown"),
+        _pipeline_step(
+            "clone",
+            _clone_pipeline_status(clone),
+            clone.get("status") or "unknown",
+        ),
         _pipeline_step(
             "branch",
             _branch_pipeline_status(branch, cloned=bool(clone.get("ok"))),
@@ -1423,7 +1437,8 @@ def _build_setup_pipeline(
         _pipeline_step(
             "inspect",
             "done" if inspect.get("inspected") else "skipped",
-            inspect.get("readme_title") or ("inspected" if inspect.get("inspected") else "skipped"),
+            inspect.get("readme_title")
+            or ("inspected" if inspect.get("inspected") else "skipped"),
         ),
         _pipeline_step(
             "issue",
@@ -1502,7 +1517,15 @@ def _pytest_collect_args(command: str, clone_dir: Path) -> list[str] | None:
     low = line.lower()
     if any(
         tok in low
-        for tok in ("pip install", "npm install", "yarn ", "pnpm ", "curl ", "| sh", "| bash")
+        for tok in (
+            "pip install",
+            "npm install",
+            "yarn ",
+            "pnpm ",
+            "curl ",
+            "| sh",
+            "| bash",
+        )
     ):
         return None
     rest = _PYTEST_HEAD.sub("", line).strip()

@@ -257,7 +257,9 @@ def test_github_description_is_intro_source():
     extras = {
         "acme/x": {
             "description": "Local RAG memory for LLM agents",
-            "readme_excerpt": "# other\n\nThis README must not replace a GitHub description.\n",
+            "readme_excerpt": (
+                "# other\n\nThis README must not replace a GitHub description.\n"
+            ),
             "language": "Python",
         }
     }

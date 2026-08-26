@@ -597,8 +597,7 @@ function listView(board) {
   return rows.map(c => {
     const why = cardWhy(c);
     const desc = cardIntro(c);
-    const line = desc || why || "—";
-    const match = (c.match_score != null && c.match_score !== "") ? ` · 匹配 ${n(c.match_score)}` : "";
+    const match = (c.match_score != null && c.match_score !== "") ? ` · 匹配度 ${n(c.match_score)}` : "";
     return `
     <div class="row ${state.open===c.full_name?"active":""}" onclick="openCard('${esc(c.full_name)}')">
       <div class="rk">#${esc(c.rank)}</div>
@@ -606,8 +605,9 @@ function listView(board) {
         <div class="nm">${esc(c.full_name)}
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
-        <div class="sub entry">${esc(line)}</div>
-        <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 趋势 ${n(c.trend)} · 社区 ${n(c.community)} · 贡献 ${n(c.contributor)}${match}</div>
+        <div class="sub entry">${esc(desc || "—")}</div>
+        <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
+        ${why ? `<div class="sub">${esc(why)}</div>` : ""}
       </div>
       <div class="act">
         <button type="button" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">查看详情</button>
