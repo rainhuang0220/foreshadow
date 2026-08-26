@@ -519,6 +519,8 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
     assert "这是 Python 仓库。" in md
     assert "本地分支：foreshadow/entry" in md
     assert "README：有" in md
+    assert "为什么不是直接 PR" in md
+    assert "相关文件：" in md
     assert "不会自动 push / 开 Issue / 开 PR" in md
     assert "等待你的确认才能执行任何远程 GitHub 操作。" in md
 

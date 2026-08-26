@@ -531,7 +531,12 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n"
         f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n"
         f"CONTRIBUTING 目录：{'；'.join(inspect.get('contributing_headings') or []) or '未知'}\n"
+        f"相关文件：{', '.join(inspect.get('related_files') or inspect.get('source_files') or []) or 'UNKNOWN'}\n"
+        f"测试文件：{', '.join(inspect.get('test_files') or []) or 'UNKNOWN'}\n"
+        f"Issue 命令：{'; '.join(inspect.get('issue_commands') or []) or 'UNKNOWN'}\n"
     )
+    why_not = "\n".join(f"- {w}" for w in mission.strategy.why) or "- 默认先沟通，不默认提 PR"
+    text += f"\n为什么不是直接 PR：\n{why_not}\n"
     cited = extra.get("cited_issue") or {}
     if cited.get("number"):
         text += (
