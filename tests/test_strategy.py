@@ -145,6 +145,55 @@ def test_screenshot_without_source_stays_research():
     assert strat.allows_direct_pr is False
 
 
+def test_screenshot_plus_source_beats_docs_gap():
+    strat = recommend_entry(
+        FeaturesBlob(
+            screenshot_only=True,
+            tree_kind="has_source",
+            tree_names=["README.md", "src", "main.py"],
+            gap_docs=1,
+            gap_tests=1,
+            gap_ci=1,
+            open_issue_titles=["#19 measure decode latency"],
+        ),
+        language="Python",
+        full_name="acme/demo",
+    )
+    assert strat.path == "BENCHMARK"
+    assert strat.allows_direct_pr is False
+    blob = " ".join(strat.why + strat.steps_zh + [strat.summary_zh])
+    assert "#19" in blob
+    assert "Python" in blob
+    assert "open a pr" not in blob.lower()
+
+
+def test_wrapper_app_py_counts_as_source_for_benchmark():
+    strat = recommend_entry(
+        FeaturesBlob(
+            screenshot_only=True,
+            tree_kind="readme_plus_app",
+            tree_names=["README.md", "app.py"],
+            gap_docs=1,
+        ),
+        language="Python",
+    )
+    assert strat.path == "BENCHMARK"
+    assert strat.allows_direct_pr is False
+
+
+def test_default_issue_cites_number_and_language():
+    strat = recommend_entry(
+        FeaturesBlob(open_issue_titles=["#88 latency on first token"]),
+        language="Go",
+        full_name="acme/svc",
+    )
+    assert strat.path == "ISSUE"
+    blob = " ".join(strat.why + strat.steps_zh)
+    assert "#88" in blob
+    assert "Go" in blob
+    assert strat.allows_direct_pr is False
+
+
 def test_steps_cite_issue_heading_and_repo():
     strat = recommend_entry(
         FeaturesBlob(

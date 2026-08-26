@@ -405,9 +405,36 @@ def test_detect_local_tests_skips_node_and_cargo(tmp_path):
     py = tmp_path / "py"
     py.mkdir()
     (py / "tests").mkdir()
+    (py / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+    node_tests = tmp_path / "js-tests"
+    node_tests.mkdir()
+    (node_tests / "package.json").write_text("{}", encoding="utf-8")
+    (node_tests / "tests").mkdir()
     assert detect_local_tests(node)["kind"] == "node"
     assert detect_local_tests(cargo)["kind"] == "cargo"
     assert detect_local_tests(py)["kind"] == "pytest"
+    assert detect_local_tests(node_tests)["kind"] == "node"
+
+
+def test_inspect_finds_github_contributing_and_rst_title(tmp_path):
+    from foreshadow.mission import inspect_clone
+
+    missing = inspect_clone(tmp_path / "nope")
+    assert missing["inspected"] is False
+    assert missing["has_readme"] is False
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.rst").write_text("Toy Lib\n=======\n\nhello\n", encoding="utf-8")
+    github = root / ".github"
+    github.mkdir()
+    (github / "CONTRIBUTING.md").write_text("# How to help\n", encoding="utf-8")
+    out = inspect_clone(root)
+    assert out["inspected"] is True
+    assert out["has_readme"] is True
+    assert out["readme_title"] == "Toy Lib"
+    assert out["has_contributing"] is True
+    assert "How to help" in (out.get("contributing_headings") or [])
 
 
 def test_benchmark_mission_has_no_pr_draft(tmp_path):
@@ -490,6 +517,8 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
     assert out["inspect"].get("kind") == "python"
     assert "README 安装命令（你自己执行，Foreshadow 不会代跑）：`pip install toy`" in md
     assert "这是 Python 仓库。" in md
+    assert "本地分支：foreshadow/entry" in md
+    assert "README：有" in md
     assert "不会自动 push / 开 Issue / 开 PR" in md
     assert "等待你的确认才能执行任何远程 GitHub 操作。" in md
 

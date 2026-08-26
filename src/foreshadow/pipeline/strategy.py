@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from foreshadow.models import FeaturesBlob
 from foreshadow.pipeline.access import AccessResult, compute_access
-from foreshadow.pipeline.features import clip
+from foreshadow.pipeline.features import clip, is_readme_only_tree
 from foreshadow.pipeline.s1 import S1Result
 
 EntryPath = Literal[
@@ -120,6 +120,9 @@ def recommend_entry(
         if hard:
             why.append(f"主语言是 {language}，先跟 Issue / 复现说明，不建议重写核心")
         return _pack(path, why, "Medium", "6h", False, **pack_kw)
+    if feat.screenshot_only and _tree_has_source(feat):
+        why.append("README 以展示材料为主，但仓库有源码，先测量再讨论")
+        return _pack("BENCHMARK", why, "Research", "4h", False, **pack_kw)
     if feat.gap_docs == 1:
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
             why.append("文档缺口（不是贡献机会本身，只是入口）")
@@ -146,9 +149,6 @@ def recommend_entry(
         return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if feat.screenshot_only:
         why.append("仓库几乎只有展示材料")
-        if feat.tree_kind == "has_source":
-            why.append("仓库有源码，适合先测量再讨论，不默认改代码")
-            return _pack("BENCHMARK", why, "Research", "4h", False, **pack_kw)
         return _pack("RESEARCH", why, "Research", "2h", False, **pack_kw)
     if access.merge_rate is not None and access.merge_rate >= 0.35:
         why.append("外部 PR 曾被接受，仍建议先 Issue 对齐")
@@ -160,6 +160,15 @@ def recommend_entry(
     if hard:
         why.append(f"主语言是 {language}，按你当前能力走 Issue / 文档")
     return _pack("ISSUE", why, "Medium", "6h", False, **pack_kw)
+
+
+def _tree_has_source(feat: FeaturesBlob) -> bool:
+    if feat.tree_kind == "readme_only":
+        return False
+    if feat.tree_kind == "has_source":
+        return True
+    names = feat.tree_names or []
+    return bool(names) and not is_readme_only_tree(names)
 
 
 def _accepts_code_entry(access: AccessResult) -> bool:
@@ -240,6 +249,14 @@ def _pack(
     full_name: str | None = None,
     blurb: str | None = None,
 ) -> StrategyResult:
+    why = list(why)
+    titles = []
+    if feat is not None:
+        titles = list(feat.help_issue_titles or feat.open_issue_titles or [])
+    if titles and not any("建议先看：" in w for w in why):
+        why.append(f"建议先看：{titles[0]}")
+    if language and not any("主语言" in w for w in why):
+        why.append(f"主语言 {language}")
     return StrategyResult(
         path=path,
         summary_zh=PATH_ZH[path],

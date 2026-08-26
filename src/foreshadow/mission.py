@@ -523,8 +523,11 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"行动计划：\n{steps}\n\n"
         f"{after_plan}"
         f"本地 clone：{clone.get('status') or '尚未尝试'}\n"
-        f"README：{'有' if inspect.get('has_readme') else '未知'} · "
-        f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
+        f"README：{_yn(inspect, 'has_readme')}"
+        f"{(' · 标题：' + str(inspect.get('readme_title'))) if inspect.get('readme_title') else ''} · "
+        f"CONTRIBUTING：{_yn(inspect, 'has_contributing')}\n"
+        f"{_branch_line(extra)}"
+        f"{_tests_line(extra)}"
         f"仓库顶层：{', '.join(inspect.get('top_entries') or []) or '未知'}\n"
         f"README 目录：{'；'.join(inspect.get('readme_headings') or []) or '未知'}\n"
         f"CONTRIBUTING 目录：{'；'.join(inspect.get('contributing_headings') or []) or '未知'}\n"
@@ -616,21 +619,26 @@ def clone_public_repo(
 
 
 def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
+    empty = {
+        "inspected": False,
+        "has_readme": False,
+        "has_contributing": False,
+        "has_tests": False,
+        "readme_title": None,
+    }
     if clone_dir is None or not Path(clone_dir).is_dir():
-        return {"has_readme": False, "has_contributing": False, "has_tests": False}
-    entries = list(Path(clone_dir).iterdir())
+        return empty
+    root = Path(clone_dir)
+    entries = list(root.iterdir())
     names = {p.name.lower() for p in entries}
     top = sorted(p.name for p in entries)[:20]
     readme = next(
         (p for p in entries if p.is_file() and p.name.lower().startswith("readme")),
         None,
     )
-    contrib = next(
-        (p for p in entries if p.is_file() and p.name.lower() == "contributing.md"),
-        None,
-    )
-    headings = _markdown_headings(readme) if readme else []
-    contrib_headings = _markdown_headings(contrib) if contrib else []
+    contrib = _find_contributing(root, entries)
+    headings = _doc_headings(readme) if readme else []
+    contrib_headings = _doc_headings(contrib) if contrib else []
     kind = None
     if "pyproject.toml" in names or "setup.py" in names or "setup.cfg" in names:
         kind = "python"
@@ -641,10 +649,12 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     elif "go.mod" in names:
         kind = "go"
     return {
-        "has_readme": any(n.startswith("readme") for n in names),
-        "has_contributing": "contributing.md" in names,
+        "inspected": True,
+        "has_readme": readme is not None,
+        "has_contributing": contrib is not None,
         "has_tests": bool({"tests", "test", "spec"} & names),
         "top_entries": top,
+        "readme_title": headings[0] if headings else None,
         "readme_headings": headings[:12],
         "contributing_headings": contrib_headings[:8],
         "kind": kind,
@@ -656,6 +666,69 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
             for n in names
         ),
     }
+
+
+def _yn(inspect: dict[str, Any], key: str) -> str:
+    if inspect.get(key):
+        return "有"
+    return "无" if inspect.get("inspected") else "未知"
+
+
+def _branch_line(extra: dict[str, Any]) -> str:
+    branch = extra.get("branch") or {}
+    name = branch.get("name") or "foreshadow/entry"
+    if branch.get("ok"):
+        return f"本地分支：{name}（{branch.get('status') or 'ready'}，不 push）\n"
+    if extra.get("clone", {}).get("ok"):
+        return f"本地分支：{name}（未创建）\n"
+    return "本地分支：尚未创建（clone 未完成）\n"
+
+
+def _tests_line(extra: dict[str, Any]) -> str:
+    tests = extra.get("tests") or {}
+    kind = tests.get("kind")
+    if kind == "pytest":
+        return f"测试：pytest {tests.get('status') or 'collect-only'}（不装依赖）\n"
+    if kind in {"node", "cargo"}:
+        return f"测试：跳过（{kind}，不执行 npm/cargo）\n"
+    if tests.get("status") == "skipped":
+        return "测试：尚未探测或已跳过\n"
+    return ""
+
+
+def _find_contributing(root: Path, entries: list[Path]) -> Path | None:
+    wanted = {"contributing.md", "contributing.rst", "contributing"}
+    for path in entries:
+        if path.is_file() and path.name.lower() in wanted:
+            return path
+    github = root / ".github"
+    if github.is_dir():
+        for name in ("CONTRIBUTING.md", "CONTRIBUTING.rst", "CONTRIBUTING"):
+            cand = github / name
+            if cand.is_file():
+                return cand
+    return None
+
+
+def _doc_headings(path: Path) -> list[str]:
+    md = _markdown_headings(path)
+    if md:
+        return md
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[:8000]
+    except OSError:
+        return []
+    out: list[str] = []
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        title = line.strip()
+        if not title:
+            continue
+        if i + 1 < len(lines):
+            bar = lines[i + 1].strip()
+            if len(bar) >= 3 and set(bar) <= {"=", "-"}:
+                out.append(title)
+    return out
 
 
 def _install_hint(path: Path) -> str | None:
@@ -800,17 +873,16 @@ def detect_local_tests(clone_dir: Path) -> dict[str, Any]:
     if not root.is_dir():
         return {"kind": "none", "reason": "no_repo"}
     names = {p.name.lower() for p in root.iterdir()}
-    py = (
-        (root / "pyproject.toml").exists()
-        or (root / "pytest.ini").exists()
-        or (root / "tests").is_dir()
+    py = any(
+        (root / n).exists()
+        for n in ("pyproject.toml", "pytest.ini", "setup.py", "setup.cfg", "tox.ini")
     )
-    if "package.json" in names and not py:
-        return {"kind": "node", "reason": "npm_test_blocked"}
-    if "cargo.toml" in names and not py:
-        return {"kind": "cargo", "reason": "cargo_blocked"}
     if py:
         return {"kind": "pytest", "reason": "pytest"}
+    if "package.json" in names:
+        return {"kind": "node", "reason": "npm_test_blocked"}
+    if "cargo.toml" in names:
+        return {"kind": "cargo", "reason": "cargo_blocked"}
     return {"kind": "none", "reason": "none"}
 
 
@@ -1204,6 +1276,8 @@ def setup_local_environment(
         "inspect": inspect,
         "cited_issue": cited or {},
         "pr_draft": str(pr_draft) if pr_draft else None,
+        "branch": branch,
+        "tests": tests,
     }
     write_mission_doc(dest, mission, extra=extra)
     dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
