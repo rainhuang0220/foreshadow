@@ -76,3 +76,18 @@ Tests: **331 passed**.
 1. Access UNKNOWN on 90/120 until the next dogfood hydrate
 2. Mission is not yet joined onto every board card (list still offers 开始进入 even if a mission exists)
 3. No automatic GitHub merge tracking — user marks `pr_merged`
+
+## S3 / Entry Mission — tomorrow-morning Board path
+
+S2 Access is stable. We are **not** retuning merge/review/TTR/onboarding weights this window.
+
+Tomorrow morning, use the live Board (not Trae :8765 static, not `--export-html` `board.html`):
+
+```bash
+cd .worktrees/p0-implementation
+FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview
+```
+
+Click **开始进入** (not 记入观察清单). Expect a **project-specific 行动计划** (第一步 / 第二步), local `git clone --depth 1`, and `FORESHADOW.md` + `ISSUE_DRAFT.md` under `$FORESHADOW_HOME/work/{owner}__{repo}/`. Copy stays in 第一步/第二步; do not describe this as “open a PR”.
+
+The system **stops** before any third-party GitHub write. **尝试创建 PR** is refused.
