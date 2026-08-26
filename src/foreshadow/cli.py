@@ -197,17 +197,25 @@ def enter(
         mission_status = setup["mission"].get("status") or mission.status
         clone_status = (setup.get("clone") or {}).get("status")
         local_path = setup["mission"].get("local_path") or mission.local_path
+        steps = setup["mission"].get("steps_zh") or mission.strategy.steps_zh
     finally:
         conn.close()
-    sys.stdout.write(
-        f"entry mission {mission.id} {mission.full_name} "
-        f"path={mission.strategy.path} status={mission_status} "
-        f"clone={clone_status}\n"
-        f"{mission.strategy.summary_zh}\n"
-        f"local {local_path}\n"
-        f"read {local_path}/FORESHADOW.md and {local_path}/ISSUE_DRAFT.md\n"
-        "remote GitHub writes are blocked until you approve them.\n"
-    )
+    lines = [
+        (
+            f"entry mission {mission.id} {mission.full_name} "
+            f"path={mission.strategy.path} status={mission_status} "
+            f"clone={clone_status}"
+        ),
+        mission.strategy.summary_zh,
+        f"local {local_path}",
+        f"read {local_path}/FORESHADOW.md and {local_path}/ISSUE_DRAFT.md",
+    ]
+    for step in steps or []:
+        text = str(step).strip()
+        if text:
+            lines.append(text)
+    lines.append("remote GitHub writes are blocked until you approve them.")
+    sys.stdout.write("\n".join(lines) + "\n")
 
 
 @app.command()

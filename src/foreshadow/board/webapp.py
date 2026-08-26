@@ -130,6 +130,8 @@ select {
   line-height: 1;
 }
 .sub { grid-column: 2; color: var(--ink-dim); font-size: .86rem; }
+.sub.entry { color: var(--ink); }
+.sub.entry b { color: var(--gold); }
 .row .act { grid-column: 3; grid-row: 1 / span 2; text-align: right; }
 .row .act button { margin-top: .45rem; }
 .row .act button.primary {
@@ -265,6 +267,42 @@ button.ghost, .toolbar button {
 .mission-list { margin: 0 0 1.2rem; border-top: 1px solid var(--rule); }
 .mission-list .row { cursor: default; grid-template-columns: minmax(0,1fr) 7rem; }
 details.git-ops { margin: .8rem 0; color: var(--paper-muted); font-size: .86rem; }
+.enter-plan {
+  background: rgba(226,74,50,.07);
+  border: 1px solid rgba(226,74,50,.28);
+  padding: .75rem .85rem .9rem;
+  margin: .55rem 0 1rem;
+}
+.enter-plan h3 { margin: 0 0 .35rem; }
+.now {
+  font-size: 1.12rem;
+  line-height: 1.45;
+  margin: .45rem 0 .55rem;
+}
+ol.plan {
+  margin: .55rem 0 1.1rem;
+  padding-left: 2.35rem;
+  font-size: 1.08rem;
+  line-height: 1.55;
+  color: var(--paper-ink);
+}
+ol.plan > li {
+  margin: .48rem 0;
+  padding-left: .25rem;
+}
+ol.plan > li::marker {
+  color: var(--cinnabar);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.22em;
+}
+ol.plan > li strong {
+  color: #9a7320;
+  font-family: var(--font-display);
+  letter-spacing: .04em;
+  margin-right: .35rem;
+}
+.drawer button.ghost { border-color: #cbb890; color: var(--paper-ink); }
 pre.meta {
   white-space: pre-wrap;
   background: #efe6d0;
@@ -429,8 +467,8 @@ function listView(board) {
         <div class="final">${n(c.final_score)}</div>
         <button type="button" class="primary" onclick="event.stopPropagation(); ${c.mission_id ? `openExisting(${Number(c.mission_id)||0})` : `startEnter('${esc(c.full_name)}')`}">${c.mission_id ? "查看任务" : "开始进入"}</button>
       </div>
-      <div class="sub">趋势 <b>${n(c.trend)}</b>　社区 <b>${n(c.community)}</b>　贡献 <b>${n(c.contributor)}</b></div>
-      <div class="sub">${esc(c.headline)} · 阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(accessLine(c))} · 入口 ${esc(c.strategy_summary_zh || "先阅读")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""} · 难度 ${esc(c.strategy_difficulty || "—")}</div>
+      <div class="sub entry"><strong>入口</strong> ${esc(c.strategy_summary_zh || "先阅读再决定")} · 预计 ${esc(c.strategy_effort || "—")}${c.strategy_why && c.strategy_why[0] ? " · " + esc(c.strategy_why[0]) : ""}</div>
+      <div class="sub">阶段 ${esc(c.s1_stage || "—")} · 机会 ${n(c.s1_window)} · 通道 ${esc(accessLine(c))}</div>
     </div>`).join("");
 }
 
@@ -469,6 +507,18 @@ function drawerView(card) {
     <button class="close" type="button" onclick="closeCard()">关闭</button>
     <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
+    <section class="enter-plan">
+      <h3>进入计划</h3>
+      <p><strong>${esc(card.strategy_summary_zh || "先阅读再决定")}</strong>
+        （${esc(card.strategy_path || "")}） · 预计 ${esc(card.strategy_effort || "—")} · 难度 ${esc(card.strategy_difficulty || "—")}</p>
+      <p class="meta">${esc((card.strategy_why||[]).join("；") || "")}</p>
+      <ol class="plan">${(card.strategy_steps_zh||[]).map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("")}</ol>
+      <p>
+        <button type="button" class="primary" onclick="event.stopPropagation(); ${card.mission_id ? `openExisting(${Number(card.mission_id)||0})` : `startEnter('${esc(card.full_name)}')`}">${card.mission_id ? "查看任务" : "开始进入"}</button>
+        <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
+      </p>
+      <p class="meta">「记入观察清单」不会创建任务，只记个人立场。</p>
+    </section>
     <p><strong>最终综合评分：</strong>${n(card.final_score)}
       <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
     <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.p0_confidence_zh || "低")}（完整度低不是低分）</p>
@@ -490,14 +540,7 @@ function drawerView(card) {
       最近活动 ${n(card.last_pushed_at)} · 最近 Release ${n(card.last_release)}
       · 首次发现 ${n(card.first_seen_at)}
     </p>
-    <p class="meta"><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}（${esc(card.strategy_path || "")}） · 难度 ${esc(card.strategy_difficulty || "—")} · 预计 ${esc(card.strategy_effort || "—")}</p>
-    <p class="meta">${esc((card.strategy_why||[]).join("；") || "")}</p>
     <p class="meta">长期参与潜力：${card.strategy_long_term && card.strategy_long_term.score != null ? n(card.strategy_long_term.score) + " / 100" : "N/A"}（不是承诺）</p>
-    <ol class="ev">${(card.strategy_steps_zh||[]).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
-    <p>
-      <button type="button" class="primary" onclick="event.stopPropagation(); ${card.mission_id ? `openExisting(${Number(card.mission_id)||0})` : `startEnter('${esc(card.full_name)}')`}">${card.mission_id ? "查看任务" : "开始进入"}</button>
-      <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
-    </p>
     <h3>五维评分</h3>
     ${d.dimensions.map(dimBlock).join("")}
     <h3>三个独立评审视角</h3>
@@ -569,11 +612,18 @@ function missionListView() {
     </div>`).join("")}</div>`;
 }
 
+function labeledStep(x, i) {
+  const s = String(x || "");
+  if (/^第.+步/.test(s)) return esc(s);
+  const zh = ["第一步","第二步","第三步","第四步","第五步","第六步","第七步","第八步","第九步","第十步"];
+  return `<strong>${zh[i] || ("第"+(i+1)+"步")}</strong> ${esc(s)}`;
+}
+
 function missionView(m) {
   if (!m) return "";
   const cloneOk = m.clone && m.clone.ok;
-  const stepsSrc = (m.steps_zh||[]).filter(s => !cloneOk || !String(s).includes("克隆"));
-  const steps = stepsSrc.map((x,i) => `<li><strong>第 ${i+1} 步</strong> ${esc(x)}</li>`).join("");
+  const stepsSrc = (m.steps_zh||[]).filter(s => !cloneOk || !(String(s).includes("克隆") || String(s).includes("下到本机")));
+  const steps = stepsSrc.map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("");
   const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
@@ -585,29 +635,19 @@ function missionView(m) {
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
   <aside class="drawer on" role="dialog" aria-label="进入任务">
     <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
-    <p class="brand">FORESHADOW ENTRY MISSION</p>
+    <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>
-    <p class="meta">阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${m.access == null ? "未知" : (n(m.access) + (Number(m.access)===0 ? "（已知为 0，不是未知）" : ""))}</p>
-    <p><strong>为什么现在进入：</strong>${esc((m.why_now||[]).join("；") || "—")}</p>
-    <p><strong>推荐入口：</strong>${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
-    <p class="meta">难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status_zh || m.status || "—")}</p>
-    <p class="meta"><strong>下一步：</strong>${esc(m.next_step_zh || "先阅读推荐入口")}</p>
+    <p class="now"><strong>你现在做：</strong>${esc(first)}</p>
     <p class="warn">${esc(m.remote_blocked || "等待你的确认才能执行任何远程 GitHub 操作。")}</p>
-    <p><strong>第一步：</strong>${esc(first)}</p>
-    ${root ? `<p class="meta">本地先打开：${esc(root)}/FORESHADOW.md 和 ${esc(root)}/ISSUE_DRAFT.md<br/>代码在 ${esc(root)}/repo ，分支 foreshadow/entry。不要 push。</p>` : ""}
-    ${m.inspect && m.inspect.has_readme ? `<p class="meta">README：有${(m.inspect.readme_headings||[]).length ? " · " + esc((m.inspect.readme_headings||[]).slice(0,6).join("；")) : ""}</p>` : ""}
+    <h3>行动计划</h3>
+    <ol class="plan">${steps}</ol>
+    <p class="meta">按本地 FORESHADOW.md 和 ISSUE_DRAFT.md 执行。${root ? "打开 " + esc(root) + "/FORESHADOW.md 和 " + esc(root) + "/ISSUE_DRAFT.md。代码在 " + esc(root) + "/repo ，分支 foreshadow/entry。不要 push。" : "把项目下载到本机后会生成这两份文件。"}</p>
     ${m.cited_issue && m.cited_issue.number ? `<p><strong>建议先看 Issue #${esc(m.cited_issue.number)}</strong> ${esc(m.cited_issue.title||"")}</p>` : ""}
     ${m.cited_issue && m.cited_issue.body ? `<pre class="meta">${esc(String(m.cited_issue.body).slice(0,400))}</pre>` : ""}
     ${m.draft_excerpt ? `<h3>本地草稿（未发送）</h3><pre class="meta">${esc(m.draft_excerpt)}</pre>` : ""}
-    <h3>行动计划</h3>
-    <ol>${steps}</ol>
-    <p class="meta">本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
-    ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
-    ${m.tests && (m.tests.kind==="node" || m.tests.kind==="cargo") ? `<p class="meta">仓库测试是 ${esc(m.tests.kind)}。Foreshadow 不执行 npm/cargo。</p>` : ""}
-    <p class="meta">本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}${m.pr_draft_path ? " · 补丁草案：" + esc(m.pr_draft_path) + "（未发送）" : ""}</p>
     <p>
-      <button type="button" class="primary" onclick="setupLocal(${id})">准备本地环境</button>
-      <button type="button" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
+      ${cloneOk ? "" : `<button type="button" class="primary" onclick="setupLocal(${id})">把项目下载到本机</button>`}
+      <button type="button" class="ghost" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
     </p>
     <p>
       <p class="meta">要改草稿：编辑本地 ISSUE_DRAFT.md。点「草稿可以」只记账，仍不会发送。</p>
@@ -618,6 +658,16 @@ function missionView(m) {
     </p>
     <details class="git-ops">
       <summary>展开底层 Git 操作</summary>
+      <p>阶段 ${esc(m.stage||"—")} · 机会 ${n(m.opportunity_window)} · 进入通道 ${m.access == null ? "未知" : (n(m.access) + (Number(m.access)===0 ? "（已知为 0，不是未知）" : ""))}</p>
+      <p>为什么现在进入：${esc((m.why_now||[]).join("；") || "—")}</p>
+      <p>推荐入口：${esc(m.strategy && m.strategy.summary_zh || m.strategy && m.strategy.path || "—")}</p>
+      <p>难度 ${esc(m.difficulty||"—")} · 预计 ${esc(m.effort||"—")} · 状态 ${esc(m.status_zh || m.status || "—")}</p>
+      <p>下一步：${esc(m.next_step_zh || "先阅读推荐入口")}</p>
+      <p>本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
+      ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
+      ${m.inspect && m.inspect.has_readme ? `<p>README：有${(m.inspect.readme_headings||[]).length ? " · " + esc((m.inspect.readme_headings||[]).slice(0,6).join("；")) : ""}</p>` : ""}
+      ${m.tests && (m.tests.kind==="node" || m.tests.kind==="cargo") ? `<p>仓库测试是 ${esc(m.tests.kind)}。Foreshadow 不执行 npm/cargo。</p>` : ""}
+      <p>本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}${m.pr_draft_path ? " · 补丁草案：" + esc(m.pr_draft_path) + "（未发送）" : ""}</p>
       <ul>${git || "<li>仅本地 clone / 分支 / commit</li>"}</ul>
     </details>
     <button type="button" onclick="refuseRemote()">尝试创建 PR（应被拒绝）</button>
