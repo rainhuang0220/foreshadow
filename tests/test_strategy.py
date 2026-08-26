@@ -196,25 +196,72 @@ def test_cloned_steps_cite_real_file_and_issue_command():
         cloned=True,
     )
     blob = " ".join(steps)
-    assert "pytest tests/test_retriever.py" in steps[0]
+    assert steps[0] == (
+        "第一步：运行 `pytest tests/test_retriever.py`，核对 Issue #123 描述的行为。"
+        "缺依赖就停，不要擅自安装。"
+    )
     assert "FORESHADOW.md" not in steps[0]
+    assert "ISSUE_DRAFT.md" not in steps[0]
     assert "src/retriever.py" in blob
     assert "#123" in blob
     assert "pytest tests/test_retriever.py" in blob
     assert "src/memory/missing.py" not in blob
     assert "open a pr" not in blob.lower()
+    assert "后台记录在 FORESHADOW.md" in blob
+    assert not blob.startswith("第一步：打开")
+
+
+def test_cloned_first_step_uses_existing_test_collect_only():
+    from foreshadow.pipeline.strategy import customize_steps
+
+    steps = customize_steps(
+        "ISSUE",
+        full_name="acme/toy",
+        inspect={
+            "test_files": ["tests/test_retriever.py"],
+            "related_files": ["src/retriever.py"],
+        },
+        cloned=True,
+    )
+    assert steps[0] == "第一步：对仓库已有 `tests/test_retriever.py` 做安全检查（collect-only）。"
+    assert "FORESHADOW.md" not in steps[0]
+    assert "ISSUE_DRAFT.md" not in steps[0]
+    blob = " ".join(steps)
+    assert "src/retriever.py" in blob
+    assert "src/memory/missing.py" not in blob
+    assert "后台记录在 FORESHADOW.md" in blob
+
+
+def test_cloned_first_step_uses_related_file_as_evidence():
+    from foreshadow.pipeline.strategy import customize_steps
+
+    steps = customize_steps(
+        "ISSUE",
+        full_name="acme/toy",
+        inspect={"related_files": ["src/retriever.py"]},
+        cloned=True,
+    )
+    assert steps[0] == "第一步：对照 Issue，验证 `src/retriever.py` 中的行为（路径仅作证据）。"
+    assert "FORESHADOW.md" not in steps[0]
+    blob = " ".join(steps)
+    assert "src/memory/missing.py" not in blob
+    assert "后台记录在 FORESHADOW.md" in blob
 
 
 def test_cloned_steps_mark_unknown_when_no_files():
     from foreshadow.pipeline.strategy import customize_steps
 
     steps = customize_steps("ISSUE", full_name="acme/toy", inspect={}, cloned=True)
+    assert "UNKNOWN" in steps[0]
+    assert "不要编造" in steps[0]
+    assert "FORESHADOW.md" not in steps[0]
+    assert "ISSUE_DRAFT.md" not in steps[0]
     blob = " ".join(steps)
-    assert "UNKNOWN" in blob
     assert "src/memory/retriever.py" not in blob
+    assert "后台记录在 FORESHADOW.md" in blob
 
 
-def test_cloned_first_step_is_local_files_not_pr():
+def test_cloned_first_step_is_work_not_notes():
     from foreshadow.pipeline.strategy import customize_steps
 
     steps = customize_steps(
@@ -227,12 +274,15 @@ def test_cloned_first_step_is_local_files_not_pr():
         },
         cloned=True,
     )
+    assert "UNKNOWN" in steps[0]
     assert "FORESHADOW.md" not in steps[0]
+    assert "ISSUE_DRAFT.md" not in steps[0]
     assert "克隆仓库" not in " ".join(steps)
     first = steps[0].lower()
     assert "push" not in first
     assert "create_pr" not in first
     assert any("npm" in s and "跳过" in s for s in steps)
+    assert any("后台记录在 FORESHADOW.md" in s for s in steps[1:])
 
 
 def test_default_issue_cites_number_and_language():

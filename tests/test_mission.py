@@ -50,6 +50,30 @@ def test_create_for_user_does_not_clone():
     src = inspect.getsource(create_for_user)
     assert "clone_public_repo" not in src
     assert "setup_local_environment" not in src
+    setup_src = inspect.getsource(setup_local_environment)
+    assert "clone_public_repo" in setup_src
+
+
+def test_create_for_user_does_not_invoke_clone(tmp_home, monkeypatch):
+    from foreshadow.mission import create_for_user
+
+    monkeypatch.delenv("FORESHADOW_SKIP_CLONE", raising=False)
+
+    def explode(*_a, **_k):
+        raise AssertionError("create_for_user must not invoke clone_public_repo")
+
+    monkeypatch.setattr("foreshadow.mission.clone_public_repo", explode)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    mission = create_for_user(
+        conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home
+    )
+    dest = tmp_home / "work" / "acme__toy"
+    assert mission.status == "MISSION_READY"
+    assert (dest / "FORESHADOW.md").is_file()
+    assert not (dest / "repo").exists()
+    assert not (dest / "repo" / ".git").exists()
 
 
 def test_build_mission_waits_for_user():
@@ -291,6 +315,65 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     assert out["mission"].get("benchmark_path") is None
     assert out["mission"].get("discussion_draft_path") is None
     assert out["branch"]["ok"] is True
+    pipeline = out["mission"].get("pipeline") or out.get("pipeline") or []
+    by_id = {step["id"]: step for step in pipeline}
+    assert by_id["clone"]["status"] == "done"
+    assert by_id["waiting_approval"]["status"] == "pending"
+    log = dest / "TASK_LOG.md"
+    assert log.is_file()
+    log_text = log.read_text(encoding="utf-8")
+    for field in ("TASK:", "COMMAND:", "EXIT:", "RESULT:", "VERDICT:", "NEXT:"):
+        assert field in log_text
+
+
+def test_setup_runs_local_pipeline_then_waits(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    seen: list[list[str]] = []
+
+    def runner(cmd, **_k):
+        argv = list(cmd)
+        seen.append(argv)
+        assert "push" not in argv
+        assert "commit" not in argv
+        if "clone" in argv:
+            clone_dest = Path(argv[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+            (clone_dest / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert out["clone"]["ok"] is True
+    assert out["mission"]["status"] == "WAITING_USER_APPROVAL"
+    pipeline = out["mission"]["pipeline"]
+    assert [step["id"] for step in pipeline] == [
+        "clone",
+        "branch",
+        "inspect",
+        "issue",
+        "tests",
+        "drafts",
+        "waiting_approval",
+    ]
+    by_id = {step["id"]: step for step in pipeline}
+    assert by_id["clone"]["status"] == "done"
+    assert by_id["waiting_approval"]["status"] == "pending"
+    assert by_id["waiting_approval"]["status"] != "done"
+    assert (dest / "TASK_LOG.md").is_file()
+    text = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "TASK:" in text
+    assert "VERDICT: UNKNOWN" in text
+    assert "等待你的确认" in text
+    assert not (dest / "repo" / "TASK_LOG.md").exists()
+    assert all(part != "push" for cmd in seen for part in cmd)
+    assert all(part != "commit" for cmd in seen for part in cmd)
 
 
 def test_setup_embeds_cited_issue(tmp_home):
@@ -469,6 +552,7 @@ def test_hitl_git_helpers_never_force_reset_commit_or_push():
     assert "api.github.com" not in setup_src
     assert "request(\"POST\"" not in setup_src
     assert "mutation" not in setup_src.lower()
+    assert "local_commit" not in setup_src
 
 
 def test_refuse_unsafe_local_cmds():
@@ -869,6 +953,24 @@ def test_setup_writes_path_specific_local_drafts(tmp_home):
         assert "open a pr" not in md.read_text(encoding="utf-8").lower()
 
 
+def test_board_js_clone_only_after_start_enter():
+    from foreshadow.board.webapp import render_app_html
+
+    html = render_app_html()
+    start_js = html[
+        html.index("async function startEnter") : html.index("async function setupLocal")
+    ]
+    open_js = html[
+        html.index("async function openExisting") : html.index("async function markEvent")
+    ]
+    assert 'api("/api/mission"' in start_js
+    assert "/api/mission/setup" not in start_js
+    assert "await setupLocal" in start_js
+    assert "setupLocal" not in open_js
+    assert "/api/mission/setup" not in open_js
+    assert 'api("/api/missions"' in open_js
+
+
 def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     """HITL: Board enter, CLI enter, clone, drafts — no GitHub writes."""
     from typer.testing import CliRunner
@@ -888,15 +990,35 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     remote_js = html[
         html.index("async function refuseRemote") : html.index("async function saveReview")
     ]
+    existing_js = html[
+        html.index("async function openExisting") : html.index("async function markEvent")
+    ]
     assert 'api("/api/mission"' in start_js
     assert "/api/mission/setup" not in start_js
-    assert "setupLocal(" in start_js
+    assert "await setupLocal" in start_js
+    assert "setupLocal" not in existing_js
+    assert "/api/mission/setup" not in existing_js
+    assert 'api("/api/missions"' in existing_js
     assert 'api("/api/mission/setup"' in setup_js
     assert 'api("/api/mission/remote"' in remote_js
     assert '"create_pr"' in remote_js
     assert "api.github.com" not in html
 
     post_src = inspect.getsource(BoardHandler.do_POST)
+    mission_handler = post_src[
+        post_src.index('path == "/api/mission":') : post_src.index(
+            'path == "/api/mission/setup":'
+        )
+    ]
+    setup_handler = post_src[
+        post_src.index('path == "/api/mission/setup":') : post_src.index(
+            'path == "/api/mission/event":'
+        )
+    ]
+    assert "create_for_user" in mission_handler
+    assert "clone_public_repo" not in mission_handler
+    assert "setup_local_environment" not in mission_handler
+    assert "setup_local_environment" in setup_handler
     remote_src = post_src[post_src.index("/api/mission/remote") :]
     assert "refuse_remote_action" in remote_src
     assert "GitHubClient" not in remote_src

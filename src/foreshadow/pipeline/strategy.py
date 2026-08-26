@@ -326,7 +326,7 @@ def customize_steps(
             if "克隆仓库" not in ln and "打开本机 FORESHADOW.md" not in ln
         ]
         first = _cloned_first_work(inspect, cited)
-        extra = _cloned_side_evidence(inspect, cited)
+        extra = _cloned_side_evidence(inspect)
         lines = [first, *extra, *lines]
         backend = "后台记录在 FORESHADOW.md"
         if backend not in lines:
@@ -423,9 +423,8 @@ def _cloned_first_work(inspect: dict[str, Any], cited: dict[str, Any]) -> str:
     return "UNKNOWN：不要编造。"
 
 
-def _cloned_side_evidence(inspect: dict[str, Any], cited: dict[str, Any]) -> list[str]:
+def _cloned_side_evidence(inspect: dict[str, Any]) -> list[str]:
     """Cite a real related file after 第一步 when the work was a command or test."""
-    del cited
     if _first_present(inspect.get("issue_commands")) or _first_present(
         inspect.get("test_files")
     ):

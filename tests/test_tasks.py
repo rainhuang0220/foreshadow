@@ -31,6 +31,14 @@ def test_collect_tests_uses_collect_only(tmp_path):
     assert seen
     assert "--collect-only" in seen[0]
     assert out.action == "run_test"
+    assert out.artifact
+    log = Path(out.artifact).read_text(encoding="utf-8")
+    assert "TASK: collect_tests" in log
+    assert "COMMAND:" in log
+    assert "EXIT:" in log
+    assert "RESULT:" in log
+    assert "VERDICT: UNKNOWN" in log
+    assert "NEXT:" in log
 
 
 def test_local_commit_never_pushes(tmp_path):
