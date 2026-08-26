@@ -408,3 +408,83 @@ def test_detect_local_tests_skips_node_and_cargo(tmp_path):
     assert detect_local_tests(node)["kind"] == "node"
     assert detect_local_tests(cargo)["kind"] == "cargo"
     assert detect_local_tests(py)["kind"] == "pytest"
+
+
+def test_benchmark_mission_has_no_pr_draft(tmp_path):
+    from foreshadow.mission import write_pr_draft
+
+    m = build_mission(
+        "acme/demo",
+        feat=FeaturesBlob(
+            screenshot_only=True,
+            tree_kind="has_source",
+            issue_sample_n=4,
+            talk_n=2,
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+        pushed_age_days=1,
+        unique_issue_authors=3,
+    )
+    assert m.strategy.path == "BENCHMARK"
+    assert m.strategy.allows_direct_pr is False
+    assert write_pr_draft(tmp_path, m) is None
+    assert "第一步" in m.strategy.steps_zh[0]
+
+
+def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+            readme_headings=["Install"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        if "clone" in cmd:
+            clone_dest = Path(cmd[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text(
+                "# toy\n## Install\n```\npip install toy\n```\n## Usage\n",
+                encoding="utf-8",
+            )
+            (clone_dest / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def fake_fetch(full_name: str, number: int):
+        return {
+            "number": 73,
+            "title": "crash on empty batch",
+            "body": "repro: pass []",
+            "html_url": "https://github.com/acme/toy/issues/73",
+        }
+
+    out = setup_local_environment(
+        conn, mid, uid, tmp_home, runner=runner, fetch_issue=fake_fetch
+    )
+    steps = " ".join(out["mission"].get("steps_zh") or [])
+    assert "第一步" in steps
+    assert "#73" in steps
+    assert "Install" in steps
+    assert "ISSUE_DRAFT.md" in steps
+    assert "open a pr" not in steps.lower()
+    md = (dest / "FORESHADOW.md").read_text(encoding="utf-8")
+    assert "今日进入计划" in md
+    assert "FORESHADOW.md" in md
+    assert "第一步" in md
+    assert out["inspect"].get("install_hint") == "pip install toy"
+    assert out["inspect"].get("kind") == "python"

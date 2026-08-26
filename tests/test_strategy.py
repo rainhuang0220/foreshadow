@@ -112,3 +112,45 @@ def test_long_term_unknown_is_not_zero():
     assert strat.long_term.get("score") is None or strat.long_term.get("missing")
     if strat.long_term.get("score") is None:
         assert "not 0" in strat.long_term.get("why", "").lower()
+
+
+def test_screenshot_with_source_is_benchmark_not_pr():
+    strat = recommend_entry(
+        FeaturesBlob(screenshot_only=True, tree_kind="has_source"),
+        full_name="acme/demo",
+    )
+    assert strat.path == "BENCHMARK"
+    assert strat.allows_direct_pr is False
+    blob = " ".join(strat.steps_zh + strat.why + [strat.summary_zh]).lower()
+    assert "open a pr" not in blob
+    assert "create_pr" not in blob
+    assert "第一步" in strat.steps_zh[0]
+    assert "测量" in " ".join(strat.steps_zh) or "数字" in " ".join(strat.steps_zh)
+
+
+def test_screenshot_without_source_stays_research():
+    strat = recommend_entry(FeaturesBlob(screenshot_only=True, tree_kind="readme_only"))
+    assert strat.path == "RESEARCH"
+    assert strat.allows_direct_pr is False
+
+
+def test_steps_cite_issue_heading_and_repo():
+    strat = recommend_entry(
+        FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+            readme_headings=["Install", "Usage", "Memory API"],
+            tree_names=["src", "pyproject.toml", "README.md"],
+        ),
+        full_name="acme/toy",
+    )
+    blob = " ".join(strat.steps_zh)
+    assert strat.path == "REPRODUCTION"
+    assert "#73" in blob
+    assert "Install" in blob
+    assert "acme/toy" in blob
+    assert "第一步" in blob
+    assert "ISSUE_DRAFT.md" in blob
+    assert "open a pr" not in blob.lower()
+    assert "停在这里" in blob

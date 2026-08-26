@@ -78,12 +78,20 @@ def recommend_entry(
     access: AccessResult | None = None,
     language: str | None = None,
     skills: Sequence[str] | None = None,
+    full_name: str | None = None,
 ) -> StrategyResult:
     feat = feat or FeaturesBlob()
     access = access or compute_access(feat)
     skills = tuple(skills) if skills is not None else DEFAULT_SKILLS
     why: list[str] = []
     hard = _language_too_hard(language, skills)
+    pack_kw: dict[str, Any] = {
+        "s1": s1,
+        "access": access,
+        "language": language,
+        "feat": feat,
+        "full_name": full_name,
+    }
     if s1 is not None and s1.pool == "experimental":
         why.append("证据不足，实验池项目")
         return _pack(
@@ -92,9 +100,7 @@ def recommend_entry(
             difficulty="Research",
             effort="2h",
             direct=False,
-            s1=s1,
-            access=access,
-            language=language,
+            **pack_kw,
         )
     if (
         access.merge_rate is not None
@@ -102,7 +108,7 @@ def recommend_entry(
         and access.score < 25
     ):
         why.append("进入通道偏低，先观察社区是否响应")
-        return _pack("DISCUSSION", why, "Medium", "4h", False, s1, access, language)
+        return _pack("DISCUSSION", why, "Medium", "4h", False, **pack_kw)
     if feat.bug_n is not None and feat.bug_n >= 2:
         why.append("开放样本里有多条 bug 信号")
         path: EntryPath = "ISSUE" if hard else "REPRODUCTION"
@@ -111,44 +117,47 @@ def recommend_entry(
             why.append(f"建议先看：{titles[0]}")
         if hard:
             why.append(f"主语言是 {language}，先跟 Issue / 复现说明，不建议重写核心")
-        return _pack(path, why, "Medium", "6h", False, s1, access, language)
+        return _pack(path, why, "Medium", "6h", False, **pack_kw)
     if feat.gap_docs == 1:
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
             why.append("文档缺口（不是贡献机会本身，只是入口）")
-            return _pack("DOCUMENTATION", why, "Easy", "4h", False, s1, access, language)
+            return _pack("DOCUMENTATION", why, "Easy", "4h", False, **pack_kw)
         why.append("有文档缺口，但外部接受未知、为 0、或进入通道偏低，先 Issue，不要直接补 CONTRIBUTING.md")
-        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
+        return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if feat.gap_tests == 1 and not hard:
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
             why.append("测试目录缺口")
-            return _pack("TEST", why, "Easy", "6h", False, s1, access, language)
+            return _pack("TEST", why, "Easy", "6h", False, **pack_kw)
         why.append("测试缺口在外部接受未知时不能当成补测试 PR")
-        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
+        return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if feat.gap_ci == 1 and not hard:
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
             why.append("缺少 CI")
-            return _pack("TOOLING", why, "Medium", "1d", False, s1, access, language)
+            return _pack("TOOLING", why, "Medium", "1d", False, **pack_kw)
         why.append("缺少 CI，但先讨论，不要直接提工作流 PR")
-        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
+        return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if (feat.unassigned_help or 0) >= 1 or (feat.help_n or 0) >= 1:
         why.append("有未认领的求助 Issue；GFI 只作 onboarding 信号")
         titles = feat.help_issue_titles or feat.open_issue_titles or []
         if titles:
             why.append(f"建议先看：{titles[0]}")
-        return _pack("ISSUE", why, "Easy", "4h", False, s1, access, language)
+        return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if feat.screenshot_only:
         why.append("仓库几乎只有展示材料")
-        return _pack("RESEARCH", why, "Research", "2h", False, s1, access, language)
+        if feat.tree_kind == "has_source":
+            why.append("仓库有源码，适合先测量再讨论，不默认改代码")
+            return _pack("BENCHMARK", why, "Research", "4h", False, **pack_kw)
+        return _pack("RESEARCH", why, "Research", "2h", False, **pack_kw)
     if access.merge_rate is not None and access.merge_rate >= 0.35:
         why.append("外部 PR 曾被接受，仍建议先 Issue 对齐")
         path = "ISSUE" if hard else "BUG_FIX"
         if hard:
             why.append(f"主语言是 {language}，不要一上来改核心实现")
-        return _pack(path, why, "Medium", "1d", False, s1, access, language)
+        return _pack(path, why, "Medium", "1d", False, **pack_kw)
     why.append("默认先 Issue / 讨论，不默认提 PR")
     if hard:
         why.append(f"主语言是 {language}，按你当前能力走 Issue / 文档")
-    return _pack("ISSUE", why, "Medium", "6h", False, s1, access, language)
+    return _pack("ISSUE", why, "Medium", "6h", False, **pack_kw)
 
 
 def _accepts_code_entry(access: AccessResult) -> bool:
@@ -225,25 +234,15 @@ def _pack(
     s1: S1Result | None = None,
     access: AccessResult | None = None,
     language: str | None = None,
+    feat: FeaturesBlob | None = None,
+    full_name: str | None = None,
 ) -> StrategyResult:
-    steps = {
-        "DISCUSSION": ["阅读 README 与最近讨论", "写下你的理解", "准备提问，等待维护者", "不要直接发 PR"],
-        "REPRODUCTION": ["克隆仓库", "运行测试", "复现报告的问题", "把复现步骤发给维护者", "等回复后再改代码"],
-        "DOCUMENTATION": ["阅读 CONTRIBUTING", "找出过时或不清的段落", "先开 Issue 说明文档缺口", "小补丁需确认后再提交"],
-        "TEST": ["跑通现有测试", "为缺口补一条测试", "本地提交", "等待确认再发到 GitHub"],
-        "TOOLING": ["查看 CI / 工作流", "提出最小改动", "先讨论", "不默认大重构"],
-        "ISSUE": ["阅读相关 Issue", "评论复现或补充信息", "等维护者回应", "再决定是否写代码"],
-        "BUG_FIX": ["复现 bug", "开或跟进 Issue", "本地实现最小修复", "用户确认后才创建 PR"],
-        "FEATURE": ["读 roadmap / Issue", "先讨论范围", "实现", "用户确认后才 PR"],
-        "BENCHMARK": ["建立可重复测量", "把数字写进 Issue", "讨论目标后再优化"],
-        "PERFORMANCE": ["先测量", "Issue 说明瓶颈", "再考虑优化 PR"],
-        "INTEGRATION": ["写清集成方案", "讨论接口", "再实现"],
-        "RESEARCH": ["阅读架构与最近 release", "记录笔记", "不提交代码"],
-    }[path]
     return StrategyResult(
         path=path,
         summary_zh=PATH_ZH[path],
-        steps_zh=steps,
+        steps_zh=customize_steps(
+            path, feat=feat, language=language, full_name=full_name
+        ),
         difficulty=difficulty,
         effort=effort,
         allows_direct_pr=direct,
@@ -251,3 +250,256 @@ def _pack(
         long_term=long_term_potential(s1=s1, access=access),
         language=language,
     )
+
+
+_STOP = "停在这里。任何发到 GitHub 的操作都要你确认。"
+_ORD = ("第一步", "第二步", "第三步", "第四步", "第五步", "第六步")
+_HEAD_HINTS = (
+    "install",
+    "setup",
+    "getting started",
+    "quick start",
+    "quickstart",
+    "usage",
+    "example",
+    "demo",
+    "benchmark",
+    "contributing",
+    "how to",
+)
+
+
+def customize_steps(
+    path: EntryPath,
+    *,
+    feat: FeaturesBlob | None = None,
+    language: str | None = None,
+    full_name: str | None = None,
+    inspect: dict[str, Any] | None = None,
+    cited: dict[str, Any] | None = None,
+    cloned: bool = False,
+) -> list[str]:
+    """Concrete 第一步/第二步. Never tells the user to open a PR."""
+    feat = feat or FeaturesBlob()
+    inspect = inspect or {}
+    cited = cited or {}
+    lines = _path_lines(
+        path,
+        project=full_name or "这个项目",
+        ticket=_ticket(feat, cited),
+        readme_bit=_readme_bit(_useful_headings(feat, inspect)),
+        shape=_shape_zh(feat, inspect),
+        hint=str(inspect.get("install_hint") or "").strip(),
+        cloned=cloned,
+        language=language,
+    )
+    return _label_steps(lines)
+
+
+def _label_steps(lines: list[str]) -> list[str]:
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith("第") and "步" in text[:4]:
+            out.append(text)
+            continue
+        prefix = _ORD[i] if i < len(_ORD) else f"第{i + 1}步"
+        out.append(f"{prefix}：{text}")
+    return out
+
+
+def _ticket(feat: FeaturesBlob, cited: dict[str, Any]) -> str | None:
+    if cited.get("number"):
+        title = str(cited.get("title") or "").strip()
+        return f"#{cited['number']}" + (f" {title}" if title else "")
+    for group in (feat.help_issue_titles or [], feat.open_issue_titles or []):
+        for raw in group:
+            text = str(raw).strip()
+            if text:
+                return text
+    return None
+
+
+def _useful_headings(feat: FeaturesBlob, inspect: dict[str, Any]) -> list[str]:
+    raw: list[str] = []
+    for src in (
+        inspect.get("readme_headings") or [],
+        inspect.get("contributing_headings") or [],
+        feat.readme_headings or [],
+    ):
+        raw.extend(src)
+    seen: set[str] = set()
+    preferred: list[str] = []
+    other: list[str] = []
+    for item in raw:
+        title = str(item).strip()
+        key = title.lower()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        if any(hint in key for hint in _HEAD_HINTS):
+            preferred.append(title)
+        else:
+            other.append(title)
+    return (preferred + other)[:5]
+
+
+def _readme_bit(heads: list[str]) -> str:
+    if not heads:
+        return ""
+    quoted = "、".join(f"「{h}」" for h in heads[:3])
+    return f"，先看 {quoted}"
+
+
+def _shape_zh(feat: FeaturesBlob, inspect: dict[str, Any]) -> str | None:
+    names: list[str] = []
+    names.extend(str(n) for n in (inspect.get("top_entries") or []))
+    names.extend(str(n) for n in (feat.tree_names or []))
+    lower = {n.lower() for n in names}
+    kind = inspect.get("kind")
+    if not kind:
+        if {"pyproject.toml", "setup.py", "setup.cfg"} & lower:
+            kind = "python"
+        elif "package.json" in lower:
+            kind = "node"
+        elif "cargo.toml" in lower:
+            kind = "rust"
+        elif "go.mod" in lower:
+            kind = "go"
+    return {
+        "python": "这是 Python 仓库（有 pyproject/setup）",
+        "pytest": "这是 Python 仓库",
+        "node": "这是 Node 仓库（有 package.json）",
+        "rust": "这是 Rust 仓库（有 Cargo.toml）",
+        "go": "这是 Go 仓库（有 go.mod）",
+    }.get(str(kind) if kind else "")
+
+
+def _path_lines(
+    path: EntryPath,
+    *,
+    project: str,
+    ticket: str | None,
+    readme_bit: str,
+    shape: str | None,
+    hint: str,
+    cloned: bool,
+    language: str | None,
+) -> list[str]:
+    if hint:
+        install = (
+            f"README 里写了 `{hint}`。你自己在本机执行；Foreshadow 不会代跑安装命令。"
+        )
+    elif shape:
+        install = f"{shape}。按 README 自己准备环境；Foreshadow 不会执行 pip/npm/cargo。"
+    else:
+        install = "按 README 自己准备环境；Foreshadow 不会替你安装依赖。"
+    open_readme = f"打开 {project} 的 README{readme_bit}"
+    if cloned:
+        first_read = f"打开本机 FORESHADOW.md，对照 README{readme_bit or ' 了解项目怎么跑'}"
+    else:
+        first_read = f"把 {project} 下到本机后，打开 README{readme_bit}"
+    ticket_line = (
+        f"对照 {ticket}，在本机按它说的做一次，记下实际看到的现象"
+        if ticket
+        else "找一条开放问题，在本机按它说的做一次，记下实际看到的现象"
+    )
+    draft = "把你要说的话写进本机 ISSUE_DRAFT.md（还没发出去）"
+    hard_note = (
+        f"主语言是 {language}，不要一上来改核心实现"
+        if language
+        else None
+    )
+    if path == "REPRODUCTION":
+        lines = [first_read, install, ticket_line, draft, "先把复现说明给维护者看，不要先改代码发到网上"]
+        if hard_note:
+            lines.append(hard_note)
+        lines.append(_STOP)
+        return lines
+    if path == "DISCUSSION":
+        return [
+            first_read if cloned else open_readme,
+            "用自己的话写下项目在做什么，以及一个具体问题",
+            draft,
+            "先观察维护者会不会回应，不要改代码",
+            _STOP,
+        ]
+    if path == "DOCUMENTATION":
+        return [
+            first_read if cloned else open_readme,
+            "看看入门说明缺了什么（有 CONTRIBUTING 就对照它的目录）",
+            "把缺口写进 ISSUE_DRAFT.md，先问要不要补，不要直接改文档发上去",
+            _STOP,
+        ]
+    if path == "TEST":
+        return [
+            first_read,
+            install,
+            "看仓库怎么跑测试。Foreshadow 最多探路，不会替你装依赖或跑完整测试",
+            "把要补的一条测试想法写进 ISSUE_DRAFT.md",
+            "本地改动只留在 foreshadow/entry 分支，不要发到网上",
+            _STOP,
+        ]
+    if path == "TOOLING":
+        return [
+            first_read,
+            "看有没有现成的自动化 / 工作流文件",
+            "把最小改动想法写进 ISSUE_DRAFT.md，先讨论",
+            _STOP,
+        ]
+    if path == "BUG_FIX":
+        return [
+            first_read,
+            install,
+            ticket_line,
+            "最小修复只留在本机。ISSUE_DRAFT.md 和 PR_DRAFT.md 都未发送",
+            _STOP,
+        ]
+    if path == "BENCHMARK":
+        return [
+            f"{project} 看起来像展示项目，但仓库里有源码，适合先测量",
+            first_read if cloned else open_readme,
+            install,
+            "记下可重复的一组数字（耗时或效果）到 ISSUE_DRAFT.md",
+            "先讨论数字，不要发优化补丁",
+            _STOP,
+        ]
+    if path == "PERFORMANCE":
+        return [
+            first_read,
+            "先测量，不要凭感觉改",
+            "把数字写进 ISSUE_DRAFT.md，再讨论要不要动代码",
+            _STOP,
+        ]
+    if path == "FEATURE":
+        return [
+            open_readme,
+            ticket_line if ticket else "先对齐要不要做、做多大",
+            draft,
+            "实现之前等维护者，不要把新功能发到网上",
+            _STOP,
+        ]
+    if path == "INTEGRATION":
+        return [
+            open_readme,
+            "写清你想接什么、接口是什么，放进 ISSUE_DRAFT.md",
+            "先讨论接口，再在本机实现",
+            _STOP,
+        ]
+    if path == "RESEARCH":
+        return [
+            open_readme,
+            "判断这是不是主要在展示、暂时不适合改代码",
+            "把问题和笔记写进 ISSUE_DRAFT.md",
+            "不要提交代码",
+            _STOP,
+        ]
+    return [
+        first_read if cloned else open_readme,
+        ticket_line if ticket else "找一条相关开放问题，补充你本机看到的信息",
+        draft,
+        "等维护者回应，再决定要不要在本机改代码",
+        _STOP,
+    ]

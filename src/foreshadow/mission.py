@@ -17,7 +17,11 @@ from foreshadow.models import FeaturesBlob
 from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.s1 import compute_s1
-from foreshadow.pipeline.strategy import StrategyResult, recommend_entry
+from foreshadow.pipeline.strategy import (
+    StrategyResult,
+    customize_steps,
+    recommend_entry,
+)
 
 Status = Literal[
     "DISCOVERED",
@@ -133,7 +137,9 @@ def build_mission(
         feat=feat,
         activity=act,
     )
-    strat = recommend_entry(feat, s1=s1, access=acc, language=language)
+    strat = recommend_entry(
+        feat, s1=s1, access=acc, language=language, full_name=full_name
+    )
     why = [
         f"阶段 {s1.stage}",
         *s1.earlyness_plus[:2],
@@ -471,8 +477,9 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
     else:
         access_s = str(mission.access)
     text = (
-        f"# FORESHADOW ENTRY MISSION\n\n"
+        f"# 今日进入计划\n\n"
         f"项目：{mission.full_name}\n\n"
+        f"文件：FORESHADOW.md（只在本机，还没发到网上）\n\n"
         f"为什么现在进入：\n{why or '- （待补充）'}\n\n"
         f"阶段：{mission.stage or '—'}\n"
         f"机会窗口：{mission.window}\n"
@@ -592,6 +599,15 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     )
     headings = _markdown_headings(readme) if readme else []
     contrib_headings = _markdown_headings(contrib) if contrib else []
+    kind = None
+    if "pyproject.toml" in names or "setup.py" in names or "setup.cfg" in names:
+        kind = "python"
+    elif "package.json" in names:
+        kind = "node"
+    elif "cargo.toml" in names:
+        kind = "rust"
+    elif "go.mod" in names:
+        kind = "go"
     return {
         "has_readme": any(n.startswith("readme") for n in names),
         "has_contributing": "contributing.md" in names,
@@ -599,7 +615,42 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
         "top_entries": top,
         "readme_headings": headings[:12],
         "contributing_headings": contrib_headings[:8],
+        "kind": kind,
+        "install_hint": _install_hint(readme) if readme else None,
+        "has_source": kind is not None
+        or any(
+            n.endswith((".py", ".rs", ".go", ".ts", ".js", ".c", ".cpp"))
+            or n in {"src", "lib", "pkg"}
+            for n in names
+        ),
     }
+
+
+def _install_hint(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[:8000]
+    except OSError:
+        return None
+    for line in text.splitlines():
+        raw = line.strip().lstrip("$").strip("`").strip()
+        low = raw.lower()
+        if "| sh" in low or "| bash" in low or "curl " in low:
+            continue
+        if low.startswith(
+            (
+                "pip install",
+                "uv pip",
+                "uv sync",
+                "uv add",
+                "poetry install",
+                "npm install",
+                "pnpm install",
+                "yarn add",
+                "cargo test",
+            )
+        ):
+            return raw[:120]
+    return None
 
 
 def _markdown_headings(path: Path) -> list[str]:
@@ -1096,6 +1147,21 @@ def setup_local_environment(
                 cited = _load_cited_issue(full_name, issue_n)
         except (OSError, ValueError, TypeError, RuntimeError):
             cited = None
+    if issue_n is not None and not cited:
+        title = ""
+        for line in [*mission.why_now, *mission.strategy.why]:
+            if "建议先看：" in line:
+                title = line.split("建议先看：", 1)[1].strip()
+                break
+        cited = {"number": issue_n, "title": title}
+    mission.strategy.steps_zh = customize_steps(
+        mission.strategy.path,
+        language=mission.strategy.language,
+        full_name=full_name,
+        inspect=inspect,
+        cited=cited,
+        cloned=bool(clone.get("ok")),
+    )
     draft = write_issue_draft(dest, mission, cited=cited)
     pr_draft = write_pr_draft(dest, mission)
     extra = {
@@ -1127,6 +1193,8 @@ def setup_local_environment(
             "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
             "pr_draft_path": str(pr_draft) if pr_draft else None,
             "cited_issue": cited or {},
+            "strategy": mission.strategy.as_dict(),
+            "steps_zh": list(mission.strategy.steps_zh),
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
         },
