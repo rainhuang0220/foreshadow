@@ -128,6 +128,17 @@ def test_screenshot_with_source_is_benchmark_not_pr():
     assert "测量" in " ".join(strat.steps_zh) or "数字" in " ".join(strat.steps_zh)
 
 
+def test_blurb_lands_in_first_step():
+    strat = recommend_entry(
+        FeaturesBlob(),
+        full_name="acme/toy",
+        blurb="tiny memory layer for agents",
+    )
+    assert "acme/toy" in strat.steps_zh[0]
+    assert "tiny memory layer" in strat.steps_zh[0]
+    assert strat.allows_direct_pr is False
+
+
 def test_screenshot_without_source_stays_research():
     strat = recommend_entry(FeaturesBlob(screenshot_only=True, tree_kind="readme_only"))
     assert strat.path == "RESEARCH"

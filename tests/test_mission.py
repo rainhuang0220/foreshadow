@@ -488,3 +488,31 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
     assert "第一步" in md
     assert out["inspect"].get("install_hint") == "pip install toy"
     assert out["inspect"].get("kind") == "python"
+    assert "README 安装命令（你自己执行，Foreshadow 不会代跑）：`pip install toy`" in md
+    assert "这是 Python 仓库。" in md
+    assert "不会自动 push / 开 Issue / 开 PR" in md
+    assert "等待你的确认才能执行任何远程 GitHub 操作。" in md
+
+
+def test_write_mission_doc_quotes_install_hint(tmp_path):
+    from foreshadow.mission import write_mission_doc
+
+    m = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
+    path = write_mission_doc(
+        tmp_path,
+        m,
+        extra={"inspect": {"install_hint": "pip install toy", "kind": "python"}},
+    )
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "FORESHADOW.md"
+    assert "今日进入计划" in text
+    assert "FORESHADOW.md" in text
+    assert "acme/toy" in text
+    assert "不会自动" in text
+    assert "README 安装命令（你自己执行，Foreshadow 不会代跑）：`pip install toy`" in text
+    assert "这是 Python 仓库。" in text
+    assert "等待你的确认才能执行任何远程 GitHub 操作。" in text
+    assert "不会自动 push / 开 Issue / 开 PR" in text
+    empty = write_mission_doc(tmp_path, m).read_text(encoding="utf-8")
+    assert "README 安装命令" not in empty
+    assert "这是 Python 仓库。" not in empty

@@ -82,6 +82,7 @@ class Mission:
     needs_user_approval: bool
     local_path: str | None = None
     id: int | None = None
+    blurb: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -100,6 +101,7 @@ class Mission:
             "effort": self.strategy.effort,
             "needs_user_approval": self.needs_user_approval,
             "local_path": self.local_path,
+            "blurb": self.blurb,
             "next_step_zh": next_step_zh(self.status),
             "status_zh": status_zh(self.status),
             "git_ops_zh": [
@@ -124,6 +126,7 @@ def build_mission(
     pushed_age_days: int | None = None,
     unique_issue_authors: int | None = None,
     language: str | None = None,
+    blurb: str | None = None,
 ) -> Mission:
     feat = feat or FeaturesBlob()
     act = compute_activity(feat)
@@ -138,7 +141,12 @@ def build_mission(
         activity=act,
     )
     strat = recommend_entry(
-        feat, s1=s1, access=acc, language=language, full_name=full_name
+        feat,
+        s1=s1,
+        access=acc,
+        language=language,
+        full_name=full_name,
+        blurb=blurb,
     )
     why = [
         f"阶段 {s1.stage}",
@@ -157,6 +165,7 @@ def build_mission(
         access=acc.score,
         why_now=[w for w in why if w],
         needs_user_approval=True,
+        blurb=blurb,
     )
 
 
@@ -297,8 +306,11 @@ def create_for_user(
             if p is not None:
                 pushed = max((datetime.now(UTC).date() - p.date()).days, 0)
     language = None
+    blurb = None
     if data and data.get("language"):
         language = str(data.get("language"))
+    if data and data.get("description"):
+        blurb = str(data.get("description"))
     mission = build_mission(
         full_name,
         feat=feat,
@@ -308,6 +320,7 @@ def create_for_user(
         pushed_age_days=pushed,
         unique_issue_authors=u_issue,
         language=language,
+        blurb=blurb,
     )
     dest = prepare_local_dir(data_dir, full_name)
     mission.local_path = str(dest)
@@ -476,6 +489,24 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         access_s = "0（已知为 0，不是未知）"
     else:
         access_s = str(mission.access)
+    after_plan = ""
+    hint = str(inspect.get("install_hint") or "").strip()
+    if hint:
+        after_plan += (
+            f"README 安装命令（你自己执行，Foreshadow 不会代跑）：`{hint}`\n"
+        )
+    kind = inspect.get("kind")
+    if kind:
+        kind_zh = {
+            "python": "这是 Python 仓库。",
+            "pytest": "这是 Python 仓库。",
+            "node": "这是 Node 仓库。",
+            "rust": "这是 Rust 仓库。",
+            "go": "这是 Go 仓库。",
+        }.get(str(kind).lower(), f"这是 {kind} 仓库。")
+        after_plan += f"{kind_zh}\n"
+    if after_plan:
+        after_plan += "\n"
     text = (
         f"# 今日进入计划\n\n"
         f"项目：{mission.full_name}\n\n"
@@ -490,6 +521,7 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"状态：{mission.status}\n"
         f"下一步：{next_step_zh(mission.status)}\n\n"
         f"行动计划：\n{steps}\n\n"
+        f"{after_plan}"
         f"本地 clone：{clone.get('status') or '尚未尝试'}\n"
         f"README：{'有' if inspect.get('has_readme') else '未知'} · "
         f"CONTRIBUTING：{'有' if inspect.get('has_contributing') else '未知'}\n"
@@ -973,6 +1005,7 @@ def mission_from_plan(plan: dict[str, Any]) -> Mission:
         needs_user_approval=True,
         local_path=plan.get("local_path"),
         id=plan.get("id"),
+        blurb=plan.get("blurb"),
     )
 
 
@@ -1108,6 +1141,7 @@ def setup_local_environment(
         needs_user_approval=True,
         local_path=str(dest),
         id=mission_id,
+        blurb=plan.get("blurb"),
     )
     if isinstance(plan.get("strategy"), dict):
         from foreshadow.pipeline.strategy import StrategyResult
@@ -1161,6 +1195,7 @@ def setup_local_environment(
         inspect=inspect,
         cited=cited,
         cloned=bool(clone.get("ok")),
+        blurb=str(plan.get("blurb") or "") or None,
     )
     draft = write_issue_draft(dest, mission, cited=cited)
     pr_draft = write_pr_draft(dest, mission)
@@ -1195,6 +1230,7 @@ def setup_local_environment(
             "cited_issue": cited or {},
             "strategy": mission.strategy.as_dict(),
             "steps_zh": list(mission.strategy.steps_zh),
+            "blurb": mission.blurb,
             "needs_user_approval": True,
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
         },

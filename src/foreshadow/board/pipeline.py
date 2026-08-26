@@ -400,7 +400,12 @@ def load_scored_from_db(
             activity=act,
         )
         strat = recommend_entry(
-            blob, s1=s1, access=acc, language=language, full_name=full_name
+            blob,
+            s1=s1,
+            access=acc,
+            language=language,
+            full_name=full_name,
+            blurb=description,
         )
         extras[full_name] = {
             "html_url": html_url or data.get("html_url"),

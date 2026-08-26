@@ -79,6 +79,7 @@ def recommend_entry(
     language: str | None = None,
     skills: Sequence[str] | None = None,
     full_name: str | None = None,
+    blurb: str | None = None,
 ) -> StrategyResult:
     feat = feat or FeaturesBlob()
     access = access or compute_access(feat)
@@ -91,6 +92,7 @@ def recommend_entry(
         "language": language,
         "feat": feat,
         "full_name": full_name,
+        "blurb": blurb,
     }
     if s1 is not None and s1.pool == "experimental":
         why.append("证据不足，实验池项目")
@@ -236,12 +238,17 @@ def _pack(
     language: str | None = None,
     feat: FeaturesBlob | None = None,
     full_name: str | None = None,
+    blurb: str | None = None,
 ) -> StrategyResult:
     return StrategyResult(
         path=path,
         summary_zh=PATH_ZH[path],
         steps_zh=customize_steps(
-            path, feat=feat, language=language, full_name=full_name
+            path,
+            feat=feat,
+            language=language,
+            full_name=full_name,
+            blurb=blurb,
         ),
         difficulty=difficulty,
         effort=effort,
@@ -278,6 +285,7 @@ def customize_steps(
     inspect: dict[str, Any] | None = None,
     cited: dict[str, Any] | None = None,
     cloned: bool = False,
+    blurb: str | None = None,
 ) -> list[str]:
     """Concrete 第一步/第二步. Never tells the user to open a PR."""
     feat = feat or FeaturesBlob()
@@ -292,6 +300,7 @@ def customize_steps(
         hint=str(inspect.get("install_hint") or "").strip(),
         cloned=cloned,
         language=language,
+        blurb=blurb,
     )
     return _label_steps(lines)
 
@@ -346,6 +355,15 @@ def _useful_headings(feat: FeaturesBlob, inspect: dict[str, Any]) -> list[str]:
     return (preferred + other)[:5]
 
 
+def _clip_blurb(blurb: str | None) -> str:
+    text = " ".join(str(blurb or "").split())
+    if not text:
+        return ""
+    if len(text) > 80:
+        return text[:77].rstrip() + "…"
+    return text
+
+
 def _readme_bit(heads: list[str]) -> str:
     if not heads:
         return ""
@@ -387,6 +405,7 @@ def _path_lines(
     hint: str,
     cloned: bool,
     language: str | None,
+    blurb: str | None,
 ) -> list[str]:
     if hint:
         install = (
@@ -396,11 +415,16 @@ def _path_lines(
         install = f"{shape}。按 README 自己准备环境；Foreshadow 不会执行 pip/npm/cargo。"
     else:
         install = "按 README 自己准备环境；Foreshadow 不会替你安装依赖。"
-    open_readme = f"打开 {project} 的 README{readme_bit}"
+    clipped = _clip_blurb(blurb)
+    about = f"（{clipped}）" if clipped else ""
+    open_readme = f"打开 {project} 的 README{about}{readme_bit}"
     if cloned:
-        first_read = f"打开本机 FORESHADOW.md，对照 README{readme_bit or ' 了解项目怎么跑'}"
+        first_read = (
+            f"打开本机 FORESHADOW.md，对照 README{about}"
+            f"{readme_bit or ' 了解项目怎么跑'}"
+        )
     else:
-        first_read = f"把 {project} 下到本机后，打开 README{readme_bit}"
+        first_read = f"把 {project} 下到本机后，打开 README{about}{readme_bit}"
     ticket_line = (
         f"对照 {ticket}，在本机按它说的做一次，记下实际看到的现象"
         if ticket

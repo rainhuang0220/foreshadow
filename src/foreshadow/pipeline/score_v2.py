@@ -200,6 +200,7 @@ def score_repo_v2(
             access=access,
             language=ctx.language,
             full_name=ctx.full_name,
+            blurb=getattr(ctx, "description", None),
         ).as_dict(),
     }
     return ScoredRepo(
