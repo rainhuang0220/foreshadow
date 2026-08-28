@@ -1007,7 +1007,8 @@ function missionView(m) {
 function render() {
   const root = document.getElementById("app");
   if (!state.user) root.innerHTML = authView();
-  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…${state.error ? "<br/>" + esc(state.error) : ""}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> <button type="button" onclick="logout()">退出</button></p>`;
+  else if (!state.board && state.error) root.innerHTML = `<p class="empty">今日机会榜打不开。<br/>${esc(state.error)}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> <button type="button" onclick="logout()">退出</button></p>`;
+  else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…</p>`;
   else root.innerHTML = boardView();
 }
 
@@ -1015,9 +1016,15 @@ async function boot() {
   try {
     const me = await api("/api/me");
     state.user = me.user;
-    if (state.user) await loadBoard();
   } catch (e) {
     state.user = null;
+    state.error = e.message || String(e);
+    render();
+    return;
+  }
+  if (state.user) {
+    try { await loadBoard(); }
+    catch (e) { state.error = e.message || String(e); }
   }
   render();
 }
