@@ -191,6 +191,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "missionIsOpen" in html
         assert "为什么现在：" in html
         assert "button:disabled" in html
+        assert "进入通道：" in html
         assert "setupLocal" not in existing_js
         assert "/api/mission/setup" not in existing_js
         assert 'api("/api/missions"' in existing_js

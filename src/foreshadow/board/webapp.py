@@ -434,6 +434,12 @@ pre.meta {
 }
 .enter-brief p { margin: .28rem 0; }
 .enter-brief .now { margin: .5rem 0 .35rem; }
+.row .sub.entry {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 ul.checklist {
   list-style: none;
   margin: .35rem 0 1rem;
@@ -683,7 +689,7 @@ function drawerView(card) {
       <p><strong>为什么现在进入：</strong>${esc(drawerWhyNow(card))}</p>
       <p><strong>匹配度：</strong>${esc(match)}</p>
       <p><strong>机会：</strong>${n(card.s1_window)}</p>
-      <p><strong>Access：</strong>${esc(accessLine(card))}</p>
+      <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
       <p><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}
         （${esc(card.strategy_path || "")}） · 预计 ${esc(card.strategy_effort || "—")} · 难度 ${esc(card.strategy_difficulty || "—")}</p>
       <ol class="plan">${(card.strategy_steps_zh||[]).map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("")}</ol>
@@ -963,8 +969,8 @@ function missionView(m) {
     <p>
       ${cloneOk || paused || abandoned ? "" : `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="setupLocal(${id})">把项目下载到本机</button>`}
       ${abandoned ? "" : (paused
-        ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button> <button type="button" onclick="pauseMission(${id})">暂停任务</button>`
-        : `<button type="button" onclick="pauseMission(${id})">暂停任务</button> <button type="button" onclick="resumeMission(${id})">继续任务</button>`)}
+        ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button>`
+        : `<button type="button" onclick="pauseMission(${id})">暂停任务</button>`)}
       <button type="button" class="ghost" onclick="markEvent(${id}, 'abandoned')">停止任务</button>
     </p>
     <h3>行动计划</h3>

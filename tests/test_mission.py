@@ -302,6 +302,32 @@ def test_setup_skips_when_paused(tmp_home):
     assert not (dest / "repo" / ".git").exists()
 
 
+def test_failed_clone_does_not_inspect_or_wait(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        if "clone" in cmd:
+            return SimpleNamespace(
+                returncode=1, stdout="", stderr="fatal: repository not found"
+            )
+        raise AssertionError("no git after failed clone")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert out["clone"]["ok"] is False
+    assert "repository not found" in (out["clone"].get("error") or "")
+    assert out["mission"]["status"] == "LOCAL_SETUP"
+    assert out["inspect"].get("inspected") is False
+    by_id = {step["id"]: step for step in out["pipeline"]}
+    assert by_id["clone"]["status"] == "failed"
+    assert by_id["waiting_approval"]["status"] != "done"
+
+
 def test_clone_incomplete_dir_is_not_overwritten(tmp_path):
     dest = tmp_path / "work"
     clone_dir = dest / "repo"
