@@ -749,6 +749,7 @@ def clone_public_repo(
         "clone",
         "--depth",
         "1",
+        "--single-branch",
         "--",
         url,
         str(staging),
@@ -1740,10 +1741,12 @@ def _build_setup_pipeline(
 
 
 def _pipeline_command(step_id: str, *, full_name: str = "") -> str:
-    clone_cmd = "git clone --depth 1"
+    clone_cmd = "git clone --depth 1 --single-branch"
     if step_id == "clone" and full_name:
         try:
-            clone_cmd = f"git clone --depth 1 -- {github_clone_url(full_name)}"
+            clone_cmd = (
+                f"git clone --depth 1 --single-branch -- {github_clone_url(full_name)}"
+            )
         except ValueError:
             pass
     return {

@@ -519,6 +519,7 @@ def test_clone_uses_depth_one_and_writes_tree(tmp_path):
     assert out["status"] == "cloned"
     assert "clone" in seen[0]
     assert "--depth" in seen[0] and "1" in seen[0]
+    assert "--single-branch" in seen[0]
     assert "core.hooksPath=/dev/null" in seen[0]
     assert all(part != "push" for part in seen[0])
     assert "--" in seen[0]
@@ -628,7 +629,10 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     text = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
     assert "TASK:" in text
     assert "VERDICT: UNKNOWN" in text
-    assert "COMMAND: git clone --depth 1 -- https://github.com/acme/toy.git" in text
+    assert (
+        "COMMAND: git clone --depth 1 --single-branch -- https://github.com/acme/toy.git"
+        in text
+    )
     assert "等待你的确认" in text
     assert not (dest / "repo" / "TASK_LOG.md").exists()
     assert all(part != "push" for cmd in seen for part in cmd)
