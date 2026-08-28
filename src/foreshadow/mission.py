@@ -680,7 +680,17 @@ def clone_public_repo(
         }
     clone_dir.parent.mkdir(parents=True, exist_ok=True)
     run = runner or subprocess.run
-    cmd = ["git", "clone", "--depth", "1", "--", url, str(clone_dir)]
+    cmd = [
+        "git",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "clone",
+        "--depth",
+        "1",
+        "--",
+        url,
+        str(clone_dir),
+    ]
     try:
         completed = run(
             cmd,
@@ -1116,7 +1126,8 @@ def write_fork_note(dest: Path, full_name: str) -> Path:
         "- 调用 GitHub fork API\n"
         "- 改你的 git remote\n"
         "- push 到 origin\n\n"
-        "本地已经 `git clone --depth 1` 到 `repo/`，分支 `foreshadow/entry`。\n"
+        "clone 完成以后，代码在 `repo/`，分支 `foreshadow/entry`。\n"
+        "本文件在开始进入之前就会写好。没有 clone 时不要假设 repo/ 已经存在。\n"
         "等待你的确认才能执行任何远程 GitHub 操作。\n",
         encoding="utf-8",
     )
@@ -1777,7 +1788,11 @@ def setup_local_environment(
     if current == "MISSION_READY":
         transition(conn, mission_id, user_id, "LOCAL_SETUP")
     clone = clone_public_repo(full_name, dest, runner=runner)
-    inspect = inspect_clone(Path(clone["path"]) if clone.get("path") else dest / "repo")
+    inspect = (
+        inspect_clone(Path(clone["path"]))
+        if clone.get("ok") and clone.get("path")
+        else inspect_clone(None)
+    )
     mission = Mission(
         full_name=full_name,
         status="WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP",
@@ -1901,7 +1916,11 @@ def setup_local_environment(
             "status": "skipped",
             "kind": detected.get("kind") or "none",
         }
-    dest_status: Status = "WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP"
+    dest_status: Status = (
+        "WAITING_USER_APPROVAL"
+        if clone.get("ok") and branch.get("ok")
+        else "LOCAL_SETUP"
+    )
     pipeline = _build_setup_pipeline(
         clone=clone,
         branch=branch,

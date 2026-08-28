@@ -353,6 +353,16 @@ button.primary {
   padding: .38rem .72rem;
   cursor: pointer;
 }
+button.primary:hover { filter: brightness(1.08); }
+button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: none;
+}
 button.ghost, .toolbar button {
   background: transparent;
   color: inherit;
@@ -595,7 +605,7 @@ function enterOrMissionBtn(c) {
   if (id && (cloneOkFor(c) || missionIsOpen(c))) {
     return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})">查看任务</button>`;
   }
-  return `<button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>`;
+  return `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>`;
 }
 
 function listView(board) {
@@ -951,7 +961,7 @@ function missionView(m) {
     ${progressChecklist(m)}
     <p class="meta">暂停只停本地工作，不会向 GitHub 发请求。</p>
     <p>
-      ${cloneOk || paused || abandoned ? "" : `<button type="button" class="primary" onclick="setupLocal(${id})">把项目下载到本机</button>`}
+      ${cloneOk || paused || abandoned ? "" : `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="setupLocal(${id})">把项目下载到本机</button>`}
       ${abandoned ? "" : (paused
         ? `<button type="button" class="primary" onclick="resumeMission(${id})">继续任务</button> <button type="button" onclick="pauseMission(${id})">暂停任务</button>`
         : `<button type="button" onclick="pauseMission(${id})">暂停任务</button> <button type="button" onclick="resumeMission(${id})">继续任务</button>`)}

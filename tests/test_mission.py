@@ -346,7 +346,10 @@ def test_clone_uses_depth_one_and_writes_tree(tmp_path):
     out = clone_public_repo("acme/toy", dest, runner=runner)
     assert out["ok"] is True
     assert out["status"] == "cloned"
-    assert seen[0][:4] == ["git", "clone", "--depth", "1"]
+    assert "clone" in seen[0]
+    assert "--depth" in seen[0] and "1" in seen[0]
+    assert "core.hooksPath=/dev/null" in seen[0]
+    assert all(part != "push" for part in seen[0])
     assert "--" in seen[0]
     assert seen[0][-2] == "https://github.com/acme/toy.git"
     assert (dest / "repo" / "README.md").is_file()
@@ -733,12 +736,11 @@ def test_hitl_git_helpers_never_force_reset_commit_or_push():
     assert "'-B'" not in branch_src
 
     clone_src = inspect.getsource(mission.clone_public_repo)
-    argv_lists = re.findall(r'\["git".*?\]', clone_src)
-    assert argv_lists
-    assert all(
-        "push" not in item and "-B" not in item and "commit" not in item
-        for item in argv_lists
-    )
+    assert "clone" in clone_src and "--depth" in clone_src
+    assert "core.hooksPath=/dev/null" in clone_src
+    assert '"push"' not in clone_src
+    assert "'push'" not in clone_src
+    assert "-B" not in clone_src
 
     setup_src = inspect.getsource(mission.setup_local_environment)
     assert "GitHubClient" not in setup_src
@@ -1343,7 +1345,10 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     assert 'git("commit"' not in branch_src
 
     clone_src = inspect.getsource(clone_public_repo)
-    assert '["git", "clone", "--depth", "1", "--", url, str(clone_dir)]' in clone_src
+    assert "clone" in clone_src and "--depth" in clone_src
+    assert "core.hooksPath=/dev/null" in clone_src
+    assert '"push"' not in clone_src
+    assert "'push'" not in clone_src
     for fn in (
         write_issue_draft,
         write_pr_draft,
@@ -1446,7 +1451,8 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
         assert "-B" not in argv
         assert "commit" not in argv
         if "clone" in argv:
-            assert argv[:4] == ["git", "clone", "--depth", "1"]
+            assert "clone" in argv and "--depth" in argv
+            assert "core.hooksPath=/dev/null" in argv
             clone_dest = Path(argv[-1])
             clone_dest.mkdir(parents=True)
             (clone_dest / ".git").mkdir()
