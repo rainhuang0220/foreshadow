@@ -215,7 +215,40 @@ def local_commit(
             env=_git_env(),
         )
 
-    added = git("add", "-A")
+    st = git("status", "--porcelain", "-uall")
+    if isinstance(st, dict):
+        return TaskResult(
+            task="local_commit",
+            action="git_commit",
+            ok=False,
+            blocked=True,
+            status="blocked",
+            stderr=str(st.get("error") or "refused"),
+        )
+    paths: list[str] = []
+    for line in (getattr(st, "stdout", None) or "").splitlines():
+        if len(line) < 4:
+            continue
+        xy, path = line[:2], line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[-1]
+        name = Path(path).name
+        if name.startswith(".") or name in {".env"}:
+            continue
+        if xy.strip() == "??":
+            continue
+        if any(flag in xy for flag in ("M", "A", "D")):
+            paths.append(path)
+    if not paths:
+        return TaskResult(
+            task="local_commit",
+            action="git_commit",
+            ok=False,
+            blocked=False,
+            status="skipped",
+            stderr="no tracked changes to commit",
+        )
+    added = git("add", "--", *paths)
     if isinstance(added, dict):
         return TaskResult(
             task="local_commit",

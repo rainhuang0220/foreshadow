@@ -58,6 +58,10 @@ def test_local_commit_never_pushes(tmp_path):
 
     def runner(cmd, **_k):
         seen.append(list(cmd))
+        if "status" in cmd:
+            return SimpleNamespace(
+                returncode=0, stdout=" M src/a.py\n?? .env\n?? secrets.txt\n", stderr=""
+            )
         return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
 
     out = local_commit(clone, "fix: handle empty retrieval result", runner=runner)
@@ -65,6 +69,10 @@ def test_local_commit_never_pushes(tmp_path):
     assert all(part != "push" for cmd in seen for part in cmd)
     assert not any("-u" in cmd or "--set-upstream" in cmd for cmd in seen)
     assert any("-m" in cmd for cmd in seen)
+    add = next(c for c in seen if "add" in c)
+    assert "-A" not in add
+    assert ".env" not in add
+    assert "src/a.py" in add
 
 
 def test_refuse_curl_pipe_sh():
