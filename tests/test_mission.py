@@ -534,6 +534,7 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     text = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
     assert "TASK:" in text
     assert "VERDICT: UNKNOWN" in text
+    assert "COMMAND: git clone --depth 1 -- https://github.com/acme/toy.git" in text
     assert "等待你的确认" in text
     assert not (dest / "repo" / "TASK_LOG.md").exists()
     assert all(part != "push" for cmd in seen for part in cmd)

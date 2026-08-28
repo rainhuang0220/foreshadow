@@ -1660,9 +1660,15 @@ def _build_setup_pipeline(
     ]
 
 
-def _pipeline_command(step_id: str) -> str:
+def _pipeline_command(step_id: str, *, full_name: str = "") -> str:
+    clone_cmd = "git clone --depth 1"
+    if step_id == "clone" and full_name:
+        try:
+            clone_cmd = f"git clone --depth 1 -- {github_clone_url(full_name)}"
+        except ValueError:
+            pass
     return {
-        "clone": "git clone --depth 1",
+        "clone": clone_cmd,
         "branch": "git checkout -b foreshadow/entry",
         "inspect": "inspect worktree",
         "issue": "GET issue (read-only)",
@@ -1677,6 +1683,7 @@ def _log_setup_pipeline(
     pipeline: list[dict[str, Any]],
     *,
     skip_ids: set[str] | None = None,
+    full_name: str = "",
 ) -> None:
     from foreshadow.tasks import append_task_log
 
@@ -1688,7 +1695,7 @@ def _log_setup_pipeline(
         append_task_log(
             dest,
             task=step_id,
-            command=_pipeline_command(step_id),
+            command=_pipeline_command(step_id, full_name=full_name),
             result=str(step.get("evidence") or step.get("status") or ""),
             verdict="UNKNOWN",
             next_step=_HITL_NEXT if step_id == "waiting_approval" else "继续本地流水线",
@@ -1991,7 +1998,10 @@ def setup_local_environment(
             )
         else:
             _log_setup_pipeline(
-                dest, pipeline, skip_ids={"tests"} if logged_tests else None
+                dest,
+                pipeline,
+                skip_ids={"tests"} if logged_tests else None,
+                full_name=full_name,
             )
         extra = {
             "clone": clone,
