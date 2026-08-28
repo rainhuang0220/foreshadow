@@ -69,6 +69,33 @@ def test_validate_host_rejects_wildcard():
     assert validate_host("127.0.0.1") == "127.0.0.1"
 
 
+def test_board_html_renders_pipeline_states_in_chinese():
+    from foreshadow.board.webapp import render_app_html
+
+    html = render_app_html()
+    for label in (
+        "克隆仓库",
+        "创建本地分支",
+        "检查仓库",
+        "读取 Issue",
+        "收集测试",
+        "生成草稿",
+        "等待确认",
+    ):
+        assert label in html
+    assert 'done:"✓"' in html
+    assert 'pending:"○"' in html
+    assert 'running:"◐"' in html
+    assert 'failed:"✕"' in html
+    assert 'skipped:"跳过"' in html
+    assert "Clone done" not in html
+    assert "pipelineLive" in html
+    assert "LOCAL_SETUP" in html
+    js = html[html.index("function renderPipelineStep") : html.index("function progressChecklist")]
+    assert "step.label" not in js or "label_zh" in js
+    assert "Clone" not in js
+
+
 def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:

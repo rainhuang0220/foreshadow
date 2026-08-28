@@ -787,6 +787,20 @@ function factLine(ok, label, detail) {
   return `${ok ? "✓" : "○"} ${label}：${esc(detail)}`;
 }
 
+const PIPELINE_LABELS_ZH = {
+  clone: "克隆仓库",
+  branch: "创建本地分支",
+  inspect: "检查仓库",
+  issue: "读取 Issue",
+  tests: "收集测试",
+  drafts: "生成草稿",
+  waiting_approval: "等待确认"
+};
+const PIPELINE_ORDER = ["clone","branch","inspect","issue","tests","drafts","waiting_approval"];
+const PIPELINE_ID_RE = /^(clone|branch|inspect|issue|tests|drafts|waiting_approval)$/i;
+const PIPELINE_GLYPH = {done:"✓", pending:"○", running:"◐", failed:"✕", skipped:"○"};
+const PIPELINE_DETAIL = {done:"完成", pending:"未完成", running:"进行中", failed:"失败", skipped:"跳过"};
+
 function currentNeed(m) {
   if (state.busy || (m && m.status === "LOCAL_SETUP")) return "无需操作";
   if (m && m.status === "WAITING_USER_APPROVAL") return "本地已准备，远程写入需你确认";
@@ -794,80 +808,75 @@ function currentNeed(m) {
   return (m && (m.next_step_zh || m.status_zh)) || "—";
 }
 
-function pipelineStepOk(step, cloneOk) {
-  const id = String((step && (step.id || step.key || step.name || step.label)) || "");
-  const label = String((step && (step.label || step.name || step.id)) || "");
-  if (/clone/i.test(id + " " + label)) return !!cloneOk;
-  if (!step || typeof step !== "object") return false;
-  const st = String(step.status || "");
-  return !!(step.ok || step.done || step.complete || st === "ok" || st === "done" || st === "cloned");
+function pipelineStepId(step) {
+  return String((step && (step.id || step.key || step.name)) || "");
 }
 
-function renderPipelineStep(step, cloneOk) {
-  const id = String((step && (step.id || step.key || step.name || step.label)) || "");
-  const rawLabel = String((step && (step.label || step.name || step.id)) || "step");
-  const cloneish = /clone/i.test(id + " " + rawLabel);
-  const ok = pipelineStepOk(step, cloneOk);
-  const label = cloneish ? (ok ? "Clone done" : "Clone") : rawLabel;
-  const detail = (step && (step.detail || step.status || step.text)) || (ok ? "完成" : "未完成");
-  return `<li>${factLine(ok, label, detail)}</li>`;
+function pipelineStepLabel(step) {
+  const id = pipelineStepId(step);
+  if (PIPELINE_LABELS_ZH[id]) return PIPELINE_LABELS_ZH[id];
+  const zh = String((step && (step.label_zh || step.labelZh)) || "");
+  if (zh && !PIPELINE_ID_RE.test(zh)) return zh;
+  const raw = String((step && (step.label || step.name || step.id)) || "");
+  const mapped = PIPELINE_LABELS_ZH[raw] || PIPELINE_LABELS_ZH[raw.toLowerCase()];
+  if (mapped) return mapped;
+  if (PIPELINE_ID_RE.test(raw)) return PIPELINE_LABELS_ZH[raw.toLowerCase()] || "步骤";
+  return zh || "步骤";
+}
+
+function pipelineStepStatus(step, isCurrent) {
+  const st = String((step && step.status) || "").toLowerCase();
+  if (st === "done" || st === "ok" || st === "cloned" || st === "complete") return "done";
+  if (st === "failed" || st === "fail" || st === "error") return "failed";
+  if (st === "skipped" || st === "skip") return "skipped";
+  if (st === "running") return "running";
+  if (isCurrent) return "running";
+  return "pending";
+}
+
+function pipelineLive(m) {
+  return !!(state.busy || (m && m.status === "LOCAL_SETUP"));
+}
+
+function normalizePipeline(m) {
+  if (Array.isArray(m && m.pipeline) && m.pipeline.length) return m.pipeline;
+  if (m && m.pipeline && typeof m.pipeline === "object") {
+    const items = Object.entries(m.pipeline).map(([key, step]) => {
+      const s = (step && typeof step === "object") ? Object.assign({id: key}, step) : {id: key, evidence: step};
+      return s;
+    });
+    if (items.length) return items;
+  }
+  return PIPELINE_ORDER.map(id => ({id, status: "pending", label_zh: PIPELINE_LABELS_ZH[id]}));
+}
+
+function currentPipelineIndex(steps) {
+  return steps.findIndex(s => {
+    const st = String((s && s.status) || "").toLowerCase();
+    return st !== "done" && st !== "ok" && st !== "cloned" && st !== "complete"
+      && st !== "failed" && st !== "fail" && st !== "error"
+      && st !== "skipped" && st !== "skip" && st !== "running";
+  });
+}
+
+function renderPipelineStep(step, isCurrent) {
+  const status = pipelineStepStatus(step, isCurrent);
+  const label = pipelineStepLabel(step);
+  const glyph = PIPELINE_GLYPH[status] || "○";
+  let detail = PIPELINE_DETAIL[status] || "未完成";
+  if (status !== "skipped") {
+    const evidence = step && (step.evidence || step.detail || step.text);
+    const ev = evidence == null ? "" : String(evidence).trim();
+    if (ev && !PIPELINE_ID_RE.test(ev) && ev !== step.status) detail = ev;
+  }
+  return `<li>${glyph} ${esc(label)}：${esc(detail)}</li>`;
 }
 
 function progressChecklist(m) {
-  const inspected = !!(m.inspect && m.inspect.inspected);
-  const hasClone = m.clone != null && typeof m.clone === "object";
-  const cloneOk = !!(hasClone && m.clone.ok);
-  const cloneMap = {cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"};
-  if (Array.isArray(m.pipeline) && m.pipeline.length) {
-    return `<ul class="checklist">${m.pipeline.map(step => renderPipelineStep(step, cloneOk)).join("")}</ul>`;
-  }
-  if (m.pipeline && typeof m.pipeline === "object") {
-    const items = Object.entries(m.pipeline).map(([key, step]) => {
-      const s = (step && typeof step === "object") ? Object.assign({id: key}, step) : {id: key, detail: step};
-      return renderPipelineStep(s, cloneOk);
-    });
-    if (items.length) return `<ul class="checklist">${items.join("")}</ul>`;
-  }
-  let cloneText = "未完成";
-  if (hasClone) cloneText = cloneMap[m.clone.status] || m.clone.status || (cloneOk ? "已克隆" : "未完成");
-  const cloneLabel = cloneOk ? "Clone done" : "Clone";
-
-  const hasBranch = m.branch != null && typeof m.branch === "object";
-  const branchOk = !!(hasBranch && m.branch.ok);
-  let branchText = "未知";
-  if (hasBranch && branchOk) {
-    branchText = m.branch.name || "foreshadow/entry";
-  } else if (hasBranch && cloneOk) {
-    branchText = m.branch.name || m.branch.status || (inspected ? "无" : "未知");
-  } else if (hasBranch && m.branch.status && m.branch.status !== "skipped") {
-    branchText = m.branch.status;
-  }
-
-  const hasTests = m.tests != null && typeof m.tests === "object";
-  const testsStatus = hasTests ? m.tests.status : null;
-  const testsOk = !!(hasTests && (m.tests.ok || testsStatus === "collect_ok" || testsStatus === "passed"));
-  let testsText = "未知";
-  if (hasTests && testsStatus && testsStatus !== "skipped") {
-    testsText = testsStatus;
-  } else if (hasTests && cloneOk) {
-    testsText = testsStatus || "未知";
-    if (m.tests.kind && m.tests.kind !== "none") testsText = (testsStatus || "未知") + "（" + m.tests.kind + "）";
-    else if (inspected && m.inspect && m.inspect.has_tests === false) testsText = "无";
-  }
-
-  const cited = m.cited_issue;
-  const hasCited = cited != null && typeof cited === "object";
-  const issueOk = !!(hasCited && cited.number);
-  let issueText = "未知";
-  if (issueOk) issueText = "#" + cited.number;
-  else if (hasCited && (hasClone || inspected) && !cited.number) issueText = "无";
-
-  return `<ul class="checklist">
-    <li>${factLine(cloneOk, cloneLabel, cloneText)}</li>
-    <li>${factLine(branchOk, "Branch", branchText)}</li>
-    <li>${factLine(testsOk, "Tests collected", testsText)}</li>
-    <li>${factLine(issueOk, "Issue fetched", issueText)}</li>
-  </ul>`;
+  const steps = normalizePipeline(m);
+  const live = pipelineLive(m);
+  const currentIdx = live ? currentPipelineIndex(steps) : -1;
+  return `<ul class="checklist">${steps.map((step, i) => renderPipelineStep(step, live && i === currentIdx)).join("")}</ul>`;
 }
 
 function missionView(m) {
