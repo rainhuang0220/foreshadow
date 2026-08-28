@@ -333,7 +333,7 @@ def create_for_user(
         language=language,
         blurb=blurb,
     )
-    dest = prepare_local_dir(data_dir, full_name)
+    dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
     mission.local_path = str(dest)
     write_mission_doc(dest, mission)
     write_issue_draft(dest, mission)
@@ -543,8 +543,17 @@ def next_step_zh(status: str | None) -> str:
     }.get(status or "", "先阅读推荐入口，再决定")
 
 
-def prepare_local_dir(root: Path, full_name: str) -> Path:
-    dest = Path(root) / "work" / _safe_repo_dir(full_name)
+def prepare_local_dir(
+    root: Path, full_name: str, *, user_id: int | None = None
+) -> Path:
+    safe = _safe_repo_dir(full_name)
+    legacy = Path(root) / "work" / safe
+    if user_id is None:
+        dest = legacy
+    else:
+        dest = Path(root) / "work" / f"u{int(user_id)}" / safe
+        if not dest.exists() and legacy.exists():
+            dest = legacy
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
@@ -1891,7 +1900,12 @@ def setup_local_environment(
     if plan is None:
         raise ValueError("mission not found")
     full_name = str(plan.get("full_name") or "")
-    dest = prepare_local_dir(data_dir, full_name)
+    stored = str(plan.get("local_path") or "")
+    stored_path = Path(stored) if stored else None
+    if stored_path is not None and stored_path.exists():
+        dest = stored_path
+    else:
+        dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
     current = str(plan.get("status") or "MISSION_READY")
     if current in {"PAUSED", "ABANDONED", "MERGED"}:
         clone = plan.get("clone") if isinstance(plan.get("clone"), dict) else {}

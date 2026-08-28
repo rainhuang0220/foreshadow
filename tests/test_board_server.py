@@ -246,7 +246,7 @@ def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
         assert created.status_code == 200
         mission = created.json()["mission"]
         assert mission["status"] == "MISSION_READY"
-        dest = tmp_home / "work" / "acme__x"
+        dest = tmp_home / "work" / f"u{reg.json()['user']['id']}" / "acme__x"
         assert (dest / "FORESHADOW.md").is_file()
         assert not (dest / "repo").exists()
         assert not (dest / "repo" / ".git").exists()
@@ -311,7 +311,7 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert mission["needs_user_approval"] is True
         assert mission["status"] == "MISSION_READY"
         assert mission["strategy"]["allows_direct_pr"] is False
-        dest = tmp_home / "work" / "acme__x"
+        dest = tmp_home / "work" / f"u{reg.json()['user']['id']}" / "acme__x"
         assert not (dest / "repo").exists()
         assert not (dest / "repo" / ".git").exists()
         from foreshadow.mission import (

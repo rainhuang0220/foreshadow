@@ -30,7 +30,9 @@ def test_cli_outcome_rejects_system_event(tmp_home, monkeypatch):
     assert "unknown event" in bad.output
     ok = runner.invoke(app, ["outcome", "acme/toy", "--event", "paused"])
     assert ok.exit_code == 0
-    log = (tmp_home / "work" / "acme__toy" / "TASK_LOG.md").read_text(encoding="utf-8")
+    logs = list(tmp_home.glob("work/u*/acme__toy/TASK_LOG.md"))
+    assert logs
+    log = logs[0].read_text(encoding="utf-8")
     assert "TASK: paused" in log
     assert "TASK: clone_ok" not in log
 

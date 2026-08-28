@@ -69,7 +69,7 @@ def test_create_for_user_does_not_invoke_clone(tmp_home, monkeypatch):
     mission = create_for_user(
         conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home
     )
-    dest = tmp_home / "work" / "acme__toy"
+    dest = tmp_home / "work" / f"u{uid}" / "acme__toy"
     assert mission.status == "MISSION_READY"
     assert (dest / "FORESHADOW.md").is_file()
     assert not (dest / "repo").exists()
@@ -296,6 +296,27 @@ def test_create_for_user_rejects_invalid_repo_name(tmp_home):
     with pytest.raises(ValueError, match="invalid"):
         create_for_user(conn, user_id=uid, full_name="not-a-repo", data_dir=tmp_home)
     assert not (tmp_home / "work").exists() or not any((tmp_home / "work").rglob("*"))
+
+
+def test_two_users_get_isolated_workdirs(tmp_home):
+    from foreshadow.mission import prepare_local_dir
+
+    a = prepare_local_dir(tmp_home, "acme/toy", user_id=1)
+    b = prepare_local_dir(tmp_home, "acme/toy", user_id=2)
+    assert a != b
+    assert a.name == "acme__toy" and b.name == "acme__toy"
+    assert a.parent.name == "u1"
+    assert b.parent.name == "u2"
+
+
+def test_prepare_local_dir_keeps_legacy_worktree(tmp_home):
+    from foreshadow.mission import prepare_local_dir
+
+    legacy = prepare_local_dir(tmp_home, "acme/toy")
+    (legacy / "ISSUE_DRAFT.md").write_text("KEEP\n", encoding="utf-8")
+    dest = prepare_local_dir(tmp_home, "acme/toy", user_id=9)
+    assert dest == legacy
+    assert dest.joinpath("ISSUE_DRAFT.md").read_text(encoding="utf-8") == "KEEP\n"
 
 
 def test_git_env_strips_tokens_and_helpers(monkeypatch):
@@ -782,7 +803,7 @@ def test_create_for_user_reuses_open_mission(tmp_home, monkeypatch):
     first = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
     second = create_for_user(conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home)
     assert first.id == second.id
-    dest = tmp_home / "work" / "acme__toy"
+    dest = tmp_home / "work" / f"u{uid}" / "acme__toy"
     assert (dest / "ISSUE_DRAFT.md").is_file()
     assert (dest / "FORESHADOW.md").is_file()
     n = conn.execute(
@@ -1533,7 +1554,9 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     monkeypatch.setattr("foreshadow.github.client.GitHubClient", BoomClient)
     entered = CliRunner().invoke(app, ["enter", "acme/toy"])
     assert entered.exit_code == 0, entered.output
-    dest = tmp_home / "work" / "acme__toy"
+    dests = list(tmp_home.glob("work/u*/acme__toy/ISSUE_DRAFT.md"))
+    assert dests
+    dest = dests[0].parent
     assert (dest / "ISSUE_DRAFT.md").is_file()
     draft = (dest / "ISSUE_DRAFT.md").read_text(encoding="utf-8")
     assert "等待你的确认" in draft
