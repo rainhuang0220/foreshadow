@@ -322,12 +322,31 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
             )
             assert remote.status_code == 200
             assert remote.json() == refuse_remote_action(action)
+        bound = a.post(
+            f"{base}/api/mission/remote",
+            json={"action": "create_pr", "id": mission["id"]},
+        )
+        assert bound.status_code == 200
+        assert bound.json()["blocked"] is True
         conn = connect(tmp_home / "foreshadow.sqlite3")
         refused = conn.execute(
             "SELECT COUNT(*) FROM contribution_events WHERE event='remote_refused'"
         ).fetchone()[0]
-        assert refused >= len(REMOTE_ACTIONS)
+        assert refused >= len(REMOTE_ACTIONS) + 1
+        last = conn.execute(
+            """
+            SELECT mission_id, full_name FROM contribution_events
+            WHERE event='remote_refused' ORDER BY id DESC LIMIT 1
+            """
+        ).fetchone()
+        assert last[0] == mission["id"]
+        assert last[1] == "acme/x"
         conn.close()
+        log = dest / "TASK_LOG.md"
+        assert log.is_file()
+        text = log.read_text(encoding="utf-8")
+        assert "TASK: remote_refused" in text
+        assert "VERDICT: BLOCKED" in text
         anon = httpx.Client()
         guest = anon.post(
             f"{base}/api/mission/remote", json={"action": "push_branch"}
@@ -453,6 +472,7 @@ def test_p0_view_enter_remote_and_official_gates():
     post_src = inspect.getsource(BoardHandler.do_POST)
     remote = post_src[post_src.index("/api/mission/remote") :]
     assert "refuse_remote_action" in remote
+    assert "record_remote_refused" in remote
     assert "clone_public_repo" not in remote
     blocked = refuse_remote_action("create_pr")
     assert blocked["ok"] is False

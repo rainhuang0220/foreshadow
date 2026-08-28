@@ -457,7 +457,7 @@ class BoardHandler(BaseHTTPRequestHandler):
             self._send(*_json_bytes({"mission": plan, "event": event}))
             return
         if path == "/api/mission/remote":
-            from foreshadow.mission import record_event, refuse_remote_action
+            from foreshadow.mission import record_remote_refused, refuse_remote_action
 
             action = str(data.get("action") or "")
             out = refuse_remote_action(action)
@@ -465,13 +465,17 @@ class BoardHandler(BaseHTTPRequestHandler):
             if user is not None:
                 conn = self.state.db()
                 try:
-                    record_event(
+                    mid = None
+                    try:
+                        if data.get("id") not in (None, "", 0, "0"):
+                            mid = _mission_id(data)
+                    except ValueError:
+                        mid = None
+                    record_remote_refused(
                         conn,
                         user_id=int(user["id"]),
-                        mission_id=None,
-                        full_name="",
-                        event="remote_refused",
-                        detail={"action": action, "blocked": True},
+                        action=action,
+                        mission_id=mid,
                     )
                 finally:
                     conn.close()

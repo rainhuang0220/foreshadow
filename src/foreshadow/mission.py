@@ -462,6 +462,43 @@ def refuse_remote_action(action: str) -> dict[str, Any]:
     }
 
 
+def record_remote_refused(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    action: str,
+    mission_id: int | None = None,
+) -> dict[str, Any]:
+    """Audit a blocked remote GitHub write. Never posts."""
+    out = refuse_remote_action(action)
+    plan = load_mission_plan(conn, mission_id, user_id) if mission_id else None
+    bound_id = int(plan["id"]) if plan and plan.get("id") is not None else None
+    full_name = str((plan or {}).get("full_name") or "")
+    record_event(
+        conn,
+        user_id=user_id,
+        mission_id=bound_id,
+        full_name=full_name,
+        event="remote_refused",
+        detail={"action": action, "blocked": True},
+    )
+    dest = (plan or {}).get("local_path")
+    if dest:
+        path = Path(str(dest))
+        if path.is_dir():
+            from foreshadow.tasks import append_task_log
+
+            append_task_log(
+                path,
+                task="remote_refused",
+                command=action or "—",
+                result=str(out.get("error") or "blocked"),
+                verdict="BLOCKED",
+                next_step="等待你的确认才能执行任何远程 GitHub 操作。",
+            )
+    return out
+
+
 def status_zh(status: str | None) -> str:
     return {
         "MISSION_READY": "任务已就绪",
@@ -501,8 +538,7 @@ def next_step_zh(status: str | None) -> str:
 
 
 def prepare_local_dir(root: Path, full_name: str) -> Path:
-    safe = _safe_repo_dir(parse_repo_name(full_name))
-    dest = Path(root) / "work" / safe
+    dest = Path(root) / "work" / _safe_repo_dir(full_name)
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 

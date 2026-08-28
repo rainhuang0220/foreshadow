@@ -151,6 +151,53 @@ def test_refuse_remote_never_posts():
         assert "远程" in out["error"]
 
 
+def test_record_remote_refused_binds_mission_and_task_log(tmp_home):
+    from foreshadow.mission import record_remote_refused
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=12, age_days=20, contributors=2)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    out = record_remote_refused(
+        conn, user_id=uid, action="create_pr", mission_id=mid
+    )
+    assert out == refuse_remote_action("create_pr")
+    row = conn.execute(
+        """
+        SELECT mission_id, full_name, event, detail_json
+        FROM contribution_events WHERE event='remote_refused'
+        ORDER BY id DESC LIMIT 1
+        """
+    ).fetchone()
+    assert row[0] == mid
+    assert row[1] == "acme/toy"
+    assert row[2] == "remote_refused"
+    assert "create_pr" in (row[3] or "")
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "TASK: remote_refused" in log
+    assert "VERDICT: BLOCKED" in log
+    assert "create_pr" in log
+    spoof = record_remote_refused(
+        conn, user_id=uid, action="push_branch", mission_id=999999
+    )
+    assert spoof["blocked"] is True
+    unbound = conn.execute(
+        """
+        SELECT mission_id, full_name FROM contribution_events
+        WHERE event='remote_refused' ORDER BY id DESC LIMIT 1
+        """
+    ).fetchone()
+    assert unbound[0] is None
+    assert unbound[1] == ""
+    src = inspect.getsource(record_remote_refused)
+    assert "GitHubClient" not in src
+    assert "api.github.com" not in src
+    assert "subprocess" not in src
+
+
 def test_transition_and_portfolio(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
@@ -1388,6 +1435,8 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     assert 'api("/api/mission/setup"' in setup_js
     assert 'api("/api/mission/remote"' in remote_js
     assert '"create_pr"' in remote_js
+    assert "state.mission" in remote_js
+    assert "body.id" in remote_js
     assert "api.github.com" not in html
 
     post_src = inspect.getsource(BoardHandler.do_POST)
@@ -1407,6 +1456,7 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     assert "setup_local_environment" in setup_handler
     remote_src = post_src[post_src.index("/api/mission/remote") :]
     assert "refuse_remote_action" in remote_src
+    assert "record_remote_refused" in remote_src
     assert "GitHubClient" not in remote_src
     assert "subprocess" not in remote_src
     assert "httpx" not in remote_src

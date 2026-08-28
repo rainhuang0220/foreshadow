@@ -1243,8 +1243,10 @@ async function resumeMission(id) {
 }
 
 async function refuseRemote() {
+  const body = { action: "create_pr" };
+  if (state.mission && state.mission.id) body.id = state.mission.id;
   try {
-    const data = await api("/api/mission/remote", { method: "POST", body: JSON.stringify({ action: "create_pr" }) });
+    const data = await api("/api/mission/remote", { method: "POST", body: JSON.stringify(body) });
     state.actionError = data.error || data.remote_blocked || "已阻止远程操作";
   } catch (e) { state.actionError = e.message || String(e); }
   render();
