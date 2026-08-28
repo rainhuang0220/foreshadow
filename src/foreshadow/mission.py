@@ -348,6 +348,16 @@ def create_for_user(
         event="entered",
         detail={"path": mission.strategy.path},
     )
+    from foreshadow.tasks import append_task_log
+
+    append_task_log(
+        dest,
+        task="entered",
+        command="—",
+        result=f"path={mission.strategy.path} status={mission.status}",
+        verdict="UNKNOWN",
+        next_step=next_step_zh(mission.status),
+    )
     return mission
 
 

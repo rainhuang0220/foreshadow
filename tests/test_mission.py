@@ -73,6 +73,9 @@ def test_create_for_user_does_not_invoke_clone(tmp_home, monkeypatch):
     dest = tmp_home / "work" / f"u{uid}" / "acme__toy"
     assert mission.status == "MISSION_READY"
     assert (dest / "FORESHADOW.md").is_file()
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "TASK: entered" in log
+    assert "clone_public_repo" not in log
     assert not (dest / "repo").exists()
     assert not (dest / "repo" / ".git").exists()
 
