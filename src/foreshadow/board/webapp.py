@@ -934,7 +934,7 @@ function missionView(m) {
   const git = (m.git_ops_zh||[]).map(x => `<li>${esc(x)}</li>`).join("");
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
-  const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"}[clone] || clone);
+  const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时", incomplete:"本地目录不完整，未覆盖", invalid:"仓库名无效"}[clone] || clone);
   const firstRaw = (m.steps_zh && m.steps_zh[0]) || "未知";
   const first = stripStepPrefix(firstRaw) || firstRaw;
   const root = m.local_path || "";
@@ -1095,7 +1095,10 @@ function stampMissionOnCards(m) {
   const card = (state.board.candidates || []).find(c => c.full_name === m.full_name);
   if (!card) return;
   if (m.id) card.mission_id = m.id;
+  if (m.status) card.mission_status = m.status;
   if (m.clone) card.clone = m.clone;
+  if (m.pipeline) card.pipeline = m.pipeline;
+  if (m.tests) card.tests = m.tests;
 }
 
 function alreadyLocal(m) {
