@@ -798,11 +798,13 @@ const PIPELINE_LABELS_ZH = {
 };
 const PIPELINE_ORDER = ["clone","branch","inspect","issue","tests","drafts","waiting_approval"];
 const PIPELINE_ID_RE = /^(clone|branch|inspect|issue|tests|drafts|waiting_approval)$/i;
-const PIPELINE_GLYPH = {done:"✓", pending:"○", running:"◐", failed:"✕", skipped:"○"};
-const PIPELINE_DETAIL = {done:"完成", pending:"未完成", running:"进行中", failed:"失败", skipped:"跳过"};
+const PIPELINE_GLYPH = {done:"✓", pending:"○", running:"◐", failed:"✕", skipped:"○", dependency_required:"○"};
+const PIPELINE_DETAIL = {done:"完成", pending:"未完成", running:"进行中", failed:"失败", skipped:"跳过", dependency_required:"需要用户授权安装依赖"};
 
 function currentNeed(m) {
   if (state.busy || (m && m.status === "LOCAL_SETUP")) return "无需操作";
+  if (m && m.tests && (m.tests.status === "DEPENDENCY_REQUIRED" || m.tests.gate === "DEPENDENCY_REQUIRED"))
+    return "需要用户授权安装依赖";
   if (m && m.status === "WAITING_USER_APPROVAL") return "本地已准备，远程写入需你确认";
   if (m && m.status === "MISSION_READY") return "点击开始进入才会 clone";
   return (m && (m.next_step_zh || m.status_zh)) || "—";
@@ -828,6 +830,7 @@ function pipelineStepStatus(step, isCurrent) {
   const st = String((step && step.status) || "").toLowerCase();
   if (st === "done" || st === "ok" || st === "cloned" || st === "complete") return "done";
   if (st === "failed" || st === "fail" || st === "error") return "failed";
+  if (st === "dependency_required") return "dependency_required";
   if (st === "skipped" || st === "skip") return "skipped";
   if (st === "running") return "running";
   if (isCurrent) return "running";
@@ -855,7 +858,8 @@ function currentPipelineIndex(steps) {
     const st = String((s && s.status) || "").toLowerCase();
     return st !== "done" && st !== "ok" && st !== "cloned" && st !== "complete"
       && st !== "failed" && st !== "fail" && st !== "error"
-      && st !== "skipped" && st !== "skip" && st !== "running";
+      && st !== "skipped" && st !== "skip" && st !== "running"
+      && st !== "dependency_required";
   });
 }
 
@@ -864,7 +868,9 @@ function renderPipelineStep(step, isCurrent) {
   const label = pipelineStepLabel(step);
   const glyph = PIPELINE_GLYPH[status] || "○";
   let detail = PIPELINE_DETAIL[status] || "未完成";
-  if (status !== "skipped") {
+  if (status === "dependency_required") {
+    detail = "需要用户授权安装依赖";
+  } else if (status !== "skipped") {
     const evidence = step && (step.evidence || step.detail || step.text);
     const ev = evidence == null ? "" : String(evidence).trim();
     if (ev && !PIPELINE_ID_RE.test(ev) && ev !== step.status) detail = ev;
@@ -948,7 +954,7 @@ function missionView(m) {
       <p>本地目录：${esc(root || "尚未准备")} · clone：${esc(cloneZh)}</p>
       ${cloneErr ? `<p class="warn">clone：${esc(cloneErr)}</p>` : ""}
       ${m.inspect && m.inspect.has_readme ? `<p>README：有${(m.inspect.readme_headings||[]).length ? " · " + esc((m.inspect.readme_headings||[]).slice(0,6).join("；")) : ""}</p>` : ""}
-      ${m.tests && (m.tests.kind==="node" || m.tests.kind==="cargo") ? `<p>仓库测试是 ${esc(m.tests.kind)}。Foreshadow 不执行 npm/cargo。</p>` : ""}
+      ${m.tests && (m.tests.status==="DEPENDENCY_REQUIRED" || m.tests.gate==="DEPENDENCY_REQUIRED") ? `<p>需要用户授权安装依赖。Foreshadow 不会执行 npm install / cargo build。</p>` : (m.tests && (m.tests.kind==="node" || m.tests.kind==="cargo") ? `<p>仓库测试是 ${esc(m.tests.kind)}。Foreshadow 不执行 npm/cargo。</p>` : "")}
       <p>本地分支：${esc((m.branch && m.branch.name) || (m.clone && m.clone.ok ? "foreshadow/entry" : "—"))} · 草稿：${esc(m.draft_path || "ISSUE_DRAFT.md")}${m.pr_draft_path ? " · 补丁草案：" + esc(m.pr_draft_path) + "（未发送）" : ""}</p>
       <ul>${git || "<li>仅本地 clone / 分支 / commit</li>"}</ul>
     </details>

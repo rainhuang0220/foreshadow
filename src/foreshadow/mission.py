@@ -911,6 +911,9 @@ def create_local_branch(
     return {"ok": True, "status": status, "name": name, "error": None}
 
 
+_DEP_MSG = "需要用户授权安装依赖"
+
+
 def detect_local_tests(clone_dir: Path) -> dict[str, Any]:
     root = Path(clone_dir)
     if not root.is_dir():
@@ -927,6 +930,33 @@ def detect_local_tests(clone_dir: Path) -> dict[str, Any]:
     if "cargo.toml" in names:
         return {"kind": "cargo", "reason": "cargo_blocked"}
     return {"kind": "none", "reason": "none"}
+
+
+def dependency_authorization_gate(clone_dir: Path) -> dict[str, Any] | None:
+    """Record why Node/Cargo work is skipped. Never installs or builds."""
+    root = Path(clone_dir)
+    if not root.is_dir():
+        return None
+    names = {p.name.lower() for p in root.iterdir()}
+    if "package.json" in names and not (root / "node_modules").is_dir():
+        return {
+            "status": "DEPENDENCY_REQUIRED",
+            "kind": "node",
+            "manifest": "package.json",
+            "missing": "node_modules",
+            "message_zh": _DEP_MSG,
+        }
+    if "cargo.toml" in names and not (root / "target").is_dir() and not (
+        root / "vendor"
+    ).is_dir():
+        return {
+            "status": "DEPENDENCY_REQUIRED",
+            "kind": "cargo",
+            "manifest": "Cargo.toml",
+            "missing": "target",
+            "message_zh": _DEP_MSG,
+        }
+    return None
 
 
 def run_local_tests(
@@ -1404,6 +1434,8 @@ def _branch_pipeline_status(branch: dict[str, Any], *, cloned: bool) -> str:
 
 def _tests_pipeline_status(tests: dict[str, Any]) -> str:
     st = str(tests.get("status") or "")
+    if st == "DEPENDENCY_REQUIRED" or tests.get("gate") == "DEPENDENCY_REQUIRED":
+        return "DEPENDENCY_REQUIRED"
     if tests.get("ok") or st in {"collect_ok", "passed"}:
         return "done"
     if st in {"collect_failed", "failed", "timeout"}:
@@ -1448,7 +1480,10 @@ def _build_setup_pipeline(
         _pipeline_step(
             "tests",
             _tests_pipeline_status(tests),
-            tests.get("status") or tests.get("kind") or "skipped",
+            tests.get("message_zh")
+            or tests.get("status")
+            or tests.get("kind")
+            or "skipped",
         ),
         _pipeline_step(
             "drafts",
@@ -1703,6 +1738,14 @@ def setup_local_environment(
                 verdict=_issue_pytest_verdict(issue_collect),
                 next_step=_HITL_NEXT,
             )
+        if detected.get("kind") in {"node", "cargo"}:
+            gate = dependency_authorization_gate(clone_dir)
+            if gate:
+                tests["ok"] = False
+                tests["status"] = "DEPENDENCY_REQUIRED"
+                tests["gate"] = "DEPENDENCY_REQUIRED"
+                tests["kind"] = gate.get("kind") or detected.get("kind")
+                tests["message_zh"] = gate["message_zh"]
     else:
         tests = {
             "ok": False,

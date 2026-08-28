@@ -9,6 +9,7 @@ from typing import Any
 
 from foreshadow.mission import (
     _git_env,
+    dependency_authorization_gate,
     detect_local_tests,
     refuse_unsafe_local_cmd,
     run_local_tests,
@@ -103,7 +104,11 @@ def _run_tests(clone_dir: Path, task: str, *, runner: Any | None) -> TaskResult:
     kind = detected.get("kind")
     sidecar = Path(clone_dir).parent
     if kind in {"node", "cargo"}:
-        msg = f"{kind} tests skipped; Foreshadow will not run npm/cargo"
+        gate = dependency_authorization_gate(clone_dir)
+        msg = (gate or {}).get("message_zh") or (
+            f"{kind} tests skipped; Foreshadow will not run npm/cargo"
+        )
+        status = str((gate or {}).get("status") or "skipped")
         log = append_task_log(
             sidecar,
             task=task,
@@ -117,7 +122,7 @@ def _run_tests(clone_dir: Path, task: str, *, runner: Any | None) -> TaskResult:
             action="skip",
             ok=False,
             blocked=False,
-            status="skipped",
+            status=status,
             stderr=msg,
             artifact=log,
         )

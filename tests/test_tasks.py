@@ -11,9 +11,13 @@ def test_node_collect_is_skipped_not_npm(tmp_path):
     root.mkdir()
     (root / "package.json").write_text("{}", encoding="utf-8")
     out = run_task(root, "collect_tests")
-    assert out.status == "skipped"
+    assert out.status == "DEPENDENCY_REQUIRED"
     assert out.ok is False
-    assert "npm" in out.stderr
+    assert "需要用户授权安装依赖" in out.stderr
+    assert "npm install" not in (out.stdout or "")
+    log = Path(out.artifact).read_text(encoding="utf-8") if out.artifact else ""
+    assert "npm install" not in log
+    assert "cargo build" not in log
 
 
 def test_collect_tests_uses_collect_only(tmp_path):

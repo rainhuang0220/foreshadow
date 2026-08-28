@@ -709,6 +709,79 @@ def test_detect_local_tests_skips_node_and_cargo(tmp_path):
     assert detect_local_tests(node_tests)["kind"] == "node"
 
 
+def test_dependency_authorization_gate_node_and_cargo(tmp_path):
+    from foreshadow.mission import dependency_authorization_gate
+
+    node = tmp_path / "js"
+    node.mkdir()
+    (node / "package.json").write_text("{}", encoding="utf-8")
+    gated = dependency_authorization_gate(node)
+    assert gated is not None
+    assert gated["status"] == "DEPENDENCY_REQUIRED"
+    assert gated["message_zh"] == "需要用户授权安装依赖"
+    (node / "node_modules").mkdir()
+    assert dependency_authorization_gate(node) is None
+
+    cargo = tmp_path / "rs"
+    cargo.mkdir()
+    (cargo / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    cargo_gate = dependency_authorization_gate(cargo)
+    assert cargo_gate is not None
+    assert cargo_gate["status"] == "DEPENDENCY_REQUIRED"
+    (cargo / "target").mkdir()
+    assert dependency_authorization_gate(cargo) is None
+
+    py = tmp_path / "py"
+    py.mkdir()
+    (py / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+    assert dependency_authorization_gate(py) is None
+    src = inspect.getsource(dependency_authorization_gate)
+    assert "npm install" not in src
+    assert "cargo build" not in src
+    assert "cargo install" not in src
+
+
+def test_setup_node_repo_records_dependency_required(tmp_home):
+    from foreshadow.mission import dependency_authorization_gate
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    seen: list[list[str]] = []
+
+    def runner(cmd, **_k):
+        argv = list(cmd)
+        seen.append(argv)
+        if "clone" in argv:
+            clone_dest = Path(argv[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+            (clone_dest / "package.json").write_text("{}", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    tests = out["tests"]
+    assert tests["status"] == "DEPENDENCY_REQUIRED"
+    assert tests["message_zh"] == "需要用户授权安装依赖"
+    by_id = {step["id"]: step for step in out["pipeline"]}
+    assert by_id["tests"]["status"] == "DEPENDENCY_REQUIRED"
+    assert by_id["tests"]["evidence"] == "需要用户授权安装依赖"
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "需要用户授权安装依赖" in log
+    blob = " ".join(part for cmd in seen for part in cmd)
+    assert "npm" not in blob
+    assert "cargo" not in blob
+    src = inspect.getsource(setup_local_environment)
+    assert "npm install" not in src
+    assert "cargo build" not in src
+    assert dependency_authorization_gate(dest / "repo")["status"] == "DEPENDENCY_REQUIRED"
+
+
 def test_inspect_finds_github_contributing_and_rst_title(tmp_path):
     from foreshadow.mission import inspect_clone
 
