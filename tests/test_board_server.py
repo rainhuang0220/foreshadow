@@ -366,3 +366,40 @@ def test_static_board_bg_and_login_get(tmp_home, frozen_clock):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_p0_view_enter_remote_and_official_gates():
+    from foreshadow.board.server import BoardHandler
+    from foreshadow.board.webapp import render_app_html
+    from foreshadow.mission import create_for_user, refuse_remote_action, setup_local_environment
+    from foreshadow.pipeline.select import is_official_eligible, select_top
+
+    assert "clone_public_repo" not in inspect.getsource(create_for_user)
+    assert "setup_local_environment" not in inspect.getsource(create_for_user)
+    assert "clone_public_repo" in inspect.getsource(setup_local_environment)
+
+    html = render_app_html()
+    start_js = html[
+        html.index("async function startEnter") : html.index("async function setupLocal")
+    ]
+    existing_js = html[
+        html.index("async function openExisting") : html.index("async function markEvent")
+    ]
+    assert "await setupLocal" in start_js
+    assert 'api("/api/mission"' in start_js
+    assert "/api/mission/setup" not in start_js
+    assert "setupLocal" not in existing_js
+    assert "/api/mission/setup" not in existing_js
+
+    post_src = inspect.getsource(BoardHandler.do_POST)
+    remote = post_src[post_src.index("/api/mission/remote") :]
+    assert "refuse_remote_action" in remote
+    assert "clone_public_repo" not in remote
+    blocked = refuse_remote_action("create_pr")
+    assert blocked["ok"] is False
+    assert blocked["blocked"] is True
+
+    for fn in (select_top, is_official_eligible):
+        params = inspect.signature(fn).parameters
+        assert params["min_opportunity"].default == 55
+        assert params["min_explosion"].default == 35

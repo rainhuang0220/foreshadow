@@ -1397,12 +1397,12 @@ _PYTEST_HEAD = re.compile(
 )
 _PIPELINE_LABELS = {
     "clone": "克隆仓库",
-    "branch": "本地分支",
-    "inspect": "阅读仓库",
-    "issue": "引用 Issue",
+    "branch": "创建本地分支",
+    "inspect": "检查仓库",
+    "issue": "读取 Issue",
     "tests": "收集测试",
-    "drafts": "写本地草稿",
-    "waiting_approval": "等待你确认远程操作",
+    "drafts": "生成草稿",
+    "waiting_approval": "等待确认",
 }
 _HITL_NEXT = "等待你的确认才能执行任何远程 GitHub 操作。"
 

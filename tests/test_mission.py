@@ -366,6 +366,13 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     assert by_id["clone"]["status"] == "done"
     assert by_id["waiting_approval"]["status"] == "pending"
     assert by_id["waiting_approval"]["status"] != "done"
+    assert by_id["clone"]["label_zh"] == "克隆仓库"
+    assert by_id["branch"]["label_zh"] == "创建本地分支"
+    assert by_id["inspect"]["label_zh"] == "检查仓库"
+    assert by_id["issue"]["label_zh"] == "读取 Issue"
+    assert by_id["tests"]["label_zh"] == "收集测试"
+    assert by_id["drafts"]["label_zh"] == "生成草稿"
+    assert by_id["waiting_approval"]["label_zh"] == "等待确认"
     assert (dest / "TASK_LOG.md").is_file()
     text = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
     assert "TASK:" in text
