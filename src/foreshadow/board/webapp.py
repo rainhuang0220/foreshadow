@@ -680,7 +680,7 @@ function drawerView(card) {
   const match = card.match_score != null && card.match_score !== "" ? n(card.match_score) : "N/A";
   return `
   <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
-  <aside class="drawer ${state.open?"on":""}" role="dialog" aria-label="项目详情">
+  <aside class="drawer ${state.open?"on":""}" role="dialog" aria-modal="true" aria-label="项目详情">
     <button class="close" type="button" onclick="closeCard()">关闭</button>
     <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
@@ -950,7 +950,7 @@ function missionView(m) {
   const statusLine = (m.status_zh || m.status || "未知") + (paused ? " · 已暂停" : "");
   return `
   <div class="drawer-bg on" onclick="state.mission=null;render()"></div>
-  <aside class="drawer on" role="dialog" aria-label="进入任务">
+  <aside class="drawer on" role="dialog" aria-modal="true" aria-label="进入任务">
     <button class="close" type="button" onclick="state.mission=null;render()">关闭</button>
     <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>

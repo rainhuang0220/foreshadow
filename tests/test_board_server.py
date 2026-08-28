@@ -167,6 +167,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "README：有" in page.text
         assert "正在打开今日机会榜" in page.text
         assert "今日机会榜打不开" in page.text
+        assert 'aria-modal="true"' in page.text
         assert "retryBoard" in page.text
         assert "已知为 0，不是未知" in page.text
         assert "记入观察清单" in page.text
