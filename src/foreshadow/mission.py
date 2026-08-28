@@ -1038,9 +1038,8 @@ def run_local_tests(
     execute: bool = False,
     extra_args: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Allowlisted python -m pytest only. Default collect-only. No installs."""
-    import sys
-
+    """List tests on disk. Never execute pytest (clone conftest.py is untrusted)."""
+    del runner, execute
     detected = detect_local_tests(clone_dir)
     if detected["kind"] != "pytest":
         return {
@@ -1060,52 +1059,38 @@ def run_local_tests(
             "command": None,
             "returncode": None,
         }
-    cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", "--maxfail=1"]
-    if not execute:
-        cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
-    if extra_args:
-        cmd.extend(extra_args)
-    blocked = refuse_unsafe_local_cmd(cmd)
-    if blocked is not None:
-        return blocked
-    run = runner or subprocess.run
-    try:
-        completed = run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            cwd=str(clone_dir),
-            env=_git_env(),
-        )
-    except FileNotFoundError:
+    from foreshadow.inspect_repo import list_worktree_files, test_files
+
+    listed = test_files(list_worktree_files(Path(clone_dir)))
+    requested = list(extra_args or [])
+    extra = [p for p in requested if (Path(clone_dir) / p).exists()]
+    if requested and not extra:
         return {
             "ok": False,
-            "status": "no_runner",
+            "status": "collect_failed",
             "kind": "pytest",
-            "command": " ".join(cmd),
+            "summary": "cited test paths missing",
+            "command": None,
+            "returncode": None,
         }
-    except subprocess.TimeoutExpired:
+    hits = extra or listed
+    if not hits:
         return {
             "ok": False,
-            "status": "timeout",
+            "status": "skipped",
             "kind": "pytest",
-            "command": " ".join(cmd),
+            "reason": "no_test_files",
+            "command": None,
+            "returncode": None,
         }
-    code = getattr(completed, "returncode", 1)
-    summary = (getattr(completed, "stdout", None) or "")[:400]
-    if execute:
-        status = "passed" if code == 0 else "failed"
-    else:
-        status = "collect_ok" if code == 0 else "collect_failed"
+    shown = hits[:8]
     return {
-        "ok": code == 0,
-        "status": status,
+        "ok": True,
+        "status": "collect_ok",
         "kind": "pytest",
-        "summary": summary or None,
-        "command": " ".join(cmd),
-        "returncode": code,
+        "summary": "listed on disk, pytest not executed: " + ", ".join(shown),
+        "command": "path-check " + " ".join(shown),
+        "returncode": None,
     }
 
 
@@ -1649,7 +1634,7 @@ def _pipeline_command(step_id: str) -> str:
         "branch": "git checkout -b foreshadow/entry",
         "inspect": "inspect worktree",
         "issue": "GET issue (read-only)",
-        "tests": "python -m pytest --collect-only -q",
+        "tests": "path-check test files (pytest not executed)",
         "drafts": "write FORESHADOW.md ISSUE_DRAFT.md",
         "waiting_approval": "",
     }.get(step_id, "")

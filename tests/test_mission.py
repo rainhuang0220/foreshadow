@@ -559,29 +559,23 @@ def test_issue_pytest_records_found_test_target(tmp_home):
     log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
     assert "VERDICT: FOUND_TEST_TARGET" in log
     assert "TEST_COLLECTION_FAILED" not in log
-    assert "pytest" in log
     assert "tests/test_retriever.py" in log
-    collect_cmds = [cmd for cmd in seen if any("pytest" in str(p) for p in cmd)]
-    assert collect_cmds
-    assert any("--collect-only" in cmd for cmd in collect_cmds)
-    assert any("tests/test_retriever.py" in cmd for cmd in collect_cmds)
+    assert all(part != "pytest" for cmd in seen for part in cmd)
     issue = (out["tests"] or {}).get("issue_collect") or {}
     assert issue.get("ok") is True
-    assert "pytest" in str(issue.get("command") or "")
+    assert "tests/test_retriever.py" in str(issue.get("command") or "")
 
 
-def test_issue_pytest_records_collection_failed(tmp_home):
-    dest, out, _seen = _setup_issue_pytest_mission(
-        tmp_home,
-        body="pytest tests/test_retriever.py",
-        files={"tests/test_retriever.py": "def test_ok():\n    assert True\n"},
-        collect_code=1,
-    )
-    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
-    assert "VERDICT: TEST_COLLECTION_FAILED" in log
-    assert "FOUND_TEST_TARGET" not in log
-    issue = (out["tests"] or {}).get("issue_collect") or {}
-    assert issue.get("ok") is False
+def test_issue_pytest_records_collection_failed(tmp_path):
+    from foreshadow.mission import run_local_tests
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+    out = run_local_tests(root, extra_args=["tests/test_retriever.py"])
+    assert out["ok"] is False
+    assert out["status"] == "collect_failed"
+    assert out.get("command") is None
 
 
 def test_issue_pytest_unknown_when_target_missing(tmp_home):

@@ -20,30 +20,34 @@ def test_node_collect_is_skipped_not_npm(tmp_path):
     assert "cargo build" not in log
 
 
-def test_collect_tests_uses_collect_only(tmp_path):
+def test_collect_tests_does_not_run_pytest(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     (root / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
-    (root / "tests").mkdir()
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_toy.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    canary = root / "PWNED"
+    (root / "conftest.py").write_text(
+        "from pathlib import Path\nPath('PWNED').write_text('ran')\n",
+        encoding="utf-8",
+    )
     seen: list[list[str]] = []
 
     def runner(cmd, **_k):
         seen.append(list(cmd))
-        return SimpleNamespace(returncode=0, stdout="collected 0 items\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="should not run\n", stderr="")
 
     out = run_task(root, "collect_tests", runner=runner)
-    assert seen
-    assert "--collect-only" in seen[0]
-    assert out.action == "run_test"
-    assert out.artifact
-    log = Path(out.artifact).read_text(encoding="utf-8")
+    assert seen == []
+    assert not canary.exists()
+    assert out.ok is True
+    assert "pytest not executed" in (out.stdout or "")
+    log = Path(out.artifact).read_text(encoding="utf-8") if out.artifact else ""
     assert "WHEN:" in log
     assert "TASK: collect_tests" in log
-    assert "COMMAND:" in log
-    assert "EXIT:" in log
-    assert "RESULT:" in log
+    assert "pytest not executed" in log
     assert "VERDICT: UNKNOWN" in log
-    assert "NEXT:" in log
 
 
 def test_local_commit_never_pushes(tmp_path):
