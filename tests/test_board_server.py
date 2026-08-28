@@ -170,6 +170,12 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "actionError" in page.text
         assert 'role="alert"' in page.text
         assert "alert(" not in page.text
+        assert "function clearWorkState" in page.text
+        logout_js = page.text[
+            page.text.index("async function logout") : page.text.index("function openCard")
+        ]
+        assert "clearWorkState" in logout_js
+        assert "state.mission = null" in page.text
         assert "button.close" in page.text
         assert 'aria-modal="true"' in page.text
         assert "retryBoard" in page.text

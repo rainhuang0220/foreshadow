@@ -499,6 +499,7 @@ async function api(path, opts={}) {
     if (res.status === 401 && path !== "/api/login" && path !== "/api/register") {
       state.user = null;
       state.board = null;
+      clearWorkState();
     }
     throw err;
   }
@@ -1024,6 +1025,17 @@ function render() {
   lastModal = key;
 }
 
+function clearWorkState() {
+  state.mission = null;
+  state.missions = [];
+  state.showMissions = false;
+  state.actionError = "";
+  state.portfolio = null;
+  state.pausedIds = {};
+  state.open = null;
+  state.busy = false;
+}
+
 async function boot() {
   try {
     const me = await api("/api/me");
@@ -1061,6 +1073,7 @@ async function submitAuth(ev) {
   try {
     const path = state.auth === "register" ? "/api/register" : "/api/login";
     const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+    clearWorkState();
     state.user = data.user;
     await loadBoard();
   } catch (e) {
@@ -1071,11 +1084,10 @@ async function submitAuth(ev) {
 }
 
 async function logout() {
-  await api("/api/logout", { method: "POST", body: "{}" });
+  try { await api("/api/logout", { method: "POST", body: "{}" }); } catch {}
   state.user = null;
   state.board = null;
-  state.open = null;
-  state.pausedIds = {};
+  clearWorkState();
   render();
 }
 
