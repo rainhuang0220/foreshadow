@@ -547,15 +547,27 @@ def prepare_local_dir(
     root: Path, full_name: str, *, user_id: int | None = None
 ) -> Path:
     safe = _safe_repo_dir(full_name)
-    legacy = Path(root) / "work" / safe
     if user_id is None:
-        dest = legacy
+        dest = Path(root) / "work" / safe
     else:
         dest = Path(root) / "work" / f"u{int(user_id)}" / safe
-        if not dest.exists() and legacy.exists():
-            dest = legacy
     dest.mkdir(parents=True, exist_ok=True)
     return dest
+
+
+def _trusted_workdir(data_dir: Path, stored: str | None) -> Path | None:
+    """Reuse a stored mission dir only if it stays under data_dir/work."""
+    if not stored:
+        return None
+    try:
+        path = Path(stored).expanduser().resolve()
+        root = (Path(data_dir) / "work").resolve()
+        path.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    if path.is_dir():
+        return path
+    return None
 
 
 def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None = None) -> Path:
@@ -1904,11 +1916,9 @@ def setup_local_environment(
         raise ValueError("mission not found")
     full_name = str(plan.get("full_name") or "")
     stored = str(plan.get("local_path") or "")
-    stored_path = Path(stored) if stored else None
-    if stored_path is not None and stored_path.exists():
-        dest = stored_path
-    else:
-        dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
+    dest = _trusted_workdir(data_dir, stored) or prepare_local_dir(
+        data_dir, full_name, user_id=user_id
+    )
     current = str(plan.get("status") or "MISSION_READY")
     if current in {"PAUSED", "ABANDONED", "MERGED"}:
         clone = plan.get("clone") if isinstance(plan.get("clone"), dict) else {}

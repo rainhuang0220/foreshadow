@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import http.client
 import inspect
+import json
 import threading
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -67,6 +70,26 @@ def test_validate_host_rejects_wildcard():
     with pytest.raises(ValueError, match="回环"):
         validate_host("0.0.0.0")
     assert validate_host("127.0.0.1") == "127.0.0.1"
+
+
+def test_board_rejects_negative_content_length(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        parsed = urlparse(base)
+        conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+        conn.putrequest("POST", "/api/login")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", "-1")
+        conn.endheaders()
+        conn.send(b"{}")
+        resp = conn.getresponse()
+        assert resp.status == 400
+        body = json.loads(resp.read().decode("utf-8"))
+        assert "error" in body
+        conn.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def test_board_html_renders_pipeline_states_in_chinese():

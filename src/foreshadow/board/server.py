@@ -163,8 +163,11 @@ class BoardHandler(BaseHTTPRequestHandler):
         )
 
     def _read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > MAX_BODY:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            raise ValueError("无效请求") from None
+        if length < 0 or length > MAX_BODY:
             raise ValueError("body too large")
         raw = self.rfile.read(length) if length else b"{}"
         data = json.loads(raw.decode("utf-8") or "{}")

@@ -309,14 +309,38 @@ def test_two_users_get_isolated_workdirs(tmp_home):
     assert b.parent.name == "u2"
 
 
-def test_prepare_local_dir_keeps_legacy_worktree(tmp_home):
+def test_prepare_local_dir_does_not_reuse_foreign_legacy_worktree(tmp_home):
     from foreshadow.mission import prepare_local_dir
 
     legacy = prepare_local_dir(tmp_home, "acme/toy")
     (legacy / "ISSUE_DRAFT.md").write_text("KEEP\n", encoding="utf-8")
     dest = prepare_local_dir(tmp_home, "acme/toy", user_id=9)
-    assert dest == legacy
-    assert dest.joinpath("ISSUE_DRAFT.md").read_text(encoding="utf-8") == "KEEP\n"
+    assert dest != legacy
+    assert dest.parent.name == "u9"
+    assert (legacy / "ISSUE_DRAFT.md").read_text(encoding="utf-8") == "KEEP\n"
+    assert not dest.joinpath("ISSUE_DRAFT.md").exists()
+
+
+def test_setup_ignores_local_path_outside_work(tmp_home, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    outside = tmp_home / "escape" / "acme__toy"
+    outside.mkdir(parents=True)
+    (outside / "ISSUE_DRAFT.md").write_text("FOREIGN\n", encoding="utf-8")
+    m.local_path = str(outside)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    out = setup_local_environment(conn, mid, uid, tmp_home)
+    dest = Path(out["mission"]["local_path"])
+    work = (tmp_home / "work").resolve()
+    assert dest.resolve() != outside.resolve()
+    assert dest.resolve().is_relative_to(work)
+    assert dest.parent.name == f"u{uid}"
+    assert (outside / "ISSUE_DRAFT.md").read_text(encoding="utf-8") == "FOREIGN\n"
 
 
 def test_git_env_strips_tokens_and_helpers(monkeypatch):
