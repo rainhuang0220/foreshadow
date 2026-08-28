@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 from dataclasses import dataclass
@@ -679,6 +680,9 @@ def clone_public_repo(
             "path": None,
         }
     clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = clone_dir.parent / f".clone-{os.getpid()}"
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
     run = runner or subprocess.run
     cmd = [
         "git",
@@ -689,7 +693,7 @@ def clone_public_repo(
         "1",
         "--",
         url,
-        str(clone_dir),
+        str(staging),
     ]
     try:
         completed = run(
@@ -701,6 +705,7 @@ def clone_public_repo(
             env=_git_env(),
         )
     except FileNotFoundError:
+        shutil.rmtree(staging, ignore_errors=True)
         return {
             "ok": False,
             "status": "no_git",
@@ -708,13 +713,33 @@ def clone_public_repo(
             "path": None,
         }
     except subprocess.TimeoutExpired:
+        shutil.rmtree(staging, ignore_errors=True)
         return {"ok": False, "status": "timeout", "error": "clone timed out", "path": None}
     code = getattr(completed, "returncode", 1)
     if code != 0:
         err = (getattr(completed, "stderr", None) or getattr(completed, "stdout", None) or "")[
             :400
         ]
+        shutil.rmtree(staging, ignore_errors=True)
         return {"ok": False, "status": "failed", "error": err or "clone failed", "path": None}
+    if not _clone_looks_complete(staging):
+        shutil.rmtree(staging, ignore_errors=True)
+        return {
+            "ok": False,
+            "status": "incomplete",
+            "error": "clone 没有写出可用的 git HEAD，未覆盖已有目录。",
+            "path": None,
+        }
+    try:
+        os.replace(staging, clone_dir)
+    except OSError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        return {
+            "ok": False,
+            "status": "failed",
+            "error": f"无法放入 repo 目录：{exc}",
+            "path": None,
+        }
     return {"ok": True, "status": "cloned", "path": str(clone_dir), "error": None}
 
 

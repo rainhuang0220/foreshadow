@@ -37,7 +37,7 @@ def _noop_clone_runner(readme: str = "# toy\n"):
         if "clone" in cmd:
             clone_dest = Path(cmd[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text(readme, encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -326,6 +326,8 @@ def test_failed_clone_does_not_inspect_or_wait(tmp_home):
     by_id = {step["id"]: step for step in out["pipeline"]}
     assert by_id["clone"]["status"] == "failed"
     assert by_id["waiting_approval"]["status"] != "done"
+    leftovers = list(dest.glob(".clone-*"))
+    assert leftovers == []
 
 
 def test_clone_incomplete_dir_is_not_overwritten(tmp_path):
@@ -363,7 +365,7 @@ def test_clone_uses_depth_one_and_writes_tree(tmp_path):
         seen.append(list(cmd))
         dest = Path(cmd[-1])
         dest.mkdir(parents=True)
-        (dest / ".git").mkdir()
+        _stub_complete_git(dest)
         (dest / "README.md").write_text("# toy\n", encoding="utf-8")
         (dest / "CONTRIBUTING.md").write_text("# c\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -394,7 +396,7 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
         if "clone" in cmd:
             clone_dest = Path(cmd[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="foreshadow/entry\n", stderr="")
 
@@ -449,7 +451,7 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
         if "clone" in argv:
             clone_dest = Path(argv[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
             (clone_dest / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -515,7 +517,7 @@ def _setup_issue_pytest_mission(tmp_home, *, body: str, files: dict[str, str], c
         if "clone" in argv:
             clone_dest = Path(argv[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
             (clone_dest / "pyproject.toml").write_text(
                 "[project]\nname='toy'\n", encoding="utf-8"
@@ -615,7 +617,7 @@ def test_setup_embeds_cited_issue(tmp_home):
         if "clone" in cmd:
             clone_dest = Path(cmd[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -865,7 +867,7 @@ def test_setup_node_repo_records_dependency_required(tmp_home):
         if "clone" in argv:
             clone_dest = Path(argv[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
             (clone_dest / "package.json").write_text("{}", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -1018,7 +1020,7 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
         if "clone" in cmd:
             clone_dest = Path(cmd[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text(
                 "# toy\n## Install\n```\npip install toy\n```\n## Usage\n",
                 encoding="utf-8",
@@ -1475,7 +1477,7 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
             assert "core.hooksPath=/dev/null" in argv
             clone_dest = Path(argv[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# bug\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
