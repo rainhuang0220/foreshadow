@@ -220,6 +220,21 @@ def test_transition_cannot_jump_to_submitted(tmp_home):
         transition(conn, mid, uid, "SUBMITTED")
 
 
+def test_create_for_user_rejects_invalid_repo_name(tmp_home):
+    from foreshadow.mission import create_for_user, parse_repo_name
+
+    with pytest.raises(ValueError, match="invalid"):
+        parse_repo_name("../etc/passwd")
+    with pytest.raises(ValueError, match="invalid"):
+        parse_repo_name("a/b;rm")
+    assert parse_repo_name(" acme/toy.git ") == "acme/toy"
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    with pytest.raises(ValueError, match="invalid"):
+        create_for_user(conn, user_id=uid, full_name="not-a-repo", data_dir=tmp_home)
+
+
 def test_clone_url_rejects_injection(tmp_path):
     for name in ("../etc/passwd", "a/b;rm", "https://evil.com/x", "a/../../b", "a/b.git\n"):
         out = clone_public_repo(name, tmp_path)

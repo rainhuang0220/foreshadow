@@ -263,6 +263,7 @@ def create_for_user(
 ) -> Mission:
     from foreshadow.pipeline import load_score_input
 
+    full_name = parse_repo_name(full_name)
     existing = conn.execute(
         """
         SELECT id FROM entry_missions
@@ -631,11 +632,17 @@ def _clone_looks_complete(clone_dir: Path) -> bool:
     return False
 
 
-def github_clone_url(full_name: str) -> str:
-    name = (full_name or "").strip()
+def parse_repo_name(full_name: str) -> str:
+    name = (full_name or "").strip().strip("/")
+    if name.lower().endswith(".git"):
+        name = name[:-4]
     if not REPO_NAME_RE.match(name) or ".." in name or name.endswith(".git"):
         raise ValueError("invalid repo name")
-    return f"https://github.com/{name}.git"
+    return name
+
+
+def github_clone_url(full_name: str) -> str:
+    return f"https://github.com/{parse_repo_name(full_name)}.git"
 
 
 def clone_public_repo(

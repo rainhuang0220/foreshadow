@@ -375,8 +375,12 @@ class BoardHandler(BaseHTTPRequestHandler):
             from foreshadow.paths import resolve_data_dir
 
             name = str(data.get("full_name") or data.get("repo") or "")
-            if "/" not in name:
-                self._send(*_json_bytes({"error": "需要 full_name"}, 400))
+            from foreshadow.mission import parse_repo_name
+
+            try:
+                name = parse_repo_name(name)
+            except ValueError:
+                self._send(*_json_bytes({"error": "需要合法的 owner/repo"}, 400))
                 return
             conn = self.state.db()
             try:
@@ -386,6 +390,9 @@ class BoardHandler(BaseHTTPRequestHandler):
                     full_name=name,
                     data_dir=resolve_data_dir(),
                 )
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
             finally:
                 conn.close()
             self._send(*_json_bytes({"mission": mission.as_dict()}))

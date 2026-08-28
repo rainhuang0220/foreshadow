@@ -475,6 +475,7 @@ const state = {
   open: null,
   auth: "login",
   error: "",
+  actionError: "",
   busy: false,
   mission: null,
   missions: [],
@@ -582,6 +583,7 @@ function header(board) {
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
     <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
+    ${state.actionError ? `<p class="warn">${esc(state.actionError)}</p>` : ""}
     <div class="counts">
       <div><b>${c.discovered}</b>发现项目</div>
       <div><b>${c.shortlisted}</b>候选项目</div>
@@ -955,6 +957,7 @@ function missionView(m) {
     <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>
     <section class="enter-brief">
+      ${state.actionError ? `<p class="warn">${esc(state.actionError)}</p>` : ""}
       <p class="now"><strong>当前需要你做什么：</strong>${esc(currentNeed(m))}</p>
       <p><strong>为什么进入：</strong>${esc(why)}</p>
       <p><strong>推荐入口：</strong>${esc(entry)}</p>
@@ -1004,12 +1007,20 @@ function missionView(m) {
   </aside>`;
 }
 
+let lastModal = null;
 function render() {
   const root = document.getElementById("app");
   if (!state.user) root.innerHTML = authView();
   else if (!state.board && state.error) root.innerHTML = `<p class="empty">今日机会榜打不开。<br/>${esc(state.error)}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> <button type="button" onclick="logout()">退出</button></p>`;
   else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…</p>`;
   else root.innerHTML = boardView();
+  const modal = document.querySelector("aside.drawer.on");
+  const key = modal ? ((state.mission && state.mission.id) || state.open || "drawer") : null;
+  if (modal && key !== lastModal) {
+    const close = modal.querySelector("button.close");
+    if (close) close.focus();
+  }
+  lastModal = key;
 }
 
 async function boot() {
@@ -1097,6 +1108,7 @@ function alreadyLocal(m) {
 async function startEnter(name) {
   if (state.busy) return;
   state.busy = true;
+  state.actionError = "";
   render();
   try {
     const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
@@ -1108,7 +1120,7 @@ async function startEnter(name) {
     if (card && data.mission && data.mission.id) card.mission_id = data.mission.id;
     if (data.mission && data.mission.id && !missionPaused(data.mission) && !alreadyLocal(data.mission)) await setupLocal(data.mission.id);
     try { await loadBoard(); } catch {}
-  } catch (e) { alert(e.message); }
+  } catch (e) { state.actionError = e.message || String(e); }
   finally { state.busy = false; render(); }
 }
 
@@ -1126,7 +1138,7 @@ async function setupLocal(id) {
     if (state.portfolio) try { state.portfolio = await api("/api/portfolio"); } catch {}
     try { await loadBoard(); } catch {}
     render();
-  } catch (e) { alert(e.message); }
+  } catch (e) { state.actionError = e.message || String(e); }
   finally { if (holdBusy) { state.busy = false; render(); } }
 }
 
