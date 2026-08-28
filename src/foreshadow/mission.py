@@ -787,6 +787,7 @@ def clone_public_repo(
         "--depth",
         "1",
         "--single-branch",
+        "--no-recurse-submodules",
         "--",
         url,
         str(staging),

@@ -601,6 +601,7 @@ def test_clone_uses_depth_one_and_writes_tree(tmp_path):
     assert "clone" in seen[0]
     assert "--depth" in seen[0] and "1" in seen[0]
     assert "--single-branch" in seen[0]
+    assert "--no-recurse-submodules" in seen[0]
     assert "core.hooksPath=/dev/null" in seen[0]
     assert all(part != "push" for part in seen[0])
     assert "--" in seen[0]
