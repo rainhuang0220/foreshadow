@@ -296,6 +296,24 @@ def test_clone_empty_git_dir_is_not_treated_as_ready(tmp_path):
     assert (clone_dir / ".git").is_dir()
 
 
+def test_setup_lock_rejects_concurrent_run(tmp_home):
+    from foreshadow.mission import _acquire_setup_lock, _release_setup_lock
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    lock = _acquire_setup_lock(dest)
+    try:
+        with pytest.raises(ValueError, match="正在进行"):
+            setup_local_environment(conn, mid, uid, tmp_home, runner=lambda *_a, **_k: None)
+    finally:
+        _release_setup_lock(lock)
+
+
 def test_setup_skips_when_paused(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)

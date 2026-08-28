@@ -601,7 +601,7 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
 
 
 def _safe_repo_dir(full_name: str) -> str:
-    return full_name.replace("/", "__").replace("..", "")
+    return parse_repo_name(full_name).replace("/", "__")
 
 
 def _clone_looks_complete(clone_dir: Path) -> bool:
@@ -1772,6 +1772,35 @@ def _maybe_collect_issue_pytest(
     return run_local_tests(clone_dir, runner=runner, execute=False, extra_args=extra)
 
 
+def _acquire_setup_lock(dest: Path):
+    import fcntl
+
+    path = Path(dest) / ".setup.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        handle.close()
+        raise ValueError("本地准备正在进行，请稍候") from exc
+    return handle
+
+
+def _release_setup_lock(handle: Any) -> None:
+    import fcntl
+
+    if handle is None:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        handle.close()
+    except OSError:
+        pass
+
+
 def setup_local_environment(
     conn: sqlite3.Connection,
     mission_id: int,
@@ -1802,243 +1831,247 @@ def setup_local_environment(
             "tests": plan.get("tests") or {},
             "pipeline": plan.get("pipeline") or [],
         }
-    if current == "MISSION_READY":
-        transition(conn, mission_id, user_id, "LOCAL_SETUP")
-    clone = clone_public_repo(full_name, dest, runner=runner)
-    inspect = (
-        inspect_clone(Path(clone["path"]))
-        if clone.get("ok") and clone.get("path")
-        else inspect_clone(None)
-    )
-    mission = Mission(
-        full_name=full_name,
-        status="WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP",
-        strategy=recommend_entry(FeaturesBlob()),
-        stage=plan.get("stage"),
-        earlyness=plan.get("earlyness"),
-        evidence=plan.get("evidence"),
-        window=plan.get("opportunity_window"),
-        access=plan.get("access"),
-        why_now=list(plan.get("why_now") or []),
-        needs_user_approval=True,
-        local_path=str(dest),
-        id=mission_id,
-        blurb=plan.get("blurb"),
-    )
-    if isinstance(plan.get("strategy"), dict):
-        from foreshadow.pipeline.strategy import StrategyResult
+    lock = _acquire_setup_lock(dest)
+    try:
+        if current == "MISSION_READY":
+            transition(conn, mission_id, user_id, "LOCAL_SETUP")
+        clone = clone_public_repo(full_name, dest, runner=runner)
+        inspect = (
+            inspect_clone(Path(clone["path"]))
+            if clone.get("ok") and clone.get("path")
+            else inspect_clone(None)
+        )
+        mission = Mission(
+            full_name=full_name,
+            status="WAITING_USER_APPROVAL" if clone.get("ok") else "LOCAL_SETUP",
+            strategy=recommend_entry(FeaturesBlob()),
+            stage=plan.get("stage"),
+            earlyness=plan.get("earlyness"),
+            evidence=plan.get("evidence"),
+            window=plan.get("opportunity_window"),
+            access=plan.get("access"),
+            why_now=list(plan.get("why_now") or []),
+            needs_user_approval=True,
+            local_path=str(dest),
+            id=mission_id,
+            blurb=plan.get("blurb"),
+        )
+        if isinstance(plan.get("strategy"), dict):
+            from foreshadow.pipeline.strategy import StrategyResult
 
-        raw = plan["strategy"]
-        try:
-            mission.strategy = StrategyResult(
-                path=raw.get("path") or "ISSUE",
-                summary_zh=raw.get("summary_zh") or "",
-                steps_zh=list(raw.get("steps_zh") or []),
-                difficulty=raw.get("difficulty") or "Medium",
-                effort=raw.get("effort") or "6h",
-                allows_direct_pr=bool(raw.get("allows_direct_pr")),
-                why=list(raw.get("why") or []),
-            )
-        except (TypeError, ValueError, KeyError):
-            pass
-    clone_dir = Path(clone["path"]) if clone.get("path") else dest / "repo"
-    branch = (
-        create_local_branch(clone_dir, runner=runner)
-        if clone.get("ok")
-        else {"ok": False, "status": "skipped"}
-    )
-    detected = (
-        detect_local_tests(clone_dir)
-        if clone.get("ok")
-        else {"kind": "none", "reason": "no_clone"}
-    )
-    write_fork_note(dest, full_name)
-    issue_n = cited_issue_number(mission)
-    cited = None
-    if issue_n is not None:
-        try:
-            if fetch_issue is not None:
-                cited = fetch_issue(full_name, issue_n)
-            elif os.environ.get("FORESHADOW_SKIP_CLONE") != "1":
-                cited = _load_cited_issue(full_name, issue_n)
-        except (OSError, ValueError, TypeError, RuntimeError):
-            cited = None
-    if issue_n is not None and not cited:
-        title = ""
-        for line in [*mission.why_now, *mission.strategy.why]:
-            if "建议先看：" in line:
-                title = line.split("建议先看：", 1)[1].strip()
-                break
-        cited = {"number": issue_n, "title": title}
-    from foreshadow.inspect_repo import enrich_inspect
+            raw = plan["strategy"]
+            try:
+                mission.strategy = StrategyResult(
+                    path=raw.get("path") or "ISSUE",
+                    summary_zh=raw.get("summary_zh") or "",
+                    steps_zh=list(raw.get("steps_zh") or []),
+                    difficulty=raw.get("difficulty") or "Medium",
+                    effort=raw.get("effort") or "6h",
+                    allows_direct_pr=bool(raw.get("allows_direct_pr")),
+                    why=list(raw.get("why") or []),
+                )
+            except (TypeError, ValueError, KeyError):
+                pass
+        clone_dir = Path(clone["path"]) if clone.get("path") else dest / "repo"
+        branch = (
+            create_local_branch(clone_dir, runner=runner)
+            if clone.get("ok")
+            else {"ok": False, "status": "skipped"}
+        )
+        detected = (
+            detect_local_tests(clone_dir)
+            if clone.get("ok")
+            else {"kind": "none", "reason": "no_clone"}
+        )
+        write_fork_note(dest, full_name)
+        issue_n = cited_issue_number(mission)
+        cited = None
+        if issue_n is not None:
+            try:
+                if fetch_issue is not None:
+                    cited = fetch_issue(full_name, issue_n)
+                elif os.environ.get("FORESHADOW_SKIP_CLONE") != "1":
+                    cited = _load_cited_issue(full_name, issue_n)
+            except (OSError, ValueError, TypeError, RuntimeError):
+                cited = None
+        if issue_n is not None and not cited:
+            title = ""
+            for line in [*mission.why_now, *mission.strategy.why]:
+                if "建议先看：" in line:
+                    title = line.split("建议先看：", 1)[1].strip()
+                    break
+            cited = {"number": issue_n, "title": title}
+        from foreshadow.inspect_repo import enrich_inspect
 
-    inspect = enrich_inspect(
-        Path(clone["path"]) if clone.get("path") else dest / "repo",
-        inspect,
-        cited,
-    )
-    inspect_steps = dict(inspect)
-    inspect_steps["tests"] = detected
-    mission.strategy.steps_zh = customize_steps(
-        mission.strategy.path,
-        language=mission.strategy.language,
-        full_name=full_name,
-        inspect=inspect_steps,
-        cited=cited,
-        cloned=bool(clone.get("ok")),
-        blurb=str(plan.get("blurb") or "") or None,
-    )
-    draft = write_issue_draft(dest, mission, cited=cited)
-    pr_draft = write_pr_draft(dest, mission)
-    repro = write_reproduction_doc(dest, mission, cited=cited)
-    bench = write_benchmark_doc(dest, mission, inspect=inspect)
-    discuss = write_discussion_draft(dest, mission)
-    from foreshadow.tasks import append_task_log, run_task
+        inspect = enrich_inspect(
+            Path(clone["path"]) if clone.get("path") else dest / "repo",
+            inspect,
+            cited,
+        )
+        inspect_steps = dict(inspect)
+        inspect_steps["tests"] = detected
+        mission.strategy.steps_zh = customize_steps(
+            mission.strategy.path,
+            language=mission.strategy.language,
+            full_name=full_name,
+            inspect=inspect_steps,
+            cited=cited,
+            cloned=bool(clone.get("ok")),
+            blurb=str(plan.get("blurb") or "") or None,
+        )
+        draft = write_issue_draft(dest, mission, cited=cited)
+        pr_draft = write_pr_draft(dest, mission)
+        repro = write_reproduction_doc(dest, mission, cited=cited)
+        bench = write_benchmark_doc(dest, mission, inspect=inspect)
+        discuss = write_discussion_draft(dest, mission)
+        from foreshadow.tasks import append_task_log, run_task
 
-    logged_tests = False
-    if clone.get("ok"):
-        collect = run_task(clone_dir, "collect_tests", runner=runner)
-        tests = _tests_from_task(collect, detected)
-        logged_tests = True
-        issue_collect = _maybe_collect_issue_pytest(clone_dir, inspect, runner=runner)
-        if issue_collect is not None:
-            tests["issue_collect"] = {
-                "ok": issue_collect.get("ok"),
-                "status": issue_collect.get("status"),
-                "summary": issue_collect.get("summary"),
-                "command": issue_collect.get("command"),
+        logged_tests = False
+        if clone.get("ok"):
+            collect = run_task(clone_dir, "collect_tests", runner=runner)
+            tests = _tests_from_task(collect, detected)
+            logged_tests = True
+            issue_collect = _maybe_collect_issue_pytest(clone_dir, inspect, runner=runner)
+            if issue_collect is not None:
+                tests["issue_collect"] = {
+                    "ok": issue_collect.get("ok"),
+                    "status": issue_collect.get("status"),
+                    "summary": issue_collect.get("summary"),
+                    "command": issue_collect.get("command"),
+                }
+                append_task_log(
+                    dest,
+                    task="collect_tests",
+                    command=str(issue_collect.get("command") or ""),
+                    exit_code=issue_collect.get("returncode"),
+                    result=str(
+                        issue_collect.get("summary") or issue_collect.get("status") or ""
+                    ),
+                    verdict=_issue_pytest_verdict(issue_collect),
+                    next_step=_HITL_NEXT,
+                )
+            if detected.get("kind") in {"node", "cargo"}:
+                gate = dependency_authorization_gate(clone_dir)
+                if gate:
+                    tests["ok"] = False
+                    tests["status"] = "DEPENDENCY_REQUIRED"
+                    tests["gate"] = "DEPENDENCY_REQUIRED"
+                    tests["kind"] = gate.get("kind") or detected.get("kind")
+                    tests["message_zh"] = gate["message_zh"]
+        else:
+            tests = {
+                "ok": False,
+                "status": "skipped",
+                "kind": detected.get("kind") or "none",
             }
+        dest_status: Status = (
+            "WAITING_USER_APPROVAL"
+            if clone.get("ok") and branch.get("ok")
+            else "LOCAL_SETUP"
+        )
+        pipeline = _build_setup_pipeline(
+            clone=clone,
+            branch=branch,
+            inspect=inspect,
+            cited=cited,
+            tests=tests,
+            drafts_ok=(dest / "ISSUE_DRAFT.md").is_file(),
+            waiting=dest_status == "WAITING_USER_APPROVAL",
+        )
+        if _task_log_has(dest, "clone"):
+            from foreshadow.tasks import append_task_log
+
             append_task_log(
                 dest,
-                task="collect_tests",
-                command=str(issue_collect.get("command") or ""),
-                exit_code=issue_collect.get("returncode"),
-                result=str(
-                    issue_collect.get("summary") or issue_collect.get("status") or ""
-                ),
-                verdict=_issue_pytest_verdict(issue_collect),
+                task="setup_retry",
+                command="",
+                result="reused existing local worktree",
+                verdict="UNKNOWN",
                 next_step=_HITL_NEXT,
             )
-        if detected.get("kind") in {"node", "cargo"}:
-            gate = dependency_authorization_gate(clone_dir)
-            if gate:
-                tests["ok"] = False
-                tests["status"] = "DEPENDENCY_REQUIRED"
-                tests["gate"] = "DEPENDENCY_REQUIRED"
-                tests["kind"] = gate.get("kind") or detected.get("kind")
-                tests["message_zh"] = gate["message_zh"]
-    else:
-        tests = {
-            "ok": False,
-            "status": "skipped",
-            "kind": detected.get("kind") or "none",
+        else:
+            _log_setup_pipeline(
+                dest, pipeline, skip_ids={"tests"} if logged_tests else None
+            )
+        extra = {
+            "clone": clone,
+            "inspect": inspect,
+            "cited_issue": cited or {},
+            "pr_draft": str(pr_draft) if pr_draft else None,
+            "reproduction_path": str(repro) if repro else None,
+            "benchmark_path": str(bench) if bench else None,
+            "discussion_draft_path": str(discuss) if discuss else None,
+            "branch": branch,
+            "tests": tests,
+            "pipeline": pipeline,
         }
-    dest_status: Status = (
-        "WAITING_USER_APPROVAL"
-        if clone.get("ok") and branch.get("ok")
-        else "LOCAL_SETUP"
-    )
-    pipeline = _build_setup_pipeline(
-        clone=clone,
-        branch=branch,
-        inspect=inspect,
-        cited=cited,
-        tests=tests,
-        drafts_ok=(dest / "ISSUE_DRAFT.md").is_file(),
-        waiting=dest_status == "WAITING_USER_APPROVAL",
-    )
-    if _task_log_has(dest, "clone"):
-        from foreshadow.tasks import append_task_log
-
-        append_task_log(
-            dest,
-            task="setup_retry",
-            command="",
-            result="reused existing local worktree",
-            verdict="UNKNOWN",
-            next_step=_HITL_NEXT,
+        write_mission_doc(dest, mission, extra=extra)
+        after_setup = str(
+            conn.execute(
+                "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
+                (mission_id, user_id),
+            ).fetchone()[0]
         )
-    else:
-        _log_setup_pipeline(
-            dest, pipeline, skip_ids={"tests"} if logged_tests else None
+        if dest_status != after_setup and dest_status in ALLOWED.get(after_setup, set()):
+            transition(conn, mission_id, user_id, dest_status)
+        updated = patch_mission_plan(
+            conn,
+            mission_id,
+            user_id,
+            {
+                "clone": clone,
+                "inspect": inspect,
+                "branch": branch,
+                "tests": tests,
+                "pipeline": pipeline,
+                "draft_path": str(draft),
+                "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
+                "pr_draft_path": str(pr_draft) if pr_draft else None,
+                "reproduction_path": str(repro) if repro else None,
+                "benchmark_path": str(bench) if bench else None,
+                "discussion_draft_path": str(discuss) if discuss else None,
+                "cited_issue": cited or {},
+                "strategy": mission.strategy.as_dict(),
+                "steps_zh": list(mission.strategy.steps_zh),
+                "blurb": mission.blurb,
+                "needs_user_approval": True,
+                "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
+            },
+            status=None,
+            local_path=str(dest),
         )
-    extra = {
-        "clone": clone,
-        "inspect": inspect,
-        "cited_issue": cited or {},
-        "pr_draft": str(pr_draft) if pr_draft else None,
-        "reproduction_path": str(repro) if repro else None,
-        "benchmark_path": str(bench) if bench else None,
-        "discussion_draft_path": str(discuss) if discuss else None,
-        "branch": branch,
-        "tests": tests,
-        "pipeline": pipeline,
-    }
-    write_mission_doc(dest, mission, extra=extra)
-    after_setup = str(
-        conn.execute(
-            "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
-            (mission_id, user_id),
-        ).fetchone()[0]
-    )
-    if dest_status != after_setup and dest_status in ALLOWED.get(after_setup, set()):
-        transition(conn, mission_id, user_id, dest_status)
-    updated = patch_mission_plan(
-        conn,
-        mission_id,
-        user_id,
-        {
+        record_event(
+            conn,
+            user_id=user_id,
+            mission_id=mission_id,
+            full_name=full_name,
+            event="local_setup",
+            detail={"clone": clone.get("status"), "inspect": inspect},
+        )
+        record_event(
+            conn,
+            user_id=user_id,
+            mission_id=mission_id,
+            full_name=full_name,
+            event="clone_ok" if clone.get("ok") else "clone_failed",
+            detail={"clone": clone},
+        )
+        updated["clone"] = clone
+        updated["inspect"] = inspect
+        updated["branch"] = branch
+        updated["tests"] = tests
+        updated["pipeline"] = pipeline
+        updated["needs_user_approval"] = True
+        return {
+            "mission": updated,
             "clone": clone,
             "inspect": inspect,
             "branch": branch,
             "tests": tests,
             "pipeline": pipeline,
-            "draft_path": str(draft),
-            "draft_excerpt": draft.read_text(encoding="utf-8")[:800],
-            "pr_draft_path": str(pr_draft) if pr_draft else None,
-            "reproduction_path": str(repro) if repro else None,
-            "benchmark_path": str(bench) if bench else None,
-            "discussion_draft_path": str(discuss) if discuss else None,
-            "cited_issue": cited or {},
-            "strategy": mission.strategy.as_dict(),
-            "steps_zh": list(mission.strategy.steps_zh),
-            "blurb": mission.blurb,
-            "needs_user_approval": True,
-            "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
-        },
-        status=None,
-        local_path=str(dest),
-    )
-    record_event(
-        conn,
-        user_id=user_id,
-        mission_id=mission_id,
-        full_name=full_name,
-        event="local_setup",
-        detail={"clone": clone.get("status"), "inspect": inspect},
-    )
-    record_event(
-        conn,
-        user_id=user_id,
-        mission_id=mission_id,
-        full_name=full_name,
-        event="clone_ok" if clone.get("ok") else "clone_failed",
-        detail={"clone": clone},
-    )
-    updated["clone"] = clone
-    updated["inspect"] = inspect
-    updated["branch"] = branch
-    updated["tests"] = tests
-    updated["pipeline"] = pipeline
-    updated["needs_user_approval"] = True
-    return {
-        "mission": updated,
-        "clone": clone,
-        "inspect": inspect,
-        "branch": branch,
-        "tests": tests,
-        "pipeline": pipeline,
-    }
+        }
+    finally:
+        _release_setup_lock(lock)
 
 
 def record_user_event(
