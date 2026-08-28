@@ -280,6 +280,12 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
             )
             assert remote.status_code == 200
             assert remote.json() == refuse_remote_action(action)
+        conn = connect(tmp_home / "foreshadow.sqlite3")
+        refused = conn.execute(
+            "SELECT COUNT(*) FROM contribution_events WHERE event='remote_refused'"
+        ).fetchone()[0]
+        assert refused >= len(REMOTE_ACTIONS)
+        conn.close()
         anon = httpx.Client()
         guest = anon.post(
             f"{base}/api/mission/remote", json={"action": "push_branch"}
