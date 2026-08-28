@@ -583,7 +583,7 @@ function header(board) {
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
     <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
-    ${state.actionError ? `<p class="warn">${esc(state.actionError)}</p>` : ""}
+    ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
     <div class="counts">
       <div><b>${c.discovered}</b>发现项目</div>
       <div><b>${c.shortlisted}</b>候选项目</div>
@@ -687,6 +687,7 @@ function drawerView(card) {
     <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
     <section class="enter-plan">
+      ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
       <p><strong>项目简介：</strong>${esc(intro)}</p>
       <p><strong>为什么现在进入：</strong>${esc(drawerWhyNow(card))}</p>
       <p><strong>匹配度：</strong>${esc(match)}</p>
@@ -957,7 +958,7 @@ function missionView(m) {
     <p class="brand">今日进入计划</p>
     <h2>${esc(m.full_name)}</h2>
     <section class="enter-brief">
-      ${state.actionError ? `<p class="warn">${esc(state.actionError)}</p>` : ""}
+      ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
       <p class="now"><strong>当前需要你做什么：</strong>${esc(currentNeed(m))}</p>
       <p><strong>为什么进入：</strong>${esc(why)}</p>
       <p><strong>推荐入口：</strong>${esc(entry)}</p>
@@ -1143,13 +1144,14 @@ async function setupLocal(id) {
 }
 
 async function loadMissions() {
+  state.actionError = "";
   try {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
     for (const m of state.missions) stampMissionOnCards(m);
     state.showMissions = true;
-    render();
-  } catch (e) { alert(e.message); }
+  } catch (e) { state.actionError = e.message || String(e); }
+  render();
 }
 
 function openMission(id) {
@@ -1170,16 +1172,18 @@ async function retryBoard() {
 }
 
 async function openExisting(id) {
+  state.actionError = "";
   try {
     const data = await api("/api/missions");
     state.missions = data.missions || [];
     for (const m of state.missions) stampMissionOnCards(m);
     state.showMissions = true;
     openMission(id);
-  } catch (e) { alert(e.message); }
+  } catch (e) { state.actionError = e.message || String(e); render(); }
 }
 
 async function markEvent(id, event) {
+  state.actionError = "";
   try {
     const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event }) });
     state.mission = data.mission;
@@ -1198,13 +1202,14 @@ async function markEvent(id, event) {
     }
     try { state.portfolio = await api("/api/portfolio"); } catch {}
     render();
-  } catch (e) { alert(e.message); }
+  } catch (e) { state.actionError = e.message || String(e); render(); }
 }
 
 async function pauseMission(id) {
   state.pausedIds[id] = true;
   state.pausedIds[Number(id)] = true;
   if (state.mission && Number(state.mission.id) === Number(id)) state.mission.paused = true;
+  state.actionError = "";
   render();
   try {
     const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event: "paused" }) });
@@ -1213,7 +1218,7 @@ async function pauseMission(id) {
       state.mission.paused = true;
     }
     try { state.portfolio = await api("/api/portfolio"); } catch {}
-  } catch {}
+  } catch (e) { state.actionError = e.message || String(e); }
   render();
 }
 
@@ -1221,6 +1226,7 @@ async function resumeMission(id) {
   delete state.pausedIds[id];
   delete state.pausedIds[Number(id)];
   if (state.mission && Number(state.mission.id) === Number(id)) state.mission.paused = false;
+  state.actionError = "";
   try {
     const data = await api("/api/mission/event", { method: "POST", body: JSON.stringify({ id, event: "resumed" }) });
     if (data.mission) {
@@ -1229,7 +1235,8 @@ async function resumeMission(id) {
     }
     try { state.portfolio = await api("/api/portfolio"); } catch {}
     render();
-  } catch {
+  } catch (e) {
+    state.actionError = e.message || String(e);
     openMission(id);
     render();
   }
@@ -1238,17 +1245,21 @@ async function resumeMission(id) {
 async function refuseRemote() {
   try {
     const data = await api("/api/mission/remote", { method: "POST", body: JSON.stringify({ action: "create_pr" }) });
-    alert(data.error || data.remote_blocked || "已阻止远程操作");
-  } catch (e) { alert(e.message); }
+    state.actionError = data.error || data.remote_blocked || "已阻止远程操作";
+  } catch (e) { state.actionError = e.message || String(e); }
+  render();
 }
 
 async function saveReview(repo, action) {
+  state.actionError = "";
   try {
     await api("/api/review", { method: "POST", body: JSON.stringify({ repo, action }) });
     const card = (state.board.candidates||[]).find(c => c.full_name === repo);
     if (card) { card.my_action = action; }
+    render();
   } catch (e) {
-    alert(e.message);
+    state.actionError = e.message || String(e);
+    render();
   }
 }
 

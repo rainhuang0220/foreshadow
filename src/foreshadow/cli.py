@@ -176,9 +176,11 @@ def enter(
 ) -> None:
     """Create a local Entry Mission. Never posts to GitHub."""
     from foreshadow.auth import resolve_cli_user
-    from foreshadow.mission import create_for_user
+    from foreshadow.mission import create_for_user, parse_repo_name
 
-    if "/" not in repo:
+    try:
+        repo = parse_repo_name(repo)
+    except ValueError:
         print("need owner/repo", file=sys.stderr)
         raise SystemExit(2)
     path = resolve_data_dir() / "foreshadow.sqlite3"

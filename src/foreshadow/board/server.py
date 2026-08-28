@@ -126,6 +126,17 @@ def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
     return status, raw, "application/json; charset=utf-8"
 
 
+def _mission_id(data: dict[str, Any]) -> int:
+    raw = data.get("id")
+    try:
+        mid = int(raw) if raw is not None and raw is not False else 0
+    except (TypeError, ValueError):
+        raise ValueError("需要任务 id") from None
+    if mid <= 0:
+        raise ValueError("需要任务 id")
+    return mid
+
+
 class BoardHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     state: BoardState
@@ -371,12 +382,10 @@ class BoardHandler(BaseHTTPRequestHandler):
             if user is None:
                 self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
-            from foreshadow.mission import create_for_user
+            from foreshadow.mission import create_for_user, parse_repo_name
             from foreshadow.paths import resolve_data_dir
 
             name = str(data.get("full_name") or data.get("repo") or "")
-            from foreshadow.mission import parse_repo_name
-
             try:
                 name = parse_repo_name(name)
             except ValueError:
@@ -405,7 +414,11 @@ class BoardHandler(BaseHTTPRequestHandler):
             from foreshadow.mission import setup_local_environment
             from foreshadow.paths import resolve_data_dir
 
-            mid = int(data.get("id") or 0)
+            try:
+                mid = _mission_id(data)
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
             conn = self.state.db()
             try:
                 out = setup_local_environment(
@@ -425,8 +438,12 @@ class BoardHandler(BaseHTTPRequestHandler):
                 return
             from foreshadow.mission import record_user_event
 
-            mid = int(data.get("id") or 0)
             event = str(data.get("event") or "")
+            try:
+                mid = _mission_id(data)
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
             conn = self.state.db()
             try:
                 plan = record_user_event(
