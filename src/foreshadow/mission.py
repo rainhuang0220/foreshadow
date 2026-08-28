@@ -552,21 +552,36 @@ def prepare_local_dir(
     else:
         dest = Path(root) / "work" / f"u{int(user_id)}" / safe
     dest.mkdir(parents=True, exist_ok=True)
-    return dest
+    return dest.resolve()
 
 
 def _trusted_workdir(data_dir: Path, stored: str | None) -> Path | None:
     """Reuse a stored mission dir only if it stays under data_dir/work."""
     if not stored:
         return None
-    try:
-        path = Path(stored).expanduser().resolve()
-        root = (Path(data_dir) / "work").resolve()
-        path.relative_to(root)
-    except (OSError, ValueError):
-        return None
-    if path.is_dir():
-        return path
+    work_root = (Path(data_dir) / "work").resolve()
+    raw = Path(stored).expanduser()
+    candidates = [raw]
+    if not raw.is_absolute():
+        candidates.append(Path.cwd() / raw)
+    text = str(stored).replace("\\", "/")
+    if "/work/" in text:
+        candidates.append(work_root / text.split("/work/", 1)[-1])
+    seen: set[Path] = set()
+    for cand in candidates:
+        try:
+            path = cand.resolve()
+        except OSError:
+            continue
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            path.relative_to(work_root)
+        except ValueError:
+            continue
+        if path.is_dir():
+            return path
     return None
 
 

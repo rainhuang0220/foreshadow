@@ -1,4 +1,5 @@
 import inspect
+import os
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -319,6 +320,38 @@ def test_prepare_local_dir_does_not_reuse_foreign_legacy_worktree(tmp_home):
     assert dest.parent.name == "u9"
     assert (legacy / "ISSUE_DRAFT.md").read_text(encoding="utf-8") == "KEEP\n"
     assert not dest.joinpath("ISSUE_DRAFT.md").exists()
+
+
+def test_setup_resolves_relative_stored_workdir(tmp_home, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    dest = prepare_local_dir(tmp_home, "acme/toy", user_id=uid)
+    m.local_path = os.path.relpath(dest, start=Path.cwd())
+    assert not Path(m.local_path).is_absolute()
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    out = setup_local_environment(conn, mid, uid, tmp_home)
+    got = Path(out["mission"]["local_path"])
+    assert got.resolve() == dest.resolve()
+    assert got.is_absolute()
+
+
+def test_create_for_user_stores_absolute_local_path(tmp_home):
+    from foreshadow.mission import create_for_user
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    mission = create_for_user(
+        conn, user_id=uid, full_name="acme/toy", data_dir=tmp_home
+    )
+    assert mission.local_path
+    assert Path(mission.local_path).is_absolute()
+    assert Path(mission.local_path).is_relative_to((tmp_home / "work").resolve())
 
 
 def test_setup_ignores_local_path_outside_work(tmp_home, monkeypatch):
