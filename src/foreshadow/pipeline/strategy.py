@@ -417,7 +417,7 @@ def _cloned_first_work(inspect: dict[str, Any], cited: dict[str, Any]) -> str:
             "缺依赖就停，不要擅自安装。"
         )
     if test:
-        return f"对仓库已有 `{test}` 做安全检查（collect-only）。"
+        return f"对仓库已有 `{test}` 做安全检查（只列路径，不执行 pytest）。"
     if related:
         return f"对照 Issue，验证 `{related}` 中的行为（路径仅作证据）。"
     return "UNKNOWN：不要编造。"

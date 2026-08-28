@@ -223,7 +223,7 @@ def test_cloned_first_step_uses_existing_test_collect_only():
         },
         cloned=True,
     )
-    assert steps[0] == "第一步：对仓库已有 `tests/test_retriever.py` 做安全检查（collect-only）。"
+    assert steps[0] == "第一步：对仓库已有 `tests/test_retriever.py` 做安全检查（只列路径，不执行 pytest）。"
     assert "FORESHADOW.md" not in steps[0]
     assert "ISSUE_DRAFT.md" not in steps[0]
     blob = " ".join(steps)

@@ -813,7 +813,7 @@ def _tests_line(extra: dict[str, Any]) -> str:
     tests = extra.get("tests") or {}
     kind = tests.get("kind")
     if kind == "pytest":
-        return f"测试：pytest {tests.get('status') or 'collect-only'}（不装依赖）\n"
+        return f"测试：{tests.get('status') or 'listed'}（只列路径，不执行 pytest）\n"
     if kind in {"node", "cargo"}:
         return f"测试：跳过（{kind}，不执行 npm/cargo）\n"
     if tests.get("status") == "skipped":

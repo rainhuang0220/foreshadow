@@ -898,7 +898,7 @@ function currentPipelineIndex(steps) {
 const EVIDENCE_ZH = {cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时", incomplete:"本地目录不完整，未覆盖", invalid:"仓库名无效", inspected:"已检查仓库", none:"无 Issue 引用", missing:"草稿缺失"};
 
 function stripMd(s) {
-  return String(s || "").replace(/[*_`#]+/g, "").trim();
+  return String(s || "").replace(/[*`#]+/g, "").trim();
 }
 
 function renderPipelineStep(step, isCurrent) {
