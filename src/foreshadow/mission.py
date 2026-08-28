@@ -48,12 +48,17 @@ Status = Literal[
 REMOTE_ACTIONS = frozenset(
     {"post_issue", "post_discussion", "push_branch", "create_pr", "comment", "review", "merge"}
 )
-USER_EVENTS = frozenset(
+SYSTEM_EVENTS = frozenset(
     {
         "entered",
         "local_setup",
         "clone_ok",
         "clone_failed",
+        "remote_refused",
+    }
+)
+USER_MARKED_EVENTS = frozenset(
+    {
         "maintainer_replied",
         "maintainer_silent",
         "issue_accepted",
@@ -67,6 +72,7 @@ USER_EVENTS = frozenset(
         "draft_approved",
     }
 )
+USER_EVENTS = SYSTEM_EVENTS | USER_MARKED_EVENTS
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_NUM_RE = re.compile(r"#(\d+)")
 CLONE_TIMEOUT_S = 120
@@ -2127,7 +2133,7 @@ def record_user_event(
     mission_id: int,
     event: str,
 ) -> dict[str, Any]:
-    if event not in USER_EVENTS:
+    if event not in USER_MARKED_EVENTS:
         raise ValueError(f"unknown event {event}")
     plan = load_mission_plan(conn, mission_id, user_id)
     if plan is None:
@@ -2138,7 +2144,7 @@ def record_user_event(
         mission_id=mission_id,
         full_name=str(plan.get("full_name") or ""),
         event=event,
-        detail={},
+        detail={"source": "user"},
     )
     status_map: dict[str, Status] = {
         "abandoned": "ABANDONED",
@@ -2162,4 +2168,26 @@ def record_user_event(
         set_status(conn, mission_id, user_id, "ABANDONED")
     elif event == "pr_merged":
         set_status(conn, mission_id, user_id, "MERGED")
-    return load_mission_plan(conn, mission_id, user_id) or plan
+    updated = load_mission_plan(conn, mission_id, user_id) or plan
+    local = updated.get("local_path") or plan.get("local_path")
+    if local:
+        path = Path(str(local))
+        if path.is_dir():
+            from foreshadow.tasks import append_task_log
+
+            append_task_log(
+                path,
+                task=event,
+                command="—",
+                result=f"status={updated.get('status') or current}",
+                verdict={
+                    "abandoned": "STOPPED",
+                    "paused": "PAUSED",
+                    "pr_rejected": "BLOCKED",
+                }.get(event, "UNKNOWN"),
+                next_step=str(
+                    updated.get("next_step_zh")
+                    or next_step_zh(str(updated.get("status") or current))
+                ),
+            )
+    return updated

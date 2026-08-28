@@ -231,9 +231,9 @@ def outcome(
 ) -> None:
     """Record a manual contribution outcome. Never talks to GitHub."""
     from foreshadow.auth import resolve_cli_user
-    from foreshadow.mission import USER_EVENTS, list_missions, record_user_event
+    from foreshadow.mission import USER_MARKED_EVENTS, list_missions, record_user_event
 
-    if event not in USER_EVENTS:
+    if event not in USER_MARKED_EVENTS:
         print(f"unknown event {event}", file=sys.stderr)
         raise SystemExit(2)
     path = resolve_data_dir() / "foreshadow.sqlite3"

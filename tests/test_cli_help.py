@@ -20,6 +20,21 @@ def test_cli_outcome_records_without_github(tmp_home, monkeypatch):
     assert "acme/toy" in listed.stdout
 
 
+def test_cli_outcome_rejects_system_event(tmp_home, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    runner = CliRunner()
+    entered = runner.invoke(app, ["enter", "acme/toy"])
+    assert entered.exit_code == 0
+    bad = runner.invoke(app, ["outcome", "acme/toy", "--event", "clone_ok"])
+    assert bad.exit_code == 2
+    assert "unknown event" in bad.output
+    ok = runner.invoke(app, ["outcome", "acme/toy", "--event", "paused"])
+    assert ok.exit_code == 0
+    log = (tmp_home / "work" / "acme__toy" / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "TASK: paused" in log
+    assert "TASK: clone_ok" not in log
+
+
 def test_cli_enter_rejects_invalid_repo(tmp_home):
     runner = CliRunner()
     for name in ("not-a-repo", "../etc/passwd", "a/b;rm"):

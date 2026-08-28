@@ -1663,6 +1663,34 @@ def test_cannot_resume_to_submitted(tmp_home):
     assert plan["status"] == "LOCAL_SETUP"
 
 
+def test_record_user_event_rejects_system_events_and_logs(tmp_home):
+    from foreshadow.mission import persist_mission, record_user_event, transition
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    for ev in ("clone_ok", "entered", "local_setup", "clone_failed", "remote_refused"):
+        with pytest.raises(ValueError, match="unknown"):
+            record_user_event(conn, user_id=uid, mission_id=mid, event=ev)
+    paused = record_user_event(conn, user_id=uid, mission_id=mid, event="paused")
+    assert paused["status"] == "PAUSED"
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "TASK: paused" in log
+    assert "VERDICT: PAUSED" in log
+    assert "TASK: clone_ok" not in log
+    n = conn.execute(
+        "SELECT COUNT(*) FROM contribution_events WHERE event='clone_ok'"
+    ).fetchone()[0]
+    assert n == 0
+
+
 def test_paused_event_does_not_call_github(tmp_home, monkeypatch):
     from foreshadow.mission import persist_mission, record_user_event, transition
 
