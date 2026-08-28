@@ -1735,7 +1735,7 @@ def _build_setup_pipeline(
         _pipeline_step(
             "waiting_approval",
             "pending" if waiting else "skipped",
-            _HITL_NEXT if waiting else "clone unfinished",
+            _HITL_NEXT if waiting else "clone 未完成",
         ),
     ]
 
