@@ -72,6 +72,37 @@ def test_validate_host_rejects_wildcard():
     assert validate_host("127.0.0.1") == "127.0.0.1"
 
 
+def test_board_rejects_foreign_origin(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        payload = {
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "password1",
+        }
+        evil = httpx.post(
+            f"{base}/api/register",
+            json=payload,
+            headers={"Origin": "https://evil.example"},
+        )
+        assert evil.status_code == 403
+        other_port = httpx.post(
+            f"{base}/api/register",
+            json=payload,
+            headers={"Origin": "http://127.0.0.1:1"},
+        )
+        assert other_port.status_code == 403
+        ok = httpx.post(
+            f"{base}/api/register",
+            json=payload,
+            headers={"Origin": base},
+        )
+        assert ok.status_code == 200
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_board_rejects_negative_content_length(tmp_home, frozen_clock):
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:

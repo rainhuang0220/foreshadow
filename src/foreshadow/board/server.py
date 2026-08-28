@@ -149,18 +149,22 @@ class BoardHandler(BaseHTTPRequestHandler):
         sys.stderr.write(f"{self.address_string()} - {msg}\n")
 
     def _origin_ok(self) -> bool:
-        origin = self.headers.get("Origin")
+        origin = (self.headers.get("Origin") or "").strip()
         if not origin:
             return True
-        host = self.headers.get("Host", "")
-        allowed = {
-            f"http://127.0.0.1:{urlparse('http://' + host).port or '8765'}",
-            f"http://localhost:{urlparse('http://' + host).port or '8765'}",
-            f"http://{host}",
-        }
-        return origin in allowed or origin.startswith(
-            ("http://127.0.0.1:", "http://localhost:")
-        )
+        try:
+            parsed = urlparse(origin)
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "http" or host not in LOOPBACK:
+            return False
+        if parsed.path not in {"", "/"} or parsed.username or parsed.password:
+            return False
+        req = urlparse("http://" + (self.headers.get("Host") or ""))
+        req_port = req.port or 80
+        origin_port = parsed.port or 80
+        return origin_port == req_port
 
     def _read_json(self) -> dict[str, Any]:
         try:
