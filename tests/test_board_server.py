@@ -168,6 +168,8 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "正在打开今日机会榜" in page.text
         assert "今日机会榜打不开" in page.text
         assert "actionError" in page.text
+        assert 'role="alert"' in page.text
+        assert "alert(" not in page.text
         assert "button.close" in page.text
         assert 'aria-modal="true"' in page.text
         assert "retryBoard" in page.text
@@ -242,6 +244,42 @@ def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
         assert (dest / "FORESHADOW.md").is_file()
         assert not (dest / "repo").exists()
         assert not (dest / "repo" / ".git").exists()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_post_api_mission_rejects_invalid_repo_and_bad_id(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        a = httpx.Client()
+        reg = a.post(
+            f"{base}/api/register",
+            json={
+                "username": "gina",
+                "email": "gina@example.com",
+                "password": "password1",
+            },
+        )
+        assert reg.status_code == 200
+        for name in ("../etc/passwd", "not-a-repo", "a/b;rm", "", "https://evil.com/x"):
+            refused = a.post(f"{base}/api/mission", json={"full_name": name})
+            assert refused.status_code == 400
+            assert "合法" in refused.json()["error"]
+        work = tmp_home / "work"
+        assert not work.exists() or not any(work.iterdir())
+        missing = a.post(f"{base}/api/mission/setup", json={"id": "abc"})
+        assert missing.status_code == 400
+        assert "任务 id" in missing.json()["error"]
+        zero = a.post(f"{base}/api/mission/setup", json={"id": 0})
+        assert zero.status_code == 400
+        assert "任务 id" in zero.json()["error"]
+        event = a.post(
+            f"{base}/api/mission/event",
+            json={"id": "nope", "event": "paused"},
+        )
+        assert event.status_code == 400
+        assert "任务 id" in event.json()["error"]
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -221,18 +221,34 @@ def test_transition_cannot_jump_to_submitted(tmp_home):
 
 
 def test_create_for_user_rejects_invalid_repo_name(tmp_home):
-    from foreshadow.mission import create_for_user, parse_repo_name
+    from foreshadow.mission import (
+        create_for_user,
+        github_clone_url,
+        parse_repo_name,
+        prepare_local_dir,
+    )
 
     with pytest.raises(ValueError, match="invalid"):
         parse_repo_name("../etc/passwd")
     with pytest.raises(ValueError, match="invalid"):
         parse_repo_name("a/b;rm")
+    with pytest.raises(ValueError, match="invalid"):
+        parse_repo_name("https://github.com/acme/toy")
+    with pytest.raises(ValueError, match="invalid"):
+        parse_repo_name("")
     assert parse_repo_name(" acme/toy.git ") == "acme/toy"
+    assert parse_repo_name("acme/toy.GIT") == "acme/toy"
+    assert github_clone_url("acme/toy.git") == "https://github.com/acme/toy.git"
+    with pytest.raises(ValueError, match="invalid"):
+        prepare_local_dir(tmp_home, "../etc/passwd")
+    with pytest.raises(ValueError, match="invalid"):
+        prepare_local_dir(tmp_home, "a/../../b")
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
     with pytest.raises(ValueError, match="invalid"):
         create_for_user(conn, user_id=uid, full_name="not-a-repo", data_dir=tmp_home)
+    assert not (tmp_home / "work").exists() or not any((tmp_home / "work").rglob("*"))
 
 
 def test_clone_url_rejects_injection(tmp_path):

@@ -20,6 +20,16 @@ def test_cli_outcome_records_without_github(tmp_home, monkeypatch):
     assert "acme/toy" in listed.stdout
 
 
+def test_cli_enter_rejects_invalid_repo(tmp_home):
+    runner = CliRunner()
+    for name in ("not-a-repo", "../etc/passwd", "a/b;rm"):
+        result = runner.invoke(app, ["enter", name])
+        assert result.exit_code == 2
+        assert "owner/repo" in result.output
+    work = tmp_home / "work"
+    assert not work.exists() or not any(work.iterdir())
+
+
 def test_help_lists_commands():
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0

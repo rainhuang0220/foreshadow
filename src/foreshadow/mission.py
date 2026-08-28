@@ -501,7 +501,7 @@ def next_step_zh(status: str | None) -> str:
 
 
 def prepare_local_dir(root: Path, full_name: str) -> Path:
-    safe = _safe_repo_dir(full_name)
+    safe = _safe_repo_dir(parse_repo_name(full_name))
     dest = Path(root) / "work" / safe
     dest.mkdir(parents=True, exist_ok=True)
     return dest
