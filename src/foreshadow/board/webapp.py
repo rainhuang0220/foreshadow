@@ -1278,6 +1278,15 @@ async function saveReview(repo, action) {
 }
 
 document.addEventListener("keydown", (e) => {
+  const modal = document.querySelector("aside.drawer.on");
+  if (e.key === "Tab" && modal) {
+    const nodes = [...modal.querySelectorAll("button, a, input")].filter(n => !n.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    return;
+  }
   if (e.key !== "Escape") return;
   if (state.mission) { state.mission = null; render(); return; }
   closeCard();
