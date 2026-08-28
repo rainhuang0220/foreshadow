@@ -769,6 +769,10 @@ function missionListView() {
     </div>`).join("")}</div>`;
 }
 
+function stripStepPrefix(s) {
+  return String(s || "").replace(/^第[^步]{1,4}步[：:]\s*/, "").trim();
+}
+
 function labeledStep(x, i) {
   const s = String(x || "");
   if (/^第.+步/.test(s)) return esc(s);
@@ -802,7 +806,12 @@ const PIPELINE_GLYPH = {done:"✓", pending:"○", running:"◐", failed:"✕", 
 const PIPELINE_DETAIL = {done:"完成", pending:"未完成", running:"进行中", failed:"失败", skipped:"跳过", dependency_required:"需要用户授权安装依赖"};
 
 function currentNeed(m) {
-  if (state.busy || (m && m.status === "LOCAL_SETUP")) return "无需操作";
+  if (state.busy) return "无需操作";
+  if (m && m.clone && m.clone.ok === false && m.clone.status && m.clone.status !== "skipped") {
+    const err = m.clone.error || ({failed:"克隆失败，任务仍保留", timeout:"克隆超时", no_git:"本机没有 git", incomplete:"本地目录不完整，未覆盖", invalid:"仓库名无效"}[m.clone.status] || m.clone.status);
+    return "本地 clone 未完成：" + String(err);
+  }
+  if (m && m.status === "LOCAL_SETUP") return "本地环境还没准备好";
   if (m && m.tests && (m.tests.status === "DEPENDENCY_REQUIRED" || m.tests.gate === "DEPENDENCY_REQUIRED"))
     return "需要用户授权安装依赖";
   if (m && m.status === "WAITING_USER_APPROVAL") return "本地已准备，远程写入需你确认";
@@ -863,6 +872,12 @@ function currentPipelineIndex(steps) {
   });
 }
 
+const EVIDENCE_ZH = {cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时", incomplete:"本地目录不完整，未覆盖", invalid:"仓库名无效", inspected:"已检查仓库", none:"无 Issue 引用", missing:"草稿缺失"};
+
+function stripMd(s) {
+  return String(s || "").replace(/[*_`#]+/g, "").trim();
+}
+
 function renderPipelineStep(step, isCurrent) {
   const status = pipelineStepStatus(step, isCurrent);
   const label = pipelineStepLabel(step);
@@ -872,8 +887,9 @@ function renderPipelineStep(step, isCurrent) {
     detail = "需要用户授权安装依赖";
   } else if (status !== "skipped") {
     const evidence = step && (step.evidence || step.detail || step.text);
-    const ev = evidence == null ? "" : String(evidence).trim();
-    if (ev && !PIPELINE_ID_RE.test(ev) && ev !== step.status) detail = ev;
+    const ev = evidence == null ? "" : stripMd(String(evidence));
+    if (ev && EVIDENCE_ZH[ev]) detail = EVIDENCE_ZH[ev];
+    else if (ev && !PIPELINE_ID_RE.test(ev) && ev !== step.status) detail = ev;
   }
   return `<li>${glyph} ${esc(label)}：${esc(detail)}</li>`;
 }
@@ -894,13 +910,16 @@ function missionView(m) {
   const clone = m.clone && m.clone.status ? m.clone.status : "尚未 clone";
   const cloneErr = m.clone && m.clone.error ? m.clone.error : "";
   const cloneZh = ({cloned:"已克隆到本机", exists:"本地已有仓库", failed:"克隆失败，任务仍保留", no_git:"本机没有 git", skipped:"已跳过克隆", timeout:"克隆超时"}[clone] || clone);
-  const first = (m.steps_zh && m.steps_zh[0]) || "未知";
+  const firstRaw = (m.steps_zh && m.steps_zh[0]) || "未知";
+  const first = stripStepPrefix(firstRaw) || firstRaw;
   const root = m.local_path || "";
   const id = m.id;
   const paused = missionPaused(m);
   const abandoned = m.status === "ABANDONED";
   const strat = m.strategy || {};
-  const why = (m.why_now && m.why_now.length) ? m.why_now.join("；") : "未知";
+  const why = (m.why_now && m.why_now.length)
+    ? m.why_now.join("；")
+    : ((strat.why && strat.why.length) ? strat.why.join("；") : "未知");
   const entryBits = [strat.summary_zh, strat.path].filter(Boolean);
   const entry = entryBits.length ? entryBits.join(" / ") : "未知";
   const diff = m.difficulty || strat.difficulty || "未知";

@@ -254,6 +254,34 @@ def test_clone_reuses_existing_checkout(tmp_path):
     assert called["n"] == 0
 
 
+def test_clone_incomplete_dir_is_not_overwritten(tmp_path):
+    dest = tmp_path / "work"
+    clone_dir = dest / "repo"
+    clone_dir.mkdir(parents=True)
+    leftover = clone_dir / "user.txt"
+    leftover.write_text("keep me", encoding="utf-8")
+    called = {"n": 0}
+
+    def runner(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("must not clone over leftover files")
+
+    out = clone_public_repo("acme/toy", dest, runner=runner)
+    assert out["ok"] is False
+    assert out["status"] == "incomplete"
+    assert "没有覆盖" in (out.get("error") or "")
+    assert leftover.read_text(encoding="utf-8") == "keep me"
+    assert called["n"] == 0
+
+
+def test_issue_draft_survives_rewrite(tmp_path):
+    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    first = write_issue_draft(tmp_path, m)
+    first.write_text("USER EDIT\n", encoding="utf-8")
+    again = write_issue_draft(tmp_path, m)
+    assert again.read_text(encoding="utf-8") == "USER EDIT\n"
+
+
 def test_clone_uses_depth_one_and_writes_tree(tmp_path):
     seen: list[list[str]] = []
 
@@ -322,7 +350,7 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     log = dest / "TASK_LOG.md"
     assert log.is_file()
     log_text = log.read_text(encoding="utf-8")
-    for field in ("TASK:", "COMMAND:", "EXIT:", "RESULT:", "VERDICT:", "NEXT:"):
+    for field in ("WHEN:", "TASK:", "COMMAND:", "EXIT:", "RESULT:", "VERDICT:", "NEXT:"):
         assert field in log_text
 
 
@@ -366,6 +394,7 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     assert by_id["clone"]["status"] == "done"
     assert by_id["waiting_approval"]["status"] == "pending"
     assert by_id["waiting_approval"]["status"] != "done"
+    assert by_id["clone"]["evidence"] == "已克隆到本机"
     assert by_id["clone"]["label_zh"] == "克隆仓库"
     assert by_id["branch"]["label_zh"] == "创建本地分支"
     assert by_id["inspect"]["label_zh"] == "检查仓库"
@@ -787,6 +816,52 @@ def test_setup_node_repo_records_dependency_required(tmp_home):
     assert "npm install" not in src
     assert "cargo build" not in src
     assert dependency_authorization_gate(dest / "repo")["status"] == "DEPENDENCY_REQUIRED"
+
+
+def test_setup_retry_keeps_user_draft_and_does_not_replay_clone_log(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+
+    def runner(cmd, **_k):
+        if "clone" in cmd:
+            clone_dest = Path(cmd[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    first = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert first["clone"]["ok"] is True
+    draft = dest / "ISSUE_DRAFT.md"
+    draft.write_text("KEEP THIS DRAFT\n", encoding="utf-8")
+    log_before = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    clone_logs = log_before.count("TASK: clone\n")
+
+    second = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert second["clone"]["status"] == "exists"
+    assert draft.read_text(encoding="utf-8") == "KEEP THIS DRAFT\n"
+    log_after = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert log_after.count("TASK: clone\n") == clone_logs
+    assert "TASK: setup_retry" in log_after
+
+
+def test_markdown_heading_strips_bold(tmp_path):
+    from foreshadow.mission import inspect_clone
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text(
+        "# **Write. Search. Fork. The State Store**\n\nhello\n",
+        encoding="utf-8",
+    )
+    out = inspect_clone(root)
+    assert out["readme_title"] == "Write. Search. Fork. The State Store"
+    assert "**" not in (out["readme_title"] or "")
 
 
 def test_inspect_finds_github_contributing_and_rst_title(tmp_path):

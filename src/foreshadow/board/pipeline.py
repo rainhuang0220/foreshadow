@@ -42,6 +42,20 @@ def _review_commands(full_name: str) -> dict[str, str]:
     }
 
 
+def _why_now_text(row: ScoredRepo, extra_meta: dict[str, Any]) -> str | None:
+    """Prefer scored why_now; else real strategy reasons. Never invent."""
+    if row.why_now:
+        return str(row.why_now)
+    reasons = extra_meta.get("strategy_why") or []
+    bits = [str(item).strip() for item in reasons if str(item).strip()]
+    if bits:
+        return "；".join(bits)
+    headline = extra_meta.get("headline")
+    if headline:
+        return str(headline)
+    return None
+
+
 def _card(
     row: ScoredRepo,
     *,
@@ -109,7 +123,7 @@ def _card(
         final_score=chair.score,
         dimensions=chair.dimensions,
         evidence=evidence,
-        why_now=row.why_now,
+        why_now=_why_now_text(row, extra_meta),
         suggested_contribution=suggested,
         p0_opportunity=row.breakdown.opportunity.value,
         p0_explosion=row.breakdown.explosion.value,

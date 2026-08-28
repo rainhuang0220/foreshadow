@@ -60,6 +60,19 @@ def _row(name: str, owner: str = "acme", **kwargs) -> ScoredRepo:
     )
 
 
+def test_why_now_falls_back_to_strategy_why_not_invention():
+    from foreshadow.board.pipeline import _why_now_text
+
+    row = _row("toy")
+    assert _why_now_text(row, {}) is None
+    assert (
+        _why_now_text(row, {"strategy_why": ["开放样本里有多条 bug 信号"]})
+        == "开放样本里有多条 bug 信号"
+    )
+    row.why_now = "scored why"
+    assert _why_now_text(row, {"strategy_why": ["ignored"]}) == "scored why"
+
+
 def test_reviewer_weights_are_distinct():
     s = BoardSettings()
     assert s.trend.momentum != s.community.momentum

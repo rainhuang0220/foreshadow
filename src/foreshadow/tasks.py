@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +62,9 @@ def append_task_log(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         exit_s = "—" if exit_code is None else str(exit_code)
+        when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         block = (
+            f"WHEN: {when}\n"
             f"TASK: {task}\n"
             f"COMMAND: {command or '—'}\n"
             f"EXIT: {exit_s}\n"

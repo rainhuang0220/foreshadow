@@ -624,6 +624,18 @@ def clone_public_repo(
     clone_dir = Path(dest) / "repo"
     if (clone_dir / ".git").exists():
         return {"ok": True, "status": "exists", "path": str(clone_dir), "error": None}
+    if clone_dir.exists():
+        try:
+            leftover = any(clone_dir.iterdir())
+        except OSError:
+            leftover = True
+        if leftover:
+            return {
+                "ok": False,
+                "status": "incomplete",
+                "error": "本地 repo 目录不完整，Foreshadow 没有覆盖已有文件。清空该目录后才能重试 clone。",
+                "path": str(clone_dir),
+            }
     if runner is None and os.environ.get("FORESHADOW_SKIP_CLONE") == "1":
         return {
             "ok": False,
@@ -810,7 +822,7 @@ def _markdown_headings(path: Path) -> list[str]:
     for line in text.splitlines():
         s = line.strip()
         if s.startswith("#") and not s.startswith("#!"):
-            title = s.lstrip("#").strip()
+            title = _plain_heading(s.lstrip("#").strip())
             if title:
                 out.append(title)
     return out
@@ -826,6 +838,21 @@ def _git_env() -> dict[str, str]:
 
 
 ENTRY_BRANCH = "foreshadow/entry"
+_MD_MARK = re.compile(r"[*_`]+")
+
+
+def _plain_heading(text: str) -> str:
+    return _MD_MARK.sub("", text or "").strip()
+
+
+def _keep_sidecar(path: Path) -> Path | None:
+    """Do not overwrite a user's existing local draft."""
+    try:
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+    except OSError:
+        return None
+    return None
 
 
 def refuse_unsafe_local_cmd(cmd: list[str] | str) -> dict[str, Any] | None:
@@ -1074,6 +1101,9 @@ def write_issue_draft(
     cited: dict[str, Any] | None = None,
 ) -> Path:
     path = Path(dest) / "ISSUE_DRAFT.md"
+    kept = _keep_sidecar(path)
+    if kept is not None:
+        return kept
     why = "\n".join(f"- {w}" for w in mission.why_now) or "- （待补充）"
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
     kind = {
@@ -1129,6 +1159,9 @@ def write_pr_draft(dest: Path, mission: Mission) -> Path | None:
     if mission.strategy.path not in CODE_SHAPED_PATHS:
         return None
     path = Path(dest) / "PR_DRAFT.md"
+    kept = _keep_sidecar(path)
+    if kept is not None:
+        return kept
     path.write_text(
         f"# 本地补丁草案（未发送）\n\n"
         f"项目：{mission.full_name}\n"
@@ -1182,6 +1215,9 @@ def write_reproduction_doc(
     if mission.strategy.path != "REPRODUCTION":
         return None
     path = Path(dest) / "REPRODUCTION.md"
+    kept = _keep_sidecar(path)
+    if kept is not None:
+        return kept
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
     path.write_text(
         f"# 复现记录（本地）\n\n"
@@ -1208,6 +1244,9 @@ def write_benchmark_doc(
     if mission.strategy.path != "BENCHMARK":
         return None
     path = Path(dest) / "BENCHMARK.md"
+    kept = _keep_sidecar(path)
+    if kept is not None:
+        return kept
     inspect = inspect or {}
     hint = str(inspect.get("install_hint") or "").strip()
     heads = [
@@ -1244,6 +1283,9 @@ def write_discussion_draft(dest: Path, mission: Mission) -> Path | None:
     if mission.strategy.path != "DISCUSSION":
         return None
     path = Path(dest) / "DISCUSSION_DRAFT.md"
+    kept = _keep_sidecar(path)
+    if kept is not None:
+        return kept
     why = "\n".join(f"- {w}" for w in mission.why_now) or "- （待补充）"
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
     path.write_text(
@@ -1416,12 +1458,73 @@ def _pipeline_step(step_id: str, status: str, evidence: Any) -> dict[str, Any]:
     }
 
 
+_CLONE_EVIDENCE = {
+    "cloned": "已克隆到本机",
+    "exists": "本地已有仓库",
+    "failed": "克隆失败，任务仍保留",
+    "no_git": "本机没有 git",
+    "skipped": "已跳过克隆",
+    "timeout": "克隆超时",
+    "invalid": "仓库名无效",
+    "incomplete": "本地目录不完整，未覆盖",
+}
+
+
 def _clone_pipeline_status(clone: dict[str, Any]) -> str:
     if clone.get("ok"):
         return "done"
     if str(clone.get("status") or "") in {"skipped", "no_git"}:
         return "skipped"
     return "failed"
+
+
+def _clone_evidence(clone: dict[str, Any]) -> str:
+    st = str(clone.get("status") or "")
+    if st in _CLONE_EVIDENCE:
+        return _CLONE_EVIDENCE[st]
+    err = str(clone.get("error") or "").strip()
+    return err[:120] or st or "未知"
+
+
+def _inspect_evidence(inspect: dict[str, Any]) -> str:
+    title = _plain_heading(str(inspect.get("readme_title") or ""))
+    if title:
+        return title
+    if inspect.get("inspected"):
+        return "已检查仓库"
+    return "未检查"
+
+
+def _issue_evidence(cited: dict[str, Any]) -> str:
+    number = cited.get("number")
+    if number:
+        return f"#{number}"
+    return "无 Issue 引用"
+
+
+def _tests_evidence(tests: dict[str, Any]) -> str:
+    if tests.get("message_zh"):
+        return str(tests["message_zh"])
+    st = str(tests.get("status") or "")
+    if st == "DEPENDENCY_REQUIRED":
+        return "需要用户授权安装依赖"
+    if st in {"collect_ok", "passed"}:
+        return "已收集测试"
+    if st in {"collect_failed", "failed", "timeout"}:
+        return "测试收集失败"
+    if st in {"skipped", ""} or tests.get("kind") in {None, "none"}:
+        return "跳过（无允许的测试命令）"
+    return st
+
+
+def _task_log_has(dest: Path, task: str) -> bool:
+    path = Path(dest) / "TASK_LOG.md"
+    try:
+        if not path.is_file():
+            return False
+        return f"TASK: {task}\n" in path.read_text(encoding="utf-8")
+    except OSError:
+        return False
 
 
 def _branch_pipeline_status(branch: dict[str, Any], *, cloned: bool) -> str:
@@ -1459,7 +1562,7 @@ def _build_setup_pipeline(
         _pipeline_step(
             "clone",
             _clone_pipeline_status(clone),
-            clone.get("status") or "unknown",
+            _clone_evidence(clone),
         ),
         _pipeline_step(
             "branch",
@@ -1469,21 +1572,17 @@ def _build_setup_pipeline(
         _pipeline_step(
             "inspect",
             "done" if inspect.get("inspected") else "skipped",
-            inspect.get("readme_title")
-            or ("inspected" if inspect.get("inspected") else "skipped"),
+            _inspect_evidence(inspect),
         ),
         _pipeline_step(
             "issue",
             "done" if issue_n else "skipped",
-            f"#{issue_n}" if issue_n else "none",
+            _issue_evidence({"number": issue_n} if issue_n else cited),
         ),
         _pipeline_step(
             "tests",
             _tests_pipeline_status(tests),
-            tests.get("message_zh")
-            or tests.get("status")
-            or tests.get("kind")
-            or "skipped",
+            _tests_evidence(tests),
         ),
         _pipeline_step(
             "drafts",
@@ -1762,9 +1861,21 @@ def setup_local_environment(
         drafts_ok=(dest / "ISSUE_DRAFT.md").is_file(),
         waiting=dest_status == "WAITING_USER_APPROVAL",
     )
-    _log_setup_pipeline(
-        dest, pipeline, skip_ids={"tests"} if logged_tests else None
-    )
+    if _task_log_has(dest, "clone"):
+        from foreshadow.tasks import append_task_log
+
+        append_task_log(
+            dest,
+            task="setup_retry",
+            command="",
+            result="reused existing local worktree",
+            verdict="UNKNOWN",
+            next_step=_HITL_NEXT,
+        )
+    else:
+        _log_setup_pipeline(
+            dest, pipeline, skip_ids={"tests"} if logged_tests else None
+        )
     extra = {
         "clone": clone,
         "inspect": inspect,

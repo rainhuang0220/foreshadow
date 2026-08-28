@@ -89,6 +89,9 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert 'failed:"✕"' in html
     assert 'skipped:"跳过"' in html
     assert "需要用户授权安装依赖" in html
+    assert "已克隆到本机" in html
+    assert "stripStepPrefix" in html
+    assert "本地 clone 未完成" in html
     assert "Clone done" not in html
     assert "pipelineLive" in html
     assert "LOCAL_SETUP" in html

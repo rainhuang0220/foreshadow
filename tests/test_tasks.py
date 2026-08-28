@@ -37,6 +37,7 @@ def test_collect_tests_uses_collect_only(tmp_path):
     assert out.action == "run_test"
     assert out.artifact
     log = Path(out.artifact).read_text(encoding="utf-8")
+    assert "WHEN:" in log
     assert "TASK: collect_tests" in log
     assert "COMMAND:" in log
     assert "EXIT:" in log
