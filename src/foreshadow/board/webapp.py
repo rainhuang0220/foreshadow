@@ -1102,10 +1102,7 @@ function stampMissionOnCards(m) {
 }
 
 function alreadyLocal(m) {
-  if (!m) return false;
-  if (m.clone && m.clone.ok) return true;
-  const st = String(m.status || m.mission_status || "");
-  return st === "WAITING_USER_APPROVAL" || st === "DRAFT_READY" || st === "IMPLEMENTING";
+  return !!(m && m.clone && m.clone.ok);
 }
 
 async function startEnter(name) {
