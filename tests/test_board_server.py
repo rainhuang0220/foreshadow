@@ -232,6 +232,8 @@ def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
             },
         )
         assert reg.status_code == 200
+        bad = a.post(f"{base}/api/mission", json={"full_name": "../etc/passwd"})
+        assert bad.status_code == 400
         created = a.post(f"{base}/api/mission", json={"full_name": "acme/x"})
         assert created.status_code == 200
         mission = created.json()["mission"]
