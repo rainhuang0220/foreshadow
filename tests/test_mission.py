@@ -237,11 +237,20 @@ def test_clone_is_fail_soft_without_git(tmp_path, monkeypatch):
     assert not (tmp_path / "repo" / ".git").exists()
 
 
+def _stub_complete_git(root: Path) -> None:
+    git = root / ".git"
+    git.mkdir(parents=True, exist_ok=True)
+    (git / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+    pack = git / "objects" / "pack"
+    pack.mkdir(parents=True, exist_ok=True)
+    (pack / "pack-stub.pack").write_bytes(b"PACK")
+
+
 def test_clone_reuses_existing_checkout(tmp_path):
     dest = tmp_path / "work"
     clone_dir = dest / "repo"
     clone_dir.mkdir(parents=True)
-    (clone_dir / ".git").mkdir()
+    _stub_complete_git(clone_dir)
     called = {"n": 0}
 
     def runner(*_a, **_k):
@@ -252,6 +261,45 @@ def test_clone_reuses_existing_checkout(tmp_path):
     assert out["ok"] is True
     assert out["status"] == "exists"
     assert called["n"] == 0
+
+
+def test_clone_empty_git_dir_is_not_treated_as_ready(tmp_path):
+    dest = tmp_path / "work"
+    clone_dir = dest / "repo"
+    clone_dir.mkdir(parents=True)
+    (clone_dir / ".git").mkdir()
+    called = {"n": 0}
+
+    def runner(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("must not clone over a broken .git")
+
+    out = clone_public_repo("acme/toy", dest, runner=runner)
+    assert out["ok"] is False
+    assert out["status"] == "incomplete"
+    assert called["n"] == 0
+    assert (clone_dir / ".git").is_dir()
+
+
+def test_setup_skips_when_paused(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    from foreshadow.mission import transition
+
+    transition(conn, mid, uid, "LOCAL_SETUP")
+    transition(conn, mid, uid, "PAUSED")
+
+    def runner(*_a, **_k):
+        raise AssertionError("paused setup must not clone")
+
+    out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
+    assert out["mission"]["status"] == "PAUSED"
+    assert not (dest / "repo" / ".git").exists()
 
 
 def test_clone_incomplete_dir_is_not_overwritten(tmp_path):
@@ -831,7 +879,7 @@ def test_setup_retry_keeps_user_draft_and_does_not_replay_clone_log(tmp_home):
         if "clone" in cmd:
             clone_dest = Path(cmd[-1])
             clone_dest.mkdir(parents=True)
-            (clone_dest / ".git").mkdir()
+            _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 

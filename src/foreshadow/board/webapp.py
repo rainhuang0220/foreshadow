@@ -580,12 +580,19 @@ function cardIntro(c) {
   return (c && (c.description || c.intro_zh)) || "";
 }
 function cardWhy(c) {
+  if (c && c.why_now) return Array.isArray(c.why_now) ? c.why_now.filter(Boolean).join("；") : String(c.why_now);
   if (c && c.strategy_why && c.strategy_why[0]) return String(c.strategy_why[0]);
   return (c && c.headline) || "";
 }
+function missionIsOpen(c) {
+  const id = Number(c.mission_id) || 0;
+  if (!id) return false;
+  const st = String(c.mission_status || "");
+  return st !== "ABANDONED" && st !== "MERGED";
+}
 function enterOrMissionBtn(c) {
   const id = Number(c.mission_id) || 0;
-  if (id && cloneOkFor(c)) {
+  if (id && (cloneOkFor(c) || missionIsOpen(c))) {
     return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})">查看任务</button>`;
   }
   return `<button type="button" class="primary" onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>`;
@@ -607,11 +614,11 @@ function listView(board) {
         </div>
         <div class="sub entry">${esc(desc || "—")}</div>
         <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
-        ${why ? `<div class="sub">${esc(why)}</div>` : ""}
+        ${why ? `<div class="sub">为什么现在：${esc(why)}</div>` : ""}
       </div>
       <div class="act">
         <button type="button" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">查看详情</button>
-        ${enterOrMissionBtn(c)}
+        ${state.open===c.full_name ? "" : enterOrMissionBtn(c)}
       </div>
     </div>`;
   }).join("");
@@ -1057,6 +1064,13 @@ function stampMissionOnCards(m) {
   if (m.clone) card.clone = m.clone;
 }
 
+function alreadyLocal(m) {
+  if (!m) return false;
+  if (m.clone && m.clone.ok) return true;
+  const st = String(m.status || m.mission_status || "");
+  return st === "WAITING_USER_APPROVAL" || st === "DRAFT_READY" || st === "IMPLEMENTING";
+}
+
 async function startEnter(name) {
   if (state.busy) return;
   state.busy = true;
@@ -1069,7 +1083,7 @@ async function startEnter(name) {
     state.open = null;
     const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     if (card && data.mission && data.mission.id) card.mission_id = data.mission.id;
-    if (data.mission && data.mission.id && !missionPaused(data.mission)) await setupLocal(data.mission.id);
+    if (data.mission && data.mission.id && !missionPaused(data.mission) && !alreadyLocal(data.mission)) await setupLocal(data.mission.id);
     try { await loadBoard(); } catch {}
   } catch (e) { alert(e.message); }
   finally { state.busy = false; render(); }

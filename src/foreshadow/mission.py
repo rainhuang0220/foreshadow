@@ -602,6 +602,34 @@ def _safe_repo_dir(full_name: str) -> str:
     return full_name.replace("/", "__").replace("..", "")
 
 
+def _clone_looks_complete(clone_dir: Path) -> bool:
+    """True only if the worktree has a usable git HEAD. Never delete leftovers."""
+    git = Path(clone_dir) / ".git"
+    if git.is_file():
+        try:
+            return "gitdir:" in git.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+    if not git.is_dir():
+        return False
+    if not (git / "HEAD").is_file():
+        return False
+    objs = git / "objects"
+    if not objs.is_dir():
+        return False
+    pack = objs / "pack"
+    try:
+        if pack.is_dir() and any(pack.iterdir()):
+            return True
+        for child in objs.iterdir():
+            if child.is_dir() and child.name not in {"info", "pack"}:
+                if any(child.iterdir()):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def github_clone_url(full_name: str) -> str:
     name = (full_name or "").strip()
     if not REPO_NAME_RE.match(name) or ".." in name or name.endswith(".git"):
@@ -622,8 +650,15 @@ def clone_public_repo(
     except ValueError as exc:
         return {"ok": False, "status": "invalid", "error": str(exc), "path": None}
     clone_dir = Path(dest) / "repo"
-    if (clone_dir / ".git").exists():
-        return {"ok": True, "status": "exists", "path": str(clone_dir), "error": None}
+    if clone_dir.exists() and (clone_dir / ".git").exists():
+        if _clone_looks_complete(clone_dir):
+            return {"ok": True, "status": "exists", "path": str(clone_dir), "error": None}
+        return {
+            "ok": False,
+            "status": "incomplete",
+            "error": "本地 repo 目录不完整，Foreshadow 没有覆盖已有文件。清空该目录后才能重试 clone。",
+            "path": str(clone_dir),
+        }
     if clone_dir.exists():
         try:
             leftover = any(clone_dir.iterdir())
@@ -1724,6 +1759,21 @@ def setup_local_environment(
     full_name = str(plan.get("full_name") or "")
     dest = prepare_local_dir(data_dir, full_name)
     current = str(plan.get("status") or "MISSION_READY")
+    if current in {"PAUSED", "ABANDONED", "MERGED"}:
+        clone = plan.get("clone") if isinstance(plan.get("clone"), dict) else {}
+        return {
+            "mission": {
+                **plan,
+                "id": mission_id,
+                "status": current,
+                "status_zh": status_zh(current),
+            },
+            "clone": clone or {"ok": False, "status": "skipped"},
+            "inspect": plan.get("inspect") or {},
+            "branch": plan.get("branch") or {},
+            "tests": plan.get("tests") or {},
+            "pipeline": plan.get("pipeline") or [],
+        }
     if current == "MISSION_READY":
         transition(conn, mission_id, user_id, "LOCAL_SETUP")
     clone = clone_public_repo(full_name, dest, runner=runner)

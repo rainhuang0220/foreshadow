@@ -52,14 +52,20 @@ def test_present_board_is_chinese_and_sorted():
     missions = {
         top["full_name"]: {
             "id": 9,
-            "status": "MISSION_READY",
+            "status": "WAITING_USER_APPROVAL",
             "next_step_zh": "准备本地环境",
             "needs_user_approval": True,
+            "clone": {"ok": True, "status": "cloned"},
+            "pipeline": [{"id": "clone", "status": "done", "label_zh": "克隆仓库"}],
         }
     }
     joined = present_board(board, missions=missions)
     hit = joined["candidates"][0]
     assert hit["mission_id"] == 9
+    assert hit["mission_status"] == "WAITING_USER_APPROVAL"
+    assert hit["clone"]["ok"] is True
+    assert hit["pipeline"][0]["id"] == "clone"
+    assert "why_now" in hit
     assert hit["needs_user_approval"] is True
     assert hit.get("access_unknown") is True
     assert hit.get("access_score") is None

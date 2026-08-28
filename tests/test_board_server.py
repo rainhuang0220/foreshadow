@@ -185,8 +185,11 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
             html.index("async function resumeMission") : html.index("async function refuseRemote")
         ]
         assert "await setupLocal" in start_js
+        assert "alreadyLocal" in start_js
         assert 'api("/api/mission"' in start_js
         assert "/api/mission/setup" not in start_js
+        assert "missionIsOpen" in html
+        assert "为什么现在：" in html
         assert "setupLocal" not in existing_js
         assert "/api/mission/setup" not in existing_js
         assert 'api("/api/missions"' in existing_js
