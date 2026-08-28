@@ -298,6 +298,32 @@ def test_create_for_user_rejects_invalid_repo_name(tmp_home):
     assert not (tmp_home / "work").exists() or not any((tmp_home / "work").rglob("*"))
 
 
+def test_git_env_strips_tokens_and_helpers(monkeypatch):
+    from foreshadow.mission import _git_env
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret")
+    monkeypatch.setenv("GH_TOKEN", "ghp_secret")
+    monkeypatch.setenv("GH_ENTERPRISE_TOKEN", "ghp_secret")
+    monkeypatch.setenv("GIT_ASKPASS", "/tmp/askpass")
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "1")
+    monkeypatch.setenv("HTTP_PROXY", "http://user:pass@proxy.example")
+    env = _git_env()
+    for key in (
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "GH_ENTERPRISE_TOKEN",
+        "HTTP_PROXY",
+        "GIT_CONFIG",
+    ):
+        assert key not in env
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GIT_ASKPASS"] == ""
+    assert env.get("GCM_INTERACTIVE") == "never"
+    assert "PATH" in env
+    src = inspect.getsource(_git_env)
+    assert "os.environ.copy" not in src
+
+
 def test_clone_url_rejects_injection(tmp_path):
     for name in ("../etc/passwd", "a/b;rm", "https://evil.com/x", "a/../../b", "a/b.git\n"):
         out = clone_public_repo(name, tmp_path)

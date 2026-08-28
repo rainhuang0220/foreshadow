@@ -947,12 +947,40 @@ def _markdown_headings(path: Path) -> list[str]:
     return out
 
 
+_GIT_ENV_KEEP = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LC_MESSAGES",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+    }
+)
+_GIT_ENV_DROP_PARTS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "ASKPASS", "CREDENTIAL")
+
+
 def _git_env() -> dict[str, str]:
-    env = os.environ.copy()
+    """Minimal env for git. Never pass GitHub tokens or credential helpers."""
+    env: dict[str, str] = {}
+    for key, val in os.environ.items():
+        upper = key.upper()
+        if key not in _GIT_ENV_KEEP and not key.startswith("LC_"):
+            continue
+        if any(part in upper for part in _GIT_ENV_DROP_PARTS):
+            continue
+        env[key] = val
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_ASKPASS"] = ""
-    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GH_ENTERPRISE_TOKEN"):
-        env.pop(key, None)
+    env["GCM_INTERACTIVE"] = "never"
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
     return env
 
 
