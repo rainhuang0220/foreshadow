@@ -1546,6 +1546,17 @@ def _pytest_collect_args(command: str, clone_dir: Path) -> list[str] | None:
     return args
 
 
+def _issue_pytest_verdict(result: dict[str, Any] | None) -> str:
+    if not result:
+        return "UNKNOWN"
+    status = str(result.get("status") or "")
+    if result.get("ok") or status == "collect_ok":
+        return "FOUND_TEST_TARGET"
+    if status in {"collect_failed", "failed", "timeout", "no_runner"}:
+        return "TEST_COLLECTION_FAILED"
+    return "UNKNOWN"
+
+
 def _maybe_collect_issue_pytest(
     clone_dir: Path,
     inspect: dict[str, Any],
@@ -1689,7 +1700,7 @@ def setup_local_environment(
                 result=str(
                     issue_collect.get("summary") or issue_collect.get("status") or ""
                 ),
-                verdict="UNKNOWN",
+                verdict=_issue_pytest_verdict(issue_collect),
                 next_step=_HITL_NEXT,
             )
     else:

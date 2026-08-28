@@ -376,6 +376,115 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     assert all(part != "commit" for cmd in seen for part in cmd)
 
 
+def _setup_issue_pytest_mission(tmp_home, *, body: str, files: dict[str, str], collect_code: int = 0):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
+    m = build_mission(
+        "acme/toy",
+        feat=FeaturesBlob(
+            bug_n=3,
+            issue_sample_n=6,
+            help_issue_titles=["#73 crash on empty batch"],
+        ),
+        stars=40,
+        age_days=30,
+        contributors=4,
+    )
+    dest = prepare_local_dir(tmp_home, "acme/toy")
+    m.local_path = str(dest)
+    mid = persist_mission(conn, m, user_id=uid, repo_id=None)
+    seen: list[list[str]] = []
+
+    def runner(cmd, **_k):
+        argv = list(cmd)
+        seen.append(argv)
+        if "clone" in argv:
+            clone_dest = Path(argv[-1])
+            clone_dest.mkdir(parents=True)
+            (clone_dest / ".git").mkdir()
+            (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+            (clone_dest / "pyproject.toml").write_text(
+                "[project]\nname='toy'\n", encoding="utf-8"
+            )
+            for rel, text in files.items():
+                path = clone_dest / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if any("pytest" in str(part) for part in argv):
+            targeted = any("test_retriever.py" in str(part) for part in argv)
+            code = collect_code if targeted else 0
+            return SimpleNamespace(
+                returncode=code,
+                stdout="collected 1 item\n" if code == 0 else "",
+                stderr="" if code == 0 else "collection failed",
+            )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def fake_fetch(full_name: str, number: int):
+        return {
+            "number": 73,
+            "title": "crash on empty batch",
+            "body": body,
+            "html_url": "https://github.com/acme/toy/issues/73",
+        }
+
+    out = setup_local_environment(
+        conn, mid, uid, tmp_home, runner=runner, fetch_issue=fake_fetch
+    )
+    return dest, out, seen
+
+
+def test_issue_pytest_records_found_test_target(tmp_home):
+    dest, out, seen = _setup_issue_pytest_mission(
+        tmp_home,
+        body="pytest tests/test_retriever.py",
+        files={"tests/test_retriever.py": "def test_ok():\n    assert True\n"},
+        collect_code=0,
+    )
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "VERDICT: FOUND_TEST_TARGET" in log
+    assert "TEST_COLLECTION_FAILED" not in log
+    assert "pytest" in log
+    assert "tests/test_retriever.py" in log
+    collect_cmds = [cmd for cmd in seen if any("pytest" in str(p) for p in cmd)]
+    assert collect_cmds
+    assert any("--collect-only" in cmd for cmd in collect_cmds)
+    assert any("tests/test_retriever.py" in cmd for cmd in collect_cmds)
+    issue = (out["tests"] or {}).get("issue_collect") or {}
+    assert issue.get("ok") is True
+    assert "pytest" in str(issue.get("command") or "")
+
+
+def test_issue_pytest_records_collection_failed(tmp_home):
+    dest, out, _seen = _setup_issue_pytest_mission(
+        tmp_home,
+        body="pytest tests/test_retriever.py",
+        files={"tests/test_retriever.py": "def test_ok():\n    assert True\n"},
+        collect_code=1,
+    )
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "VERDICT: TEST_COLLECTION_FAILED" in log
+    assert "FOUND_TEST_TARGET" not in log
+    issue = (out["tests"] or {}).get("issue_collect") or {}
+    assert issue.get("ok") is False
+
+
+def test_issue_pytest_unknown_when_target_missing(tmp_home):
+    dest, out, _seen = _setup_issue_pytest_mission(
+        tmp_home,
+        body="pytest tests/test_retriever.py",
+        files={},
+        collect_code=0,
+    )
+    log = (dest / "TASK_LOG.md").read_text(encoding="utf-8")
+    assert "VERDICT: UNKNOWN" in log
+    assert "FOUND_TEST_TARGET" not in log
+    assert "TEST_COLLECTION_FAILED" not in log
+    assert not (out.get("tests") or {}).get("issue_collect")
+
+
 def test_setup_embeds_cited_issue(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
