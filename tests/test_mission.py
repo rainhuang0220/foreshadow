@@ -553,6 +553,27 @@ def test_clone_incomplete_dir_is_not_overwritten(tmp_path):
     assert called["n"] == 0
 
 
+def test_clone_removes_stale_staging_dirs(tmp_path):
+    dest = tmp_path / "work"
+    dest.mkdir()
+    stale = dest / ".clone-999"
+    stale.mkdir()
+    (stale / "junk").write_text("old", encoding="utf-8")
+
+    def runner(cmd, **_k):
+        clone_dest = Path(cmd[-1])
+        clone_dest.mkdir(parents=True)
+        _stub_complete_git(clone_dest)
+        (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = clone_public_repo("acme/toy", dest, runner=runner)
+    assert out["ok"] is True
+    assert not stale.exists()
+    assert (dest / "repo" / "README.md").is_file()
+    assert list(dest.glob(".clone-*")) == []
+
+
 def test_issue_draft_survives_rewrite(tmp_path):
     m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
     first = write_issue_draft(tmp_path, m)

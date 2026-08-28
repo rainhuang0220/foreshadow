@@ -775,9 +775,9 @@ def clone_public_repo(
             "path": None,
         }
     clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    for leftover_dir in clone_dir.parent.glob(".clone-*"):
+        shutil.rmtree(leftover_dir, ignore_errors=True)
     staging = clone_dir.parent / f".clone-{os.getpid()}"
-    if staging.exists():
-        shutil.rmtree(staging, ignore_errors=True)
     run = runner or subprocess.run
     cmd = [
         "git",
