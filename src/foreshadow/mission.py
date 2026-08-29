@@ -1601,7 +1601,9 @@ def _load_cited_issue(full_name: str, number: int) -> dict[str, Any] | None:
     except ImportError:
         return None
     try:
-        owner, name = full_name.split("/", 1)
+        owner, name = parse_repo_name(full_name).split("/", 1)
+        if number <= 0:
+            return None
         client = GitHubClient(resolve_token())
         raw = fetch_issue(client, owner, name, number)
     except (OSError, ValueError, KeyError, RuntimeError):

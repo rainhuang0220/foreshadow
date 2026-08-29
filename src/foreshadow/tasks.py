@@ -230,8 +230,14 @@ def local_commit(
         if len(line) < 4:
             continue
         xy, path = line[:2], line[3:].strip()
+        if path.startswith('"') and path.endswith('"') and len(path) >= 2:
+            path = path[1:-1]
         if " -> " in path:
             path = path.split(" -> ", 1)[-1]
+        if path.startswith(("-", "/", "\\")) or Path(path).is_absolute():
+            continue
+        if ".." in Path(path).parts:
+            continue
         name = Path(path).name
         if name.startswith(".") or name in {".env"}:
             continue

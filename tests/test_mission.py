@@ -405,6 +405,18 @@ def test_git_env_strips_tokens_and_helpers(monkeypatch):
     assert "os.environ.copy" not in src
 
 
+def test_load_cited_issue_rejects_invalid_repo(monkeypatch):
+    from foreshadow.mission import _load_cited_issue
+
+    def boom(*_a, **_k):
+        raise AssertionError("must not construct GitHubClient")
+
+    monkeypatch.setattr("foreshadow.github.client.GitHubClient", boom)
+    assert _load_cited_issue("../etc/passwd", 1) is None
+    assert _load_cited_issue("acme/toy", 0) is None
+    assert _load_cited_issue("acme/toy", -1) is None
+
+
 def test_clone_url_rejects_injection(tmp_path):
     for name in ("../etc/passwd", "a/b;rm", "https://evil.com/x", "a/../../b", "a/b.git\n"):
         out = clone_public_repo(name, tmp_path)
