@@ -76,13 +76,18 @@ def enrich_inspect(
 
 def list_worktree_files(root: Path, *, limit: int = 80) -> list[str]:
     out: list[str] = []
-    for dirpath, dirnames, filenames in Path(root).walk():
+    for dirpath, dirnames, filenames in Path(root).walk(follow_symlinks=False):
         dirnames[:] = [
             d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
         ]
         rel_dir = dirpath.relative_to(root)
         for name in filenames:
             if name.startswith("."):
+                continue
+            try:
+                if (dirpath / name).is_symlink():
+                    continue
+            except OSError:
                 continue
             rel = name if str(rel_dir) == "." else f"{rel_dir.as_posix()}/{name}"
             out.append(rel)

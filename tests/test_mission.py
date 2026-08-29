@@ -1199,6 +1199,35 @@ def test_inspect_finds_github_contributing_and_rst_title(tmp_path):
     assert "How to help" in (out.get("contributing_headings") or [])
 
 
+def test_inspect_clone_skips_symlink_readme(tmp_path):
+    from foreshadow.mission import inspect_clone
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    secret = tmp_path / "secret.md"
+    secret.write_text("# HOST SECRET\n", encoding="utf-8")
+    (root / "README.md").symlink_to(secret)
+    out = inspect_clone(root)
+    assert out["has_readme"] is False
+    assert out["readme_title"] is None
+    assert out.get("install_hint") in (None, "")
+    assert "HOST SECRET" not in str(out)
+
+
+def test_inspect_clone_skips_symlink_github_dir(tmp_path):
+    from foreshadow.mission import inspect_clone
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "CONTRIBUTING.md").write_text("# HOST CONTRIB\n", encoding="utf-8")
+    (root / ".github").symlink_to(outside)
+    out = inspect_clone(root)
+    assert out["has_contributing"] is False
+    assert "HOST CONTRIB" not in str(out)
+
+
 def test_benchmark_mission_has_no_pr_draft(tmp_path):
 
     m = build_mission(

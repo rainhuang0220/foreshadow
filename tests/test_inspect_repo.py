@@ -5,6 +5,20 @@ from foreshadow.inspect_repo import (
 )
 
 
+def test_list_worktree_skips_symlinks(tmp_path):
+    from foreshadow.inspect_repo import list_worktree_files
+
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "ok.py").write_text("x = 1\n", encoding="utf-8")
+    outside = tmp_path / "outside.py"
+    outside.write_text("secret = 1\n", encoding="utf-8")
+    (repo / "src" / "leak.py").symlink_to(outside)
+    files = list_worktree_files(repo)
+    assert "src/ok.py" in files
+    assert "src/leak.py" not in files
+
+
 def test_enrich_inspect_lists_real_files_only(tmp_path):
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)

@@ -855,7 +855,11 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     names = {p.name.lower() for p in entries}
     top = sorted(p.name for p in entries)[:20]
     readme = next(
-        (p for p in entries if p.is_file() and p.name.lower().startswith("readme")),
+        (
+            p
+            for p in entries
+            if _is_plain_file(p) and p.name.lower().startswith("readme")
+        ),
         None,
     )
     contrib = _find_contributing(root, entries)
@@ -918,21 +922,33 @@ def _tests_line(extra: dict[str, Any]) -> str:
     return ""
 
 
+def _is_plain_file(path: Path) -> bool:
+    try:
+        return path.is_file() and not path.is_symlink()
+    except OSError:
+        return False
+
+
 def _find_contributing(root: Path, entries: list[Path]) -> Path | None:
     wanted = {"contributing.md", "contributing.rst", "contributing"}
     for path in entries:
-        if path.is_file() and path.name.lower() in wanted:
+        if _is_plain_file(path) and path.name.lower() in wanted:
             return path
     github = root / ".github"
-    if github.is_dir():
-        for name in ("CONTRIBUTING.md", "CONTRIBUTING.rst", "CONTRIBUTING"):
-            cand = github / name
-            if cand.is_file():
-                return cand
+    try:
+        if github.is_dir() and not github.is_symlink():
+            for name in ("CONTRIBUTING.md", "CONTRIBUTING.rst", "CONTRIBUTING"):
+                cand = github / name
+                if _is_plain_file(cand):
+                    return cand
+    except OSError:
+        return None
     return None
 
 
 def _doc_headings(path: Path) -> list[str]:
+    if not _is_plain_file(path):
+        return []
     md = _markdown_headings(path)
     if md:
         return md
@@ -954,6 +970,8 @@ def _doc_headings(path: Path) -> list[str]:
 
 
 def _install_hint(path: Path) -> str | None:
+    if not _is_plain_file(path):
+        return None
     try:
         text = path.read_text(encoding="utf-8", errors="replace")[:8000]
     except OSError:
