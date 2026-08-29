@@ -160,6 +160,8 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
     try:
         page = httpx.get(f"{base}/")
         assert page.status_code == 200
+        assert page.headers.get("X-Frame-Options") == "DENY"
+        assert "frame-ancestors 'none'" in page.headers.get("Content-Security-Policy", "")
         assert "今日机会" in page.text
         assert "FORESHADOW" in page.text
 
