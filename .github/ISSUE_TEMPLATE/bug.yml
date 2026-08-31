@@ -1,0 +1,36 @@
+name: Bug report
+description: Something broken in Foreshadow
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Do **not** paste tokens, `.env` contents, or private notes.
+        CI and maintainers will not call live `api.github.com` to reproduce — include fixtures or redacted logs.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Expected vs actual. Include the command you ran.
+      placeholder: |
+        Command: uv run foreshadow …
+        Expected: …
+        Actual: …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: `foreshadow` / package version if known (e.g. 0.0.0).
+      placeholder: "0.0.0"
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps, fixture names, or redacted stderr. No Authorization headers.
+    validations:
+      required: false

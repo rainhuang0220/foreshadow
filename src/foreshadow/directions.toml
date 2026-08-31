@@ -1,0 +1,53 @@
+# Packaged Direction Fit bags (spec § Direction Fit).
+# Ten bags. topics / keywords / languages from the Direction Fit names,
+# 12.A topic example, and default search-query terms — no extra lexicon.
+
+[LLM]
+topics = ["llm"]
+keywords = ["gguf", "ggml", "llama.cpp", "ollama"]
+languages = []
+
+[Agent]
+topics = ["agents"]
+keywords = ["multi-agent", "tool use"]
+languages = []
+
+[MCP]
+topics = ["mcp"]
+keywords = ["model context protocol"]
+languages = []
+
+["RAG/memory"]
+topics = ["rag", "memory", "llm"]
+keywords = ["long-term memory", "embedding"]
+languages = []
+
+["world-model"]
+topics = ["world-model"]
+keywords = ["world model"]
+languages = []
+
+["eval/tooling"]
+topics = ["evaluation"]
+keywords = ["evals", "prompt engineering"]
+languages = []
+
+["AI infra"]
+topics = []
+keywords = ["cuda", "kv-cache", "tensor rt", "rocm"]
+languages = []
+
+["Rust/systems"]
+topics = []
+keywords = ["embedded", "no_std", "rtos"]
+languages = ["Rust"]
+
+["RISC-V"]
+topics = ["riscv"]
+keywords = ["riscv", "risc-v", "opensbi"]
+languages = []
+
+["compiler/OS"]
+topics = []
+keywords = ["compiler", "llvm", "osdev"]
+languages = ["Rust"]

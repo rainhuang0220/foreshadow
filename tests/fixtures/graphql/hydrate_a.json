@@ -1,0 +1,46 @@
+{
+  "data": {
+    "rateLimit": {
+      "cost": 1,
+      "remaining": 4999,
+      "limit": 5000,
+      "resetAt": "2026-08-24T01:00:00Z"
+    },
+    "repository": {
+      "id": "R_memkit",
+      "databaseId": 4242,
+      "nameWithOwner": "acme/memkit",
+      "url": "https://github.com/acme/memkit",
+      "description": "local memory kit",
+      "createdAt": "2026-05-01T00:00:00Z",
+      "pushedAt": "2026-08-20T00:00:00Z",
+      "updatedAt": "2026-08-20T00:00:00Z",
+      "isFork": false,
+      "isArchived": false,
+      "isDisabled": false,
+      "isEmpty": false,
+      "isTemplate": false,
+      "isMirror": false,
+      "hasIssuesEnabled": true,
+      "stargazerCount": 900,
+      "forkCount": 85,
+      "primaryLanguage": { "name": "Python" },
+      "licenseInfo": { "spdxId": "MIT", "key": "mit" },
+      "repositoryTopics": {
+        "nodes": [
+          { "topic": { "name": "memory" } },
+          { "topic": { "name": "rag" } }
+        ]
+      },
+      "defaultBranchRef": {
+        "name": "main",
+        "target": { "oid": "abc123", "committedDate": "2026-08-20T00:00:00Z" }
+      },
+      "issuesOpen": { "totalCount": 12 },
+      "issuesClosed": { "totalCount": 40 },
+      "prsOpen": { "totalCount": 3 },
+      "discussions": { "totalCount": 1 },
+      "contributing": { "byteSize": 1200 }
+    }
+  }
+}
