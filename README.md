@@ -4,7 +4,7 @@ Find what the future has already foreshadowed.
 
 Foreshadow is not trending. It is a local, explainable short-list of repos you might still be able to help, produced at most once a day, with you as the final decision maker.
 
-**Status:** P0 implemented (`0.1.0`) on branch `p0-implementation`. Not tagged and not published to PyPI. GET-only radar; empty Top 5 is OK; Top 5 needs ~7 daily snapshots (`v7`); human review required.
+**Status:** P0 shipped on `main` (`0.1.0`). P1 adds a **persistent observation panel** so yesterday's repos can still be hydrated when Search misses them. Official scoring is still v1 (55 / 35 / local `v7`). Empty Top 5 is OK. Human review required.
 
 中文简介见 [`README.zh-CN.md`](README.zh-CN.md)。English README is the source of truth.
 
@@ -12,11 +12,14 @@ Foreshadow is not trending. It is a local, explainable short-list of repos you m
 
 A local CLI that, at most once per UTC day:
 
-1. Discovers a shortlist of emerging public GitHub repositories (GET-only)
-2. Writes a daily star/fork/issue snapshot
-3. Scores Opportunity / Explosion / Contribution
-4. Emits a markdown report with **at most five** cards
-5. Records your Watch / Interested / Reject / Investigate / Enter / Later review
+1. **Discovers** emerging public GitHub repositories (GET-only search)
+2. **Observes** a persistent panel (operator watchlist + system-promoted repos) even if Search does not return them again
+3. Writes a daily star/fork/issue snapshot for seated repos
+4. Scores Opportunity / Explosion / Contribution (Official v1; Explosion needs local `v7`)
+5. Emits a markdown report with **at most five** cards
+6. Records your Watch / Interested / Reject / Investigate / Enter / Later review
+
+Search answers “what appeared today?”. Observation answers “what have we been watching?”. Scoring answers “is it worth entering now?”. See [`docs/p1-observation.md`](docs/p1-observation.md).
 
 ## Non-goals (P0)
 
@@ -30,7 +33,7 @@ A local CLI that, at most once per UTC day:
 ## Honest caveats
 
 - Empty Top 5 is OK.
-- Top 5 requires ~7 daily snapshots (`v7`); day 1 is empty by construction.
+- Top 5 requires a local `v7` window (`t-7` ± 1 day) on **the same repo**, not merely “7 calendar days of global snapshots”.
 - Lifetime `stars/age` is not Explosion.
 - Token stays on the machine.
 - We only GET public GitHub.

@@ -1,34 +1,22 @@
-# P0 dogfood (7 calendar days)
+# Dogfood
 
-This is a **real-data** soak of Foreshadow P0. It is not a merge gate by itself.
+## P0 (done)
 
-## Rules (do not break)
+Seven calendar days of real GitHub data on `p0-implementation`, reviewed 2026-08-31 UTC. Empty Official Top 5 was success. Missing 2026-08-26 and 2026-08-29 were not backfilled. Search-only 120-seat days produced **0 v7** because 8/24 ∩ 8/31 = 0.
 
-1. Do **not** lower `min_opportunity` / `min_explosion` to fill Top 5.
-2. Do **not** invent or backfill star history. Snapshots only grow by running the CLI.
-3. Empty Top 5 is **success**, not a bug.
-4. Do **not** merge `p0-implementation` into `main` until the post-run review.
+## P1 observation soak
 
-Window: start **2026-08-24** UTC. Review on or after **2026-08-31** UTC (7 calendar days).
+Goal: prove the **system observation panel** keeps repos hydrating after Search misses them, until a real `t-7` snapshot pair exists.
 
-## Where logs live
+### Rules
 
-Local only (gitignored):
+1. Do **not** lower `min_opportunity` / `min_explosion`.
+2. Do **not** invent or backfill star history.
+3. Empty Top 5 is still success.
+4. Do **not** treat `search_truncated` as a P1 failure (known P2).
+5. Success is **retention and v7 coverage > 0**, not a prettier board.
 
-```
-dogfood/local/JOURNAL.md
-dogfood/local/YYYY-MM-DD.md      # copy of the daily report if present
-dogfood/local/YYYY-MM-DD.json
-dogfood/local/YYYY-MM-DD.meta.json
-```
-
-Application data (also local):
-
-```
-~/Library/Application Support/foreshadow/
-```
-
-## How to run one day
+### How to run one day
 
 From this worktree:
 
@@ -36,19 +24,40 @@ From this worktree:
 ./scripts/dogfood-run.sh
 ```
 
-LaunchAgent (macOS, 08:15 local ≈ 00:15 UTC if you are on UTC+8):
+`FORESHADOW_HOME` defaults to `dogfood/local/home`. Existing P0 sqlite migrates forward (`006_observations.sql`); do not `rm` the db.
 
-```bash
-launchctl load ~/Library/LaunchAgents/ai.foreshadow.dogfood.plist
+### Daily Observation Health
+
+Each run's JSON `source_health` and `dogfood/local/YYYY-MM-DD.meta.json` should record:
+
+```text
+observation_panel_size
+user_watchlist_count
+system_observed_count
+fresh_discovery_count
+retained_from_previous_day
+daily_overlap_rate
+v7_baseline_eligible_count
+v7_available / v7_coverage_rate
+explosion_available
+observation_expired_count
+official top5_count
 ```
 
-## Anomalies to record
+### 7-day checklist
 
-Record these as anomalies. **Do not** treat empty Top 5 as one.
+| Day | Expect |
+|---|---|
+| 1 | System promotions > 0 if any scored repo clears admit min; panel persists |
+| 2 | `retained_from_previous_day` > 0 even if Search churns |
+| 3–6 | Panel hydrates without requiring the same search hits |
+| 7/8 | Some scored repos have a `t-7` snapshot; `v7_available` > 0 if those repos still sit in the panel |
+
+Do not pick a coverage percentage target on the first soak.
+
+### Anomalies (still)
 
 - CLI exit ≠ 0
-- Missing token
-- Rate limit / budget abort
-- Degraded run (`search_truncated`, `hydrate_failed`, `watchlist_truncated`)
-- Crash leftover (`status=running`/`failed`)
-- Config scoring weights changed (forbidden)
+- Missing token / budget abort / hydrate systemic failure
+- Crash leftover `status=running`/`failed`
+- Scoring weights changed (forbidden)
