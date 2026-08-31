@@ -122,6 +122,15 @@ def _status(card: BoardCard, board: BoardDocument) -> str:
     return "shortlist"
 
 
+def _observation_zh(card: BoardCard, my_action: str | None) -> str | None:
+    if my_action in {"watch", "interested", "investigate", "enter"}:
+        return "你的关注"
+    days = card.observation_age_days
+    if days is not None and days > 0:
+        return f"持续观察 · 第 {days} 天"
+    return None
+
+
 def _headline(card: BoardCard, status: str) -> str:
     if card.vetoed:
         return "硬规则否决，不进入候选。"
@@ -512,6 +521,7 @@ def present_card(
         "contributor": _n(card.contributor.score),
         "chair": _n(card.chair.score),
         "headline": _headline(card, status),
+        "observation_zh": _observation_zh(card, my_action),
         "status": status,
         "status_zh": STATUS_LABELS[status],
         "rank_kind": rank_kind,

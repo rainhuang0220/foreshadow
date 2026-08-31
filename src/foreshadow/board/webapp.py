@@ -632,7 +632,7 @@ function listView(board) {
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
         <div class="sub entry">${esc(desc || "—")}</div>
-        <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
+        <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}${c.observation_zh ? " · " + esc(c.observation_zh) : ""}</div>
         ${why ? `<div class="sub">为什么现在：${esc(why)}</div>` : ""}
       </div>
       <div class="act">
@@ -685,7 +685,7 @@ function drawerView(card) {
   <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
   <aside class="drawer ${state.open?"on":""}" role="dialog" aria-modal="true" aria-label="项目详情">
     <button class="close" type="button" onclick="closeCard()">关闭</button>
-    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}</p>
+    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}${card.observation_zh ? " · " + esc(card.observation_zh) : ""}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
     <section class="enter-plan">
       ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}

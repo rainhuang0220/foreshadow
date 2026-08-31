@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as date_cls
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.direction import load_direction_bags, score_direction
 from foreshadow.pipeline.hydrate import parse_dt
+from foreshadow.pipeline.observation import load_active
 from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import is_official_eligible
@@ -125,6 +127,12 @@ def _card(
         evidence=evidence,
         why_now=_why_now_text(row, extra_meta),
         suggested_contribution=suggested,
+        observation_age_days=_int_or_none(extra_meta.get("observation_age_days")),
+        observation_reason=(
+            str(extra_meta["observation_reason"])
+            if extra_meta.get("observation_reason")
+            else None
+        ),
         p0_opportunity=row.breakdown.opportunity.value,
         p0_explosion=row.breakdown.explosion.value,
         p0_contribution=row.breakdown.contribution.value,
@@ -486,6 +494,18 @@ def load_scored_from_db(
             "strategy_why": list(strat.why),
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
+    try:
+        day = date_cls.fromisoformat(date)
+    except ValueError:
+        day = clock.today()
+    for entry in load_active(conn, day):
+        extra = extras.get(entry.full_name)
+        if extra is None:
+            continue
+        extra["observation_age_days"] = (
+            day - date_cls.fromisoformat(entry.added_on)
+        ).days + 1
+        extra["observation_reason"] = entry.reason
     return scored, extras, snap_days
 
 
@@ -665,6 +685,15 @@ def _float_or_none(raw: Any) -> float | None:
         return None
     try:
         return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(raw: Any) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
     except (TypeError, ValueError):
         return None
 
