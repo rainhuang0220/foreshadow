@@ -255,7 +255,11 @@ def test_preview_does_not_write_observations(tmp_home, frozen_clock):
     before = conn.execute(
         "SELECT added_on, last_observed_on, state FROM observations"
     ).fetchall()
-    build_board_from_db(date="2026-08-24", preview=True, clock=frozen_clock)
+    board, snap_before, snap_after = build_board_from_db(
+        date="2026-08-24", preview=True, clock=frozen_clock
+    )
+    assert board.mode == "provisional"
+    assert snap_before == snap_after
     after = conn.execute(
         "SELECT added_on, last_observed_on, state FROM observations"
     ).fetchall()

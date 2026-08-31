@@ -362,6 +362,11 @@ def _snapshot_count(conn: sqlite3.Connection) -> int:
     return int(row[0]) if row else 0
 
 
+def _observation_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM observations").fetchone()
+    return int(row[0]) if row else 0
+
+
 def load_scored_from_db(
     conn: sqlite3.Connection,
     date: str,
@@ -698,15 +703,6 @@ def _int_or_none(raw: Any) -> int | None:
         return None
 
 
-def _int_or_none(raw: Any) -> int | None:
-    if raw is None or raw == "":
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
 def _last_release(features: Any) -> str | None:
     if not isinstance(features, dict):
         return None
@@ -731,6 +727,7 @@ def build_board_from_db(
     conn = connect(db_path)
     migrate(conn)
     before = _snapshot_count(conn)
+    obs_before = _observation_count(conn)
     scored, extras, snap_days = load_scored_from_db(conn, date, clock, settings)
     board = assemble_board(
         scored,
@@ -742,6 +739,9 @@ def build_board_from_db(
         extras=extras,
     )
     after = _snapshot_count(conn)
+    obs_after = _observation_count(conn)
+    if obs_before != obs_after:
+        raise RuntimeError("board run mutated observations")
     return board, before, after
 
 
