@@ -120,6 +120,22 @@ lines = [
     f"- status: `{status}`",
     f"- top5_count: `{top5}`",
 ]
+if health.get("observation_panel_size") is not None:
+    lines.append(
+        "- observation: panel={panel} watch={watch} system={sys} "
+        "fresh={fresh} retained={ret} overlap={ov} v7={v7}/{scored} "
+        "expired={exp}".format(
+            panel=health.get("observation_panel_size"),
+            watch=health.get("user_watchlist_count"),
+            sys=health.get("system_observed_count"),
+            fresh=health.get("fresh_discovery_count"),
+            ret=health.get("retained_from_previous_day"),
+            ov=health.get("daily_overlap_rate"),
+            v7=health.get("v7_available"),
+            scored=payload.get("scored_count"),
+            exp=health.get("observation_expired_count"),
+        )
+    )
 if reason:
     lines.append(f"- reason: `{reason}`")
 if notes:
