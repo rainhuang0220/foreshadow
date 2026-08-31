@@ -55,9 +55,7 @@ USAGE_CLOSED_RE = re.compile(
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 PUNCT_RE = re.compile(r"[^a-z0-9\s]+")
 TEST_DIRS = frozenset({"test", "tests", "spec", "__tests__"})
-EXT_ASSOC = frozenset(
-    {"NONE", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"}
-)
+EXT_ASSOC = frozenset({"NONE", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"})
 MAINT_ASSOC = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
@@ -293,9 +291,7 @@ def _scaled_phase_quotas(
         return {key: 0 for key in quotas}
     if remaining >= total:
         return dict(quotas)
-    out = {
-        key: int(quotas[key] * remaining / max(total, 1)) for key in quotas
-    }
+    out = {key: int(quotas[key] * remaining / max(total, 1)) for key in quotas}
     leftover = remaining - sum(out.values())
     for pool in ("A", "B", "C"):
         if leftover <= 0:
@@ -426,7 +422,9 @@ def medium_shortlist(
     if cap <= 0 or not rest:
         return []
     if not any(getattr(c, "pool", None) in {"A", "B", "C"} for c in rest):
-        rest.sort(key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True)
+        rest.sort(
+            key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True
+        )
         return rest[:cap]
     cfg_med = cfg.model_copy(
         update={
@@ -448,9 +446,7 @@ def medium_shortlist(
         if len(out) >= cap:
             return out
     leftover = [
-        c
-        for c in rest
-        if str(_get(c, "node_id", "id", default="") or "") not in seen
+        c for c in rest if str(_get(c, "node_id", "id", default="") or "") not in seen
     ]
     leftover.sort(
         key=lambda c: pre_rank_key(c, cfg=cfg, bags=bags, now=now), reverse=True

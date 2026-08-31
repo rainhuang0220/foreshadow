@@ -105,7 +105,9 @@ def test_files(files: list[str]) -> list[str]:
     for path in files:
         low = path.replace("\\", "/").lower()
         name = Path(path).name.lower()
-        in_test_dir = "/tests/" in f"/{low}" or "/test/" in f"/{low}" or "/spec/" in f"/{low}"
+        in_test_dir = (
+            "/tests/" in f"/{low}" or "/test/" in f"/{low}" or "/spec/" in f"/{low}"
+        )
         looks_test = any(h in name for h in TEST_NAME_HINTS)
         if (in_test_dir or looks_test) and Path(path).suffix.lower() in SOURCE_EXT:
             out.append(path)
@@ -136,7 +138,10 @@ def commands_from_body(body: str | None) -> list[str]:
     for raw in body.splitlines():
         line = raw.strip().lstrip("$").strip("`").strip()
         low = line.lower()
-        if any(bad in low for bad in ("curl ", "| sh", "| bash", "pip install", "npm install")):
+        if any(
+            bad in low
+            for bad in ("curl ", "| sh", "| bash", "pip install", "npm install")
+        ):
             continue
         if not SAFE_CMD.match(line):
             continue
@@ -151,6 +156,4 @@ def commands_from_body(body: str | None) -> list[str]:
 
 def _ticket_text(cited: dict[str, Any] | None) -> str:
     cited = cited or {}
-    return " ".join(
-        str(cited.get(k) or "") for k in ("number", "title", "body")
-    )
+    return " ".join(str(cited.get(k) or "") for k in ("number", "title", "body"))

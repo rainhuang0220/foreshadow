@@ -120,7 +120,10 @@ def test_low_star_high_evidence_can_remain(frozen_clock):
 def test_mid_star_breakout_can_beat_large_mature(frozen_clock):
     mid = score_repo_v2(_mid_breakout(), clock=frozen_clock)
     giant = score_repo_v2(large_mature(), clock=frozen_clock)
-    assert mid.evidence["s1"]["opportunity_window"] > giant.evidence["s1"]["opportunity_window"]
+    assert (
+        mid.evidence["s1"]["opportunity_window"]
+        > giant.evidence["s1"]["opportunity_window"]
+    )
     assert mid.breakdown.opportunity.value > giant.breakdown.opportunity.value
     assert giant.evidence["s1"]["stage"] in {"MATURE", "ESTABLISHED", "STAGNANT"}
 
@@ -139,7 +142,10 @@ def test_high_star_mature_gets_lower_entry_window(frozen_clock):
     giant = score_repo_v2(large_mature(), clock=frozen_clock)
     wave = score_repo_v2(_high_star_breakout(), clock=frozen_clock)
     assert giant.evidence["s1"]["earlyness"] < wave.evidence["s1"]["earlyness"]
-    assert giant.evidence["s1"]["opportunity_window"] < wave.evidence["s1"]["opportunity_window"]
+    assert (
+        giant.evidence["s1"]["opportunity_window"]
+        < wave.evidence["s1"]["opportunity_window"]
+    )
 
 
 def test_old_low_activity_repo_is_not_early_opportunity(frozen_clock):

@@ -19,7 +19,9 @@ def test_observed_access_unknown_is_not_zero(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2
+    )
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     _seed_events(conn, uid, mid, "acme/toy", ["entered", "local_setup"])
     out = observed_access(conn, user_id=uid, full_name="acme/toy")
@@ -32,7 +34,13 @@ def test_observed_access_uses_outcomes_not_formula_weights(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/open", feat=FeaturesBlob(maint_touch=0.2), stars=80, age_days=40, contributors=6)
+    m = build_mission(
+        "acme/open",
+        feat=FeaturesBlob(maint_touch=0.2),
+        stars=80,
+        age_days=40,
+        contributors=6,
+    )
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     _seed_events(
         conn,
@@ -50,7 +58,9 @@ def test_observed_access_uses_outcomes_not_formula_weights(tmp_home):
     assert out["score"] is not None
     assert out["score"] >= 70
     assert out["source"] == "user_events"
-    silent = build_mission("acme/silent", feat=FeaturesBlob(), stars=80, age_days=40, contributors=6)
+    silent = build_mission(
+        "acme/silent", feat=FeaturesBlob(), stars=80, age_days=40, contributors=6
+    )
     sid = persist_mission(conn, silent, user_id=uid, repo_id=None)
     _seed_events(
         conn,

@@ -425,7 +425,9 @@ def test_load_scored_from_db_passes_intro_and_topics(tmp_path, monkeypatch):
     )
     conn.commit()
     clock = Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC))
-    scored, extras, _days = load_scored_from_db(conn, "2026-08-24", clock, load_config())
+    scored, extras, _days = load_scored_from_db(
+        conn, "2026-08-24", clock, load_config()
+    )
     assert scored
     extra = extras["acme/x"]
     assert extra["description"] == "Local RAG memory for LLMs"

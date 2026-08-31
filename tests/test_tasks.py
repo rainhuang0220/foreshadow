@@ -26,7 +26,9 @@ def test_collect_tests_does_not_run_pytest(tmp_path):
     (root / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
     tests = root / "tests"
     tests.mkdir()
-    (tests / "test_toy.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    (tests / "test_toy.py").write_text(
+        "def test_ok():\n    assert True\n", encoding="utf-8"
+    )
     canary = root / "PWNED"
     (root / "conftest.py").write_text(
         "from pathlib import Path\nPath('PWNED').write_text('ran')\n",

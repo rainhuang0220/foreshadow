@@ -23,13 +23,21 @@ def test_enrich_inspect_lists_real_files_only(tmp_path):
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / "tests").mkdir()
-    (repo / "src" / "retriever.py").write_text("def retrieve():\n    return []\n", encoding="utf-8")
-    (repo / "tests" / "test_retriever.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    (repo / "src" / "retriever.py").write_text(
+        "def retrieve():\n    return []\n", encoding="utf-8"
+    )
+    (repo / "tests" / "test_retriever.py").write_text(
+        "def test_ok():\n    assert True\n", encoding="utf-8"
+    )
     (repo / "README.md").write_text("# toy\n", encoding="utf-8")
     out = enrich_inspect(
         repo,
         {},
-        {"number": 123, "title": "empty retriever", "body": "run:\npytest tests/test_retriever.py\n"},
+        {
+            "number": 123,
+            "title": "empty retriever",
+            "body": "run:\npytest tests/test_retriever.py\n",
+        },
     )
     assert "src/retriever.py" in out["source_files"]
     assert "tests/test_retriever.py" in out["test_files"]

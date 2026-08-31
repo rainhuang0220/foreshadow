@@ -17,9 +17,7 @@ from foreshadow.pipeline.features import clip01
 ActivityClass = Literal["VERY_LOW", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
 ActivityConfidence = Literal["low", "medium", "high"]
 
-ACTIVITY_NOTE = (
-    "Activity reflects development and community work, not star growth."
-)
+ACTIVITY_NOTE = "Activity reflects development and community work, not star growth."
 
 
 @dataclass(frozen=True)
@@ -126,9 +124,7 @@ def compute_activity(
         terms.append(
             (
                 wc,
-                clip01(
-                    contrib / max(float(scoring.activity_sat_contributors_7d), 1.0)
-                ),
+                clip01(contrib / max(float(scoring.activity_sat_contributors_7d), 1.0)),
                 "contrib",
             )
         )

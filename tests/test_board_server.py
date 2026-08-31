@@ -150,7 +150,11 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert "Clone done" not in html
     assert "pipelineLive" in html
     assert "LOCAL_SETUP" in html
-    js = html[html.index("function renderPipelineStep") : html.index("function progressChecklist")]
+    js = html[
+        html.index("function renderPipelineStep") : html.index(
+            "function progressChecklist"
+        )
+    ]
     assert "step.label" not in js or "label_zh" in js
     assert "Clone" not in js
 
@@ -161,7 +165,9 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         page = httpx.get(f"{base}/")
         assert page.status_code == 200
         assert page.headers.get("X-Frame-Options") == "DENY"
-        assert "frame-ancestors 'none'" in page.headers.get("Content-Security-Policy", "")
+        assert "frame-ancestors 'none'" in page.headers.get(
+            "Content-Security-Policy", ""
+        )
         assert "今日机会" in page.text
         assert "FORESHADOW" in page.text
 
@@ -228,7 +234,9 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "alert(" not in page.text
         assert "function clearWorkState" in page.text
         logout_js = page.text[
-            page.text.index("async function logout") : page.text.index("function openCard")
+            page.text.index("async function logout") : page.text.index(
+                "function openCard"
+            )
         ]
         assert "clearWorkState" in logout_js
         assert "state.mission = null" in page.text
@@ -246,13 +254,19 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "clone.error" in page.text or "cloneErr" in page.text
         html = page.text
         start_js = html[
-            html.index("async function startEnter") : html.index("async function setupLocal")
+            html.index("async function startEnter") : html.index(
+                "async function setupLocal"
+            )
         ]
         existing_js = html[
-            html.index("async function openExisting") : html.index("async function markEvent")
+            html.index("async function openExisting") : html.index(
+                "async function markEvent"
+            )
         ]
         resume_js = html[
-            html.index("async function resumeMission") : html.index("async function refuseRemote")
+            html.index("async function resumeMission") : html.index(
+                "async function refuseRemote"
+            )
         ]
         assert "await setupLocal" in start_js
         assert "alreadyLocal" in start_js
@@ -348,7 +362,9 @@ def test_post_api_mission_rejects_invalid_repo_and_bad_id(tmp_home, frozen_clock
         httpd.server_close()
 
 
-def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, monkeypatch):
+def test_mission_api_blocks_remote_and_records_event(
+    tmp_home, frozen_clock, monkeypatch
+):
     monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:
@@ -380,9 +396,7 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert "clone_public_repo" not in inspect.getsource(create_for_user)
 
         for action in sorted(REMOTE_ACTIONS):
-            remote = a.post(
-                f"{base}/api/mission/remote", json={"action": action}
-            )
+            remote = a.post(f"{base}/api/mission/remote", json={"action": action})
             assert remote.status_code == 200
             assert remote.json() == refuse_remote_action(action)
         bound = a.post(
@@ -411,14 +425,10 @@ def test_mission_api_blocks_remote_and_records_event(tmp_home, frozen_clock, mon
         assert "TASK: remote_refused" in text
         assert "VERDICT: BLOCKED" in text
         anon = httpx.Client()
-        guest = anon.post(
-            f"{base}/api/mission/remote", json={"action": "push_branch"}
-        )
+        guest = anon.post(f"{base}/api/mission/remote", json={"action": "push_branch"})
         assert guest.status_code == 200
         assert guest.json() == refuse_remote_action("push_branch")
-        setup = a.post(
-            f"{base}/api/mission/setup", json={"id": mission["id"]}
-        )
+        setup = a.post(f"{base}/api/mission/setup", json={"id": mission["id"]})
         assert setup.status_code == 200
         body = setup.json()
         assert body["clone"]["ok"] is False
@@ -512,7 +522,11 @@ def test_static_board_bg_and_login_get(tmp_home, frozen_clock):
 def test_p0_view_enter_remote_and_official_gates():
     from foreshadow.board.server import BoardHandler
     from foreshadow.board.webapp import render_app_html
-    from foreshadow.mission import create_for_user, refuse_remote_action, setup_local_environment
+    from foreshadow.mission import (
+        create_for_user,
+        refuse_remote_action,
+        setup_local_environment,
+    )
     from foreshadow.pipeline.select import is_official_eligible, select_top
 
     assert "clone_public_repo" not in inspect.getsource(create_for_user)
@@ -521,10 +535,14 @@ def test_p0_view_enter_remote_and_official_gates():
 
     html = render_app_html()
     start_js = html[
-        html.index("async function startEnter") : html.index("async function setupLocal")
+        html.index("async function startEnter") : html.index(
+            "async function setupLocal"
+        )
     ]
     existing_js = html[
-        html.index("async function openExisting") : html.index("async function markEvent")
+        html.index("async function openExisting") : html.index(
+            "async function markEvent"
+        )
     ]
     assert "await setupLocal" in start_js
     assert 'api("/api/mission"' in start_js

@@ -246,9 +246,7 @@ def test_official_v7_requirement_unchanged(frozen_clock):
     v1 = score_repo(small_active(), clock=frozen_clock)
     assert v1.breakdown.explosion.value is None
     assert v1.breakdown.momentum.value is None or v1.breakdown.momentum.missing
-    top = select_top(
-        [v1], min_opportunity=55, min_explosion=35, max_per_owner=2
-    )
+    top = select_top([v1], min_opportunity=55, min_explosion=35, max_per_owner=2)
     assert top == []
     v2 = score_repo_v2(small_active(), clock=frozen_clock)
     assert v2.breakdown.explosion.value is None
@@ -262,7 +260,9 @@ def test_official_top5_still_uses_v1(tmp_home, frozen_clock, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_home))
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken_not_a_real_secret")
     monkeypatch.delenv("FORESHADOW_CONFIG", raising=False)
-    node = repo_node("R_toy", "acme/toy", description="long-term memory embedding layer")
+    node = repo_node(
+        "R_toy", "acme/toy", description="long-term memory embedding layer"
+    )
     gh = FakeGitHub(nodes={"R_toy": node}, search_nodes=[node])
     result = run_pipeline(
         clock=frozen_clock, force=True, llm=False, client=gh, settings=Settings()

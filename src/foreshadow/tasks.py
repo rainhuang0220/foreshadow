@@ -91,7 +91,9 @@ def run_task(
     if task == "inspect_tree":
         return _inspect(clone_dir)
     if task == "local_commit":
-        return local_commit(clone_dir, message or "chore: local entry work", runner=runner)
+        return local_commit(
+            clone_dir, message or "chore: local entry work", runner=runner
+        )
     return TaskResult(
         task=task,
         action="skip",
@@ -283,7 +285,9 @@ def local_commit(
             action="git_commit",
             ok=False,
             blocked=False,
-            status="skipped" if "nothing to commit" in (stdout + stderr).lower() else "failed",
+            status="skipped"
+            if "nothing to commit" in (stdout + stderr).lower()
+            else "failed",
             exit_code=code,
             stdout=stdout,
             stderr=stderr,

@@ -121,7 +121,9 @@ def compute_s1(
         window = min(window, EXPERIMENTAL_WINDOW_CAP)
     if stage == "STAGNANT" and window is not None:
         window = min(window, STAGNANT_WINDOW_CAP)
-    n_known = sum(x is not None for x in (earlyness, evidence, window, activity.momentum))
+    n_known = sum(
+        x is not None for x in (earlyness, evidence, window, activity.momentum)
+    )
     if n_known >= 3:
         conf: Literal["low", "medium", "high"] = "high"
     elif n_known >= 1:

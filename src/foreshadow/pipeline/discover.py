@@ -216,11 +216,7 @@ def lightweight_keep(hit: SearchHit) -> bool:
         return False
     if hit.pool == "C":
         has_attention = hit.stargazer_count >= 1 or hit.fork_count >= 1
-        return (
-            len(desc) >= 20
-            and (has_topics or hit.fork_count >= 1)
-            and has_attention
-        )
+        return len(desc) >= 20 and (has_topics or hit.fork_count >= 1) and has_attention
     if hit.pool == "A":
         return hit.fork_count >= 1 or has_topics or hit.query_key == "A_help"
     return True
@@ -487,9 +483,7 @@ def _scaled_quotas(
         return {key: 0 for key in quotas}
     if remaining >= max_candidates:
         return dict(quotas)
-    out = {
-        key: int(quotas[key] * remaining / max(max_candidates, 1)) for key in quotas
-    }
+    out = {key: int(quotas[key] * remaining / max(max_candidates, 1)) for key in quotas}
     leftover = remaining - sum(out.values())
     for pool in POOL_ORDER:
         if leftover <= 0:

@@ -121,6 +121,9 @@ def test_migrate_copies_existing_scores_as_v1(tmp_home):
     assert row[0] == "v1"
     assert row[1] == 50
     assert row[2] is None
-    assert conn.execute("SELECT COUNT(*) FROM scores WHERE score_version='v2'").fetchone()[
-        0
-    ] == 0
+    assert (
+        conn.execute("SELECT COUNT(*) FROM scores WHERE score_version='v2'").fetchone()[
+            0
+        ]
+        == 0
+    )

@@ -193,9 +193,7 @@ def enter(
         )
         from foreshadow.mission import setup_local_environment
 
-        setup = setup_local_environment(
-            conn, mission.id or 0, uid, resolve_data_dir()
-        )
+        setup = setup_local_environment(conn, mission.id or 0, uid, resolve_data_dir())
         mission_status = setup["mission"].get("status") or mission.status
         clone_status = (setup.get("clone") or {}).get("status")
         local_path = setup["mission"].get("local_path") or mission.local_path
@@ -244,7 +242,9 @@ def outcome(
         items = list_missions(conn, uid)
         found = next((m for m in items if m.get("full_name") == repo), None)
         if found is None:
-            print("no mission for that repo — run foreshadow enter first", file=sys.stderr)
+            print(
+                "no mission for that repo — run foreshadow enter first", file=sys.stderr
+            )
             raise SystemExit(2)
         plan = record_user_event(
             conn, user_id=uid, mission_id=int(found["id"]), event=event

@@ -35,7 +35,9 @@ def test_experimental_uses_discussion():
     from foreshadow.pipeline.activity import compute_activity
     from foreshadow.pipeline.score_v2 import score_repo_v2
 
-    scored = score_repo_v2(_toy_one_push(), clock=Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC)))
+    scored = score_repo_v2(
+        _toy_one_push(), clock=Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC))
+    )
     feat = FeaturesBlob.model_validate(_toy_one_push()["features"])
     s1 = compute_s1(
         age_days=2,
@@ -192,7 +194,11 @@ def test_cloned_steps_cite_real_file_and_issue_command():
             "test_files": ["tests/test_retriever.py"],
             "issue_commands": ["pytest tests/test_retriever.py"],
         },
-        cited={"number": 123, "title": "empty retriever", "body": "pytest tests/test_retriever.py"},
+        cited={
+            "number": 123,
+            "title": "empty retriever",
+            "body": "pytest tests/test_retriever.py",
+        },
         cloned=True,
     )
     blob = " ".join(steps)
@@ -223,7 +229,10 @@ def test_cloned_first_step_uses_existing_test_collect_only():
         },
         cloned=True,
     )
-    assert steps[0] == "第一步：对仓库已有 `tests/test_retriever.py` 做安全检查（只列路径，不执行 pytest）。"
+    assert (
+        steps[0]
+        == "第一步：对仓库已有 `tests/test_retriever.py` 做安全检查（只列路径，不执行 pytest）。"
+    )
     assert "FORESHADOW.md" not in steps[0]
     assert "ISSUE_DRAFT.md" not in steps[0]
     blob = " ".join(steps)
@@ -241,7 +250,10 @@ def test_cloned_first_step_uses_related_file_as_evidence():
         inspect={"related_files": ["src/retriever.py"]},
         cloned=True,
     )
-    assert steps[0] == "第一步：对照 Issue，验证 `src/retriever.py` 中的行为（路径仅作证据）。"
+    assert (
+        steps[0]
+        == "第一步：对照 Issue，验证 `src/retriever.py` 中的行为（路径仅作证据）。"
+    )
     assert "FORESHADOW.md" not in steps[0]
     blob = " ".join(steps)
     assert "src/memory/missing.py" not in blob

@@ -97,7 +97,9 @@ def test_build_mission_waits_for_user():
 
 def test_pr_draft_only_for_code_paths_and_never_posts(tmp_path):
 
-    talk = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
+    talk = build_mission(
+        "acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2
+    )
     assert write_pr_draft(tmp_path, talk) is None
     code = build_mission(
         "acme/toy",
@@ -161,13 +163,13 @@ def test_record_remote_refused_binds_mission_and_task_log(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=12, age_days=20, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=12, age_days=20, contributors=2
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
-    out = record_remote_refused(
-        conn, user_id=uid, action="create_pr", mission_id=mid
-    )
+    out = record_remote_refused(conn, user_id=uid, action="create_pr", mission_id=mid)
     assert out == refuse_remote_action("create_pr")
     row = conn.execute(
         """
@@ -206,12 +208,16 @@ def test_transition_and_portfolio(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     from foreshadow.mission import list_missions, portfolio, record_event, transition
 
     transition(conn, mid, uid, "LOCAL_SETUP")
-    record_event(conn, user_id=uid, mission_id=mid, full_name="acme/toy", event="local_setup")
+    record_event(
+        conn, user_id=uid, mission_id=mid, full_name="acme/toy", event="local_setup"
+    )
     port = portfolio(conn, uid)
     assert port["missions"] == 1
     assert port["by_status"].get("LOCAL_SETUP") == 1
@@ -245,7 +251,9 @@ def test_persist_mission(tmp_home):
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     assert mid >= 1
     assert (dest / "FORESHADOW.md").is_file()
-    row = conn.execute("SELECT status, entry_path FROM entry_missions WHERE id=?", (mid,)).fetchone()
+    row = conn.execute(
+        "SELECT status, entry_path FROM entry_missions WHERE id=?", (mid,)
+    ).fetchone()
     assert row[0] == "MISSION_READY"
     assert row[1] == "DOCUMENTATION"
 
@@ -263,7 +271,9 @@ def test_transition_cannot_jump_to_submitted(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     from foreshadow.mission import transition
 
@@ -418,7 +428,13 @@ def test_load_cited_issue_rejects_invalid_repo(monkeypatch):
 
 
 def test_clone_url_rejects_injection(tmp_path):
-    for name in ("../etc/passwd", "a/b;rm", "https://evil.com/x", "a/../../b", "a/b.git\n"):
+    for name in (
+        "../etc/passwd",
+        "a/b;rm",
+        "https://evil.com/x",
+        "a/../../b",
+        "a/b.git\n",
+    ):
         out = clone_public_repo(name, tmp_path)
         assert out["ok"] is False
         assert out["status"] in {"invalid", "no_git", "failed"}
@@ -484,14 +500,18 @@ def test_setup_lock_rejects_concurrent_run(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     lock = _acquire_setup_lock(dest)
     try:
         with pytest.raises(ValueError, match="正在进行"):
-            setup_local_environment(conn, mid, uid, tmp_home, runner=lambda *_a, **_k: None)
+            setup_local_environment(
+                conn, mid, uid, tmp_home, runner=lambda *_a, **_k: None
+            )
     finally:
         _release_setup_lock(lock)
 
@@ -500,7 +520,9 @@ def test_setup_skips_when_paused(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -521,7 +543,9 @@ def test_failed_clone_does_not_inspect_or_wait(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -587,7 +611,9 @@ def test_clone_removes_stale_staging_dirs(tmp_path):
 
 
 def test_issue_draft_survives_rewrite(tmp_path):
-    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
     first = write_issue_draft(tmp_path, m)
     first.write_text("USER EDIT\n", encoding="utf-8")
     again = write_issue_draft(tmp_path, m)
@@ -625,7 +651,9 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -667,7 +695,15 @@ def test_setup_local_clones_and_waits_for_user(tmp_home):
     log = dest / "TASK_LOG.md"
     assert log.is_file()
     log_text = log.read_text(encoding="utf-8")
-    for field in ("WHEN:", "TASK:", "COMMAND:", "EXIT:", "RESULT:", "VERDICT:", "NEXT:"):
+    for field in (
+        "WHEN:",
+        "TASK:",
+        "COMMAND:",
+        "EXIT:",
+        "RESULT:",
+        "VERDICT:",
+        "NEXT:",
+    ):
         assert field in log_text
 
 
@@ -675,7 +711,9 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -691,7 +729,9 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
             clone_dest.mkdir(parents=True)
             _stub_complete_git(clone_dest)
             (clone_dest / "README.md").write_text("# toy\n", encoding="utf-8")
-            (clone_dest / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+            (clone_dest / "pyproject.toml").write_text(
+                "[project]\nname='toy'\n", encoding="utf-8"
+            )
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     out = setup_local_environment(conn, mid, uid, tmp_home, runner=runner)
@@ -733,7 +773,9 @@ def test_setup_runs_local_pipeline_then_waits(tmp_home):
     assert all(part != "commit" for cmd in seen for part in cmd)
 
 
-def _setup_issue_pytest_mission(tmp_home, *, body: str, files: dict[str, str], collect_code: int = 0):
+def _setup_issue_pytest_mission(
+    tmp_home, *, body: str, files: dict[str, str], collect_code: int = 0
+):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
@@ -917,7 +959,9 @@ def test_draft_approved_stays_local(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+    )
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
     transition(conn, mid, uid, "LOCAL_SETUP")
     plan = record_user_event(conn, user_id=uid, mission_id=mid, event="draft_approved")
@@ -1009,7 +1053,7 @@ def test_hitl_git_helpers_never_force_reset_commit_or_push():
     setup_src = inspect.getsource(mission.setup_local_environment)
     assert "GitHubClient" not in setup_src
     assert "api.github.com" not in setup_src
-    assert "request(\"POST\"" not in setup_src
+    assert 'request("POST"' not in setup_src
     assert "mutation" not in setup_src.lower()
     assert "local_commit" not in setup_src
 
@@ -1097,7 +1141,9 @@ def test_setup_node_repo_records_dependency_required(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -1129,14 +1175,18 @@ def test_setup_node_repo_records_dependency_required(tmp_home):
     src = inspect.getsource(setup_local_environment)
     assert "npm install" not in src
     assert "cargo build" not in src
-    assert dependency_authorization_gate(dest / "repo")["status"] == "DEPENDENCY_REQUIRED"
+    assert (
+        dependency_authorization_gate(dest / "repo")["status"] == "DEPENDENCY_REQUIRED"
+    )
 
 
 def test_setup_retry_keeps_user_draft_and_does_not_replay_clone_log(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
     uid = conn.execute("SELECT id FROM users WHERE is_local=1").fetchone()[0]
-    m = build_mission("acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(bug_n=3), stars=40, age_days=30, contributors=4
+    )
     dest = prepare_local_dir(tmp_home, "acme/toy")
     m.local_path = str(dest)
     mid = persist_mission(conn, m, user_id=uid, repo_id=None)
@@ -1296,7 +1346,9 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
                 "# toy\n## Install\n```\npip install toy\n```\n## Usage\n",
                 encoding="utf-8",
             )
-            (clone_dest / "pyproject.toml").write_text("[project]\nname='toy'\n", encoding="utf-8")
+            (clone_dest / "pyproject.toml").write_text(
+                "[project]\nname='toy'\n", encoding="utf-8"
+            )
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     def fake_fetch(full_name: str, number: int):
@@ -1338,7 +1390,9 @@ def test_setup_rewrites_steps_from_readme_and_issue(tmp_home):
 def test_write_mission_doc_quotes_install_hint(tmp_path):
     from foreshadow.mission import write_mission_doc
 
-    m = build_mission("acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2)
+    m = build_mission(
+        "acme/toy", feat=FeaturesBlob(), stars=10, age_days=12, contributors=2
+    )
     path = write_mission_doc(
         tmp_path,
         m,
@@ -1350,7 +1404,9 @@ def test_write_mission_doc_quotes_install_hint(tmp_path):
     assert "FORESHADOW.md" in text
     assert "acme/toy" in text
     assert "不会自动" in text
-    assert "README 安装命令（你自己执行，Foreshadow 不会代跑）：`pip install toy`" in text
+    assert (
+        "README 安装命令（你自己执行，Foreshadow 不会代跑）：`pip install toy`" in text
+    )
     assert "这是 Python 仓库。" in text
     assert "等待你的确认才能执行任何远程 GitHub 操作。" in text
     assert "不会自动 push / 开 Issue / 开 PR" in text
@@ -1519,7 +1575,10 @@ def test_setup_writes_path_specific_local_drafts(tmp_home):
     assert repro_out["mission"].get("reproduction_path")
     assert repro_out["mission"].get("discussion_draft_path") is None
     assert repro_out["mission"].get("benchmark_path") is None
-    assert "open a pr" not in (repro_dest / "FORESHADOW.md").read_text(encoding="utf-8").lower()
+    assert (
+        "open a pr"
+        not in (repro_dest / "FORESHADOW.md").read_text(encoding="utf-8").lower()
+    )
 
     talk_dest, talk_out, talk = persist_and_setup(
         "acme/talk",
@@ -1565,10 +1624,14 @@ def test_board_js_clone_only_after_start_enter():
 
     html = render_app_html()
     start_js = html[
-        html.index("async function startEnter") : html.index("async function setupLocal")
+        html.index("async function startEnter") : html.index(
+            "async function setupLocal"
+        )
     ]
     open_js = html[
-        html.index("async function openExisting") : html.index("async function markEvent")
+        html.index("async function openExisting") : html.index(
+            "async function markEvent"
+        )
     ]
     assert 'api("/api/mission"' in start_js
     assert "/api/mission/setup" not in start_js
@@ -1589,16 +1652,24 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
 
     html = render_app_html()
     start_js = html[
-        html.index("async function startEnter") : html.index("async function setupLocal")
+        html.index("async function startEnter") : html.index(
+            "async function setupLocal"
+        )
     ]
     setup_js = html[
-        html.index("async function setupLocal") : html.index("async function loadMissions")
+        html.index("async function setupLocal") : html.index(
+            "async function loadMissions"
+        )
     ]
     remote_js = html[
-        html.index("async function refuseRemote") : html.index("async function saveReview")
+        html.index("async function refuseRemote") : html.index(
+            "async function saveReview"
+        )
     ]
     existing_js = html[
-        html.index("async function openExisting") : html.index("async function markEvent")
+        html.index("async function openExisting") : html.index(
+            "async function markEvent"
+        )
     ]
     assert 'api("/api/mission"' in start_js
     assert "/api/mission/setup" not in start_js
@@ -1656,7 +1727,7 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     ):
         src = inspect.getsource(fn)
         assert "GitHubClient" not in src or fn is _load_cited_issue
-        assert "request(\"POST\"" not in src
+        assert 'request("POST"' not in src
         assert "request('POST'" not in src
         assert "graphql" not in src.lower()
         assert "mutation" not in src.lower()
@@ -1800,7 +1871,11 @@ def test_pause_then_resume_stays_local(tmp_home):
         transition(conn, mid, uid, "SUBMITTED")
 
     waiting = build_mission(
-        "acme/wait", feat=FeaturesBlob(gap_docs=1), stars=12, age_days=20, contributors=2
+        "acme/wait",
+        feat=FeaturesBlob(gap_docs=1),
+        stars=12,
+        age_days=20,
+        contributors=2,
     )
     wid = persist_mission(conn, waiting, user_id=uid, repo_id=None)
     transition(conn, wid, uid, "LOCAL_SETUP")
@@ -1887,7 +1962,7 @@ def test_paused_event_does_not_call_github(tmp_home, monkeypatch):
     src = inspect.getsource(record_user_event)
     assert "GitHubClient" not in src
     assert "api.github.com" not in src
-    assert "request(\"POST\"" not in src
+    assert 'request("POST"' not in src
     assert "graphql" not in src.lower()
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
@@ -1901,4 +1976,3 @@ def test_paused_event_does_not_call_github(tmp_home, monkeypatch):
     assert plan["status"] == "PAUSED"
     resumed = record_user_event(conn, user_id=uid, mission_id=mid, event="resumed")
     assert resumed["status"] != "SUBMITTED"
-

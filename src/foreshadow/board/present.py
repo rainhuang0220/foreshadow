@@ -86,7 +86,9 @@ def _access_view(card: BoardCard) -> tuple[str, float | None, bool]:
     score = card.access_score
     if score is None:
         return "未知", None, True
-    label = ACTIVITY_CLASS_LABELS.get(card.access_class or "", "极低" if score == 0 else "未知")
+    label = ACTIVITY_CLASS_LABELS.get(
+        card.access_class or "", "极低" if score == 0 else "未知"
+    )
     return label, score, False
 
 
@@ -526,7 +528,9 @@ def present_card(
         "p0_confidence_zh": CONF_LABELS.get(card.p0_confidence or "low", "低"),
         "activity_momentum": card.activity_momentum,
         "activity_class": card.activity_class,
-        "activity_class_zh": ACTIVITY_CLASS_LABELS.get(card.activity_class or "", "未知"),
+        "activity_class_zh": ACTIVITY_CLASS_LABELS.get(
+            card.activity_class or "", "未知"
+        ),
         "activity_confidence": card.activity_confidence,
         "activity_concentration": card.activity_concentration,
         "commits_7d": card.commits_7d,

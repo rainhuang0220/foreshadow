@@ -46,7 +46,15 @@ Status = Literal[
 ]
 
 REMOTE_ACTIONS = frozenset(
-    {"post_issue", "post_discussion", "push_branch", "create_pr", "comment", "review", "merge"}
+    {
+        "post_issue",
+        "post_discussion",
+        "push_branch",
+        "create_pr",
+        "comment",
+        "review",
+        "merge",
+    }
 )
 SYSTEM_EVENTS = frozenset(
     {
@@ -120,9 +128,7 @@ class Mission:
                 "可本地 commit",
                 "不会 push / 开 Issue / 开 PR",
             ],
-            "remote_blocked": (
-                "等待你的确认才能执行任何远程 GitHub 操作。"
-            ),
+            "remote_blocked": ("等待你的确认才能执行任何远程 GitHub 操作。"),
         }
 
 
@@ -595,7 +601,9 @@ def _trusted_workdir(data_dir: Path, stored: str | None) -> Path | None:
     return None
 
 
-def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None = None) -> Path:
+def write_mission_doc(
+    dest: Path, mission: Mission, extra: dict[str, Any] | None = None
+) -> Path:
     extra = extra or {}
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
     why = "\n".join(f"- {w}" for w in mission.why_now)
@@ -610,9 +618,7 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
     after_plan = ""
     hint = str(inspect.get("install_hint") or "").strip()
     if hint:
-        after_plan += (
-            f"README 安装命令（你自己执行，Foreshadow 不会代跑）：`{hint}`\n"
-        )
+        after_plan += f"README 安装命令（你自己执行，Foreshadow 不会代跑）：`{hint}`\n"
     kind = inspect.get("kind")
     if kind:
         kind_zh = {
@@ -653,7 +659,9 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         f"测试文件：{', '.join(inspect.get('test_files') or []) or 'UNKNOWN'}\n"
         f"Issue 命令：{'; '.join(inspect.get('issue_commands') or []) or 'UNKNOWN'}\n"
     )
-    why_not = "\n".join(f"- {w}" for w in mission.strategy.why) or "- 默认先沟通，不默认提 PR"
+    why_not = (
+        "\n".join(f"- {w}" for w in mission.strategy.why) or "- 默认先沟通，不默认提 PR"
+    )
     if mission.strategy.allows_direct_pr:
         text += f"\n## 可以直接 PR\n\n{why_not}\n"
     else:
@@ -666,13 +674,13 @@ def write_mission_doc(dest: Path, mission: Mission, extra: dict[str, Any] | None
         )
     extra_files = ""
     if extra.get("pr_draft"):
-        extra_files += (
-            "若入口是代码向的，还有 PR_DRAFT.md（同样未发送，不是真正的 Pull Request）。\n"
-        )
+        extra_files += "若入口是代码向的，还有 PR_DRAFT.md（同样未发送，不是真正的 Pull Request）。\n"
     if extra.get("reproduction_path"):
         extra_files += "还有 REPRODUCTION.md（复现记录，只在本机，未发送）。\n"
     if extra.get("benchmark_path"):
-        extra_files += "还有 BENCHMARK.md（测量记录，只在本机；Foreshadow 不会代跑基准）。\n"
+        extra_files += (
+            "还有 BENCHMARK.md（测量记录，只在本机；Foreshadow 不会代跑基准）。\n"
+        )
     if extra.get("discussion_draft_path"):
         extra_files += "还有 DISCUSSION_DRAFT.md（讨论草稿，只在本机，未发送）。\n"
     text += (
@@ -712,9 +720,12 @@ def _clone_looks_complete(clone_dir: Path) -> bool:
         if pack.is_dir() and any(pack.iterdir()):
             return True
         for child in objs.iterdir():
-            if child.is_dir() and child.name not in {"info", "pack"}:
-                if any(child.iterdir()):
-                    return True
+            if (
+                child.is_dir()
+                and child.name not in {"info", "pack"}
+                and any(child.iterdir())
+            ):
+                return True
     except OSError:
         return False
     return False
@@ -748,7 +759,12 @@ def clone_public_repo(
     clone_dir = Path(dest) / "repo"
     if clone_dir.exists() and (clone_dir / ".git").exists():
         if _clone_looks_complete(clone_dir):
-            return {"ok": True, "status": "exists", "path": str(clone_dir), "error": None}
+            return {
+                "ok": True,
+                "status": "exists",
+                "path": str(clone_dir),
+                "error": None,
+            }
         return {
             "ok": False,
             "status": "incomplete",
@@ -811,14 +827,26 @@ def clone_public_repo(
         }
     except subprocess.TimeoutExpired:
         shutil.rmtree(staging, ignore_errors=True)
-        return {"ok": False, "status": "timeout", "error": "clone timed out", "path": None}
+        return {
+            "ok": False,
+            "status": "timeout",
+            "error": "clone timed out",
+            "path": None,
+        }
     code = getattr(completed, "returncode", 1)
     if code != 0:
-        err = (getattr(completed, "stderr", None) or getattr(completed, "stdout", None) or "")[
-            :400
-        ]
+        err = (
+            getattr(completed, "stderr", None)
+            or getattr(completed, "stdout", None)
+            or ""
+        )[:400]
         shutil.rmtree(staging, ignore_errors=True)
-        return {"ok": False, "status": "failed", "error": err or "clone failed", "path": None}
+        return {
+            "ok": False,
+            "status": "failed",
+            "error": err or "clone failed",
+            "path": None,
+        }
     if not _clone_looks_complete(staging):
         shutil.rmtree(staging, ignore_errors=True)
         return {
@@ -1144,10 +1172,20 @@ def create_local_branch(
     except FileNotFoundError:
         return {"ok": False, "status": "no_git", "name": name, "error": "本机没有 git"}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "status": "timeout", "name": name, "error": "branch timed out"}
+        return {
+            "ok": False,
+            "status": "timeout",
+            "name": name,
+            "error": "branch timed out",
+        }
     if getattr(completed, "returncode", 1) != 0:
         err = (getattr(completed, "stderr", None) or "")[:300]
-        return {"ok": False, "status": "failed", "name": name, "error": err or "checkout failed"}
+        return {
+            "ok": False,
+            "status": "failed",
+            "name": name,
+            "error": err or "checkout failed",
+        }
     return {"ok": True, "status": status, "name": name, "error": None}
 
 
@@ -1186,9 +1224,11 @@ def dependency_authorization_gate(clone_dir: Path) -> dict[str, Any] | None:
             "missing": "node_modules",
             "message_zh": _DEP_MSG,
         }
-    if "cargo.toml" in names and not (root / "target").is_dir() and not (
-        root / "vendor"
-    ).is_dir():
+    if (
+        "cargo.toml" in names
+        and not (root / "target").is_dir()
+        and not (root / "vendor").is_dir()
+    ):
         return {
             "status": "DEPENDENCY_REQUIRED",
             "kind": "cargo",
@@ -1383,9 +1423,7 @@ def write_pr_draft(dest: Path, mission: Mission) -> Path | None:
 _LOCAL_ONLY = "等待你的确认才能发到 GitHub。\n这只是本地文件。\n"
 
 
-def _reproduction_issue_block(
-    cited: dict[str, Any] | None, mission: Mission
-) -> str:
+def _reproduction_issue_block(cited: dict[str, Any] | None, mission: Mission) -> str:
     cited = cited or {}
     number = cited.get("number")
     title = str(cited.get("title") or "")
@@ -1449,18 +1487,14 @@ def write_benchmark_doc(
     inspect = inspect or {}
     hint = str(inspect.get("install_hint") or "").strip()
     heads = [
-        str(h).strip()
-        for h in (inspect.get("readme_headings") or [])
-        if str(h).strip()
+        str(h).strip() for h in (inspect.get("readme_headings") or []) if str(h).strip()
     ]
     hint_line = (
         f"README 安装命令（你自己执行，Foreshadow 不会代跑）：`{hint}`"
         if hint
         else "README 安装命令：UNKNOWN"
     )
-    heads_line = (
-        "README 目录：" + "；".join(heads) if heads else "README 目录：UNKNOWN"
-    )
+    heads_line = "README 目录：" + "；".join(heads) if heads else "README 目录：UNKNOWN"
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(mission.strategy.steps_zh, 1))
     path.write_text(
         f"# 测量记录（本地）\n\n"
@@ -1605,7 +1639,9 @@ def patch_mission_plan(
 
 
 def cited_issue_number(mission: Mission) -> int | None:
-    blob = " ".join([*mission.why_now, *mission.strategy.why, *mission.strategy.steps_zh])
+    blob = " ".join(
+        [*mission.why_now, *mission.strategy.why, *mission.strategy.steps_zh]
+    )
     match = ISSUE_NUM_RE.search(blob)
     if not match:
         return None
@@ -2081,7 +2117,9 @@ def setup_local_environment(
             collect = run_task(clone_dir, "collect_tests", runner=runner)
             tests = _tests_from_task(collect, detected)
             logged_tests = True
-            issue_collect = _maybe_collect_issue_pytest(clone_dir, inspect, runner=runner)
+            issue_collect = _maybe_collect_issue_pytest(
+                clone_dir, inspect, runner=runner
+            )
             if issue_collect is not None:
                 tests["issue_collect"] = {
                     "ok": issue_collect.get("ok"),
@@ -2095,7 +2133,9 @@ def setup_local_environment(
                     command=str(issue_collect.get("command") or ""),
                     exit_code=issue_collect.get("returncode"),
                     result=str(
-                        issue_collect.get("summary") or issue_collect.get("status") or ""
+                        issue_collect.get("summary")
+                        or issue_collect.get("status")
+                        or ""
                     ),
                     verdict=_issue_pytest_verdict(issue_collect),
                     next_step=_HITL_NEXT,
@@ -2165,7 +2205,9 @@ def setup_local_environment(
                 (mission_id, user_id),
             ).fetchone()[0]
         )
-        if dest_status != after_setup and dest_status in ALLOWED.get(after_setup, set()):
+        if dest_status != after_setup and dest_status in ALLOWED.get(
+            after_setup, set()
+        ):
             transition(conn, mission_id, user_id, dest_status)
         updated = patch_mission_plan(
             conn,

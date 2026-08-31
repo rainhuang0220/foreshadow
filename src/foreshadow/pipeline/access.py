@@ -116,7 +116,18 @@ def compute_access(feat: FeaturesBlob | None) -> AccessResult:
         )
     score = clip(total, 0, 100)
     n_known = 5 - len(
-        [m for m in missing if m in {"pr_accept_rate", "pr_review_rate", "maint_touch", "maint_hours", "onboarding"}]
+        [
+            m
+            for m in missing
+            if m
+            in {
+                "pr_accept_rate",
+                "pr_review_rate",
+                "maint_touch",
+                "maint_hours",
+                "onboarding",
+            }
+        ]
     )
     conf: Literal["low", "medium", "high"]
     if n_known >= 4:

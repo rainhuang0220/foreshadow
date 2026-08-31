@@ -104,11 +104,7 @@ def recommend_entry(
             direct=False,
             **pack_kw,
         )
-    if (
-        access.merge_rate is not None
-        and access.score is not None
-        and access.score < 25
-    ):
+    if access.merge_rate is not None and access.score is not None and access.score < 25:
         why.append("进入通道偏低，先观察社区是否响应")
         return _pack("DISCUSSION", why, "Medium", "4h", False, **pack_kw)
     if feat.bug_n is not None and feat.bug_n >= 2:
@@ -127,7 +123,9 @@ def recommend_entry(
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
             why.append("文档缺口（不是贡献机会本身，只是入口）")
             return _pack("DOCUMENTATION", why, "Easy", "4h", False, **pack_kw)
-        why.append("有文档缺口，但外部接受未知、为 0、或进入通道偏低，先 Issue，不要直接补 CONTRIBUTING.md")
+        why.append(
+            "有文档缺口，但外部接受未知、为 0、或进入通道偏低，先 Issue，不要直接补 CONTRIBUTING.md"
+        )
         return _pack("ISSUE", why, "Easy", "4h", False, **pack_kw)
     if feat.gap_tests == 1 and not hard:
         if _accepts_code_entry(access) and (access.score is None or access.score >= 25):
@@ -341,7 +339,9 @@ def customize_steps(
         lines.append("已跳过 Cargo 测试（不执行 cargo）")
     labeled = _label_steps(lines)
     first = labeled[0].lower() if labeled else ""
-    if any(tok in first for tok in ("push", "create_pr", "open pr", "开 pr", "创建 pr")):
+    if any(
+        tok in first for tok in ("push", "create_pr", "open pr", "开 pr", "创建 pr")
+    ):
         labeled.insert(0, "第一步：先完成本机验证，不要发到 GitHub")
     return labeled
 
@@ -412,10 +412,7 @@ def _cloned_first_work(inspect: dict[str, Any], cited: dict[str, Any]) -> str:
     if cmd:
         number = cited.get("number")
         issue_ref = f"Issue #{number}" if number not in (None, "") else "Issue"
-        return (
-            f"运行 `{cmd}`，核对 {issue_ref} 描述的行为。"
-            "缺依赖就停，不要擅自安装。"
-        )
+        return f"运行 `{cmd}`，核对 {issue_ref} 描述的行为。缺依赖就停，不要擅自安装。"
     if test:
         return f"对仓库已有 `{test}` 做安全检查（只列路径，不执行 pytest）。"
     if related:
@@ -491,7 +488,9 @@ def _path_lines(
             f"README 里写了 `{hint}`。你自己在本机执行；Foreshadow 不会代跑安装命令。"
         )
     elif shape:
-        install = f"{shape}。按 README 自己准备环境；Foreshadow 不会执行 pip/npm/cargo。"
+        install = (
+            f"{shape}。按 README 自己准备环境；Foreshadow 不会执行 pip/npm/cargo。"
+        )
     else:
         install = "按 README 自己准备环境；Foreshadow 不会替你安装依赖。"
     clipped = _clip_blurb(blurb)
@@ -507,13 +506,15 @@ def _path_lines(
         else "找一条开放问题，在本机按它说的做一次，记下实际看到的现象"
     )
     draft = "把你要说的话写进本机 ISSUE_DRAFT.md（还没发出去）"
-    hard_note = (
-        f"主语言是 {language}，不要一上来改核心实现"
-        if language
-        else None
-    )
+    hard_note = f"主语言是 {language}，不要一上来改核心实现" if language else None
     if path == "REPRODUCTION":
-        lines = [first_read, install, ticket_line, draft, "先把复现说明给维护者看，不要先改代码发到网上"]
+        lines = [
+            first_read,
+            install,
+            ticket_line,
+            draft,
+            "先把复现说明给维护者看，不要先改代码发到网上",
+        ]
         if hard_note:
             lines.append(hard_note)
         lines.append(_STOP)

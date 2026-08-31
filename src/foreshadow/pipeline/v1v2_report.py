@@ -187,7 +187,11 @@ def build_comparison(
     if n:
         share_7d = round(
             100.0
-            * sum(1 for _, d in items_v1 if activity_band(d.get("pushed_age_days")) == "<=7d")
+            * sum(
+                1
+                for _, d in items_v1
+                if activity_band(d.get("pushed_age_days")) == "<=7d"
+            )
             / n,
             1,
         )
@@ -196,10 +200,18 @@ def build_comparison(
         "universe": n,
         "sort_key": "opportunity DESC, explosion DESC, stars ASC, node_id",
         "official": "v1",
-        "top20_v1": [_card(i, s, d) for i, (s, d) in enumerate(ordered_v1[:20], start=1)],
-        "top20_v2": [_card(i, s, d) for i, (s, d) in enumerate(ordered_v2[:20], start=1)],
-        "top10_v1": [_card(i, s, d) for i, (s, d) in enumerate(ordered_v1[:10], start=1)],
-        "top10_v2": [_card(i, s, d) for i, (s, d) in enumerate(ordered_v2[:10], start=1)],
+        "top20_v1": [
+            _card(i, s, d) for i, (s, d) in enumerate(ordered_v1[:20], start=1)
+        ],
+        "top20_v2": [
+            _card(i, s, d) for i, (s, d) in enumerate(ordered_v2[:20], start=1)
+        ],
+        "top10_v1": [
+            _card(i, s, d) for i, (s, d) in enumerate(ordered_v1[:10], start=1)
+        ],
+        "top10_v2": [
+            _card(i, s, d) for i, (s, d) in enumerate(ordered_v2[:10], start=1)
+        ],
         "bands_all": hist(items_v1),
         "bands_top20_v1": hist(ordered_v1[:20]),
         "bands_top20_v2": hist(ordered_v2[:20]),
@@ -329,5 +341,7 @@ def parse_age_days(created_at: str | None, today: date) -> int | None:
 
 def write_review(path_json: Path, path_md: Path, report: dict[str, Any]) -> None:
     path_json.parent.mkdir(parents=True, exist_ok=True)
-    path_json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    path_json.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     path_md.write_text(render_markdown(report), encoding="utf-8")
