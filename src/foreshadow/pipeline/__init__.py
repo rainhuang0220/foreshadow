@@ -31,6 +31,14 @@ from foreshadow.pipeline.discover import (
     is_degraded,
     load_watchlist,
 )
+from foreshadow.pipeline.observation import (
+    admit_from_scores,
+    count_states,
+    load_active,
+    mark_observed,
+    v7_eligible_count,
+    yesterday_overlap,
+)
 from foreshadow.pipeline.report import (
     build_report,
     format_run_summary,
@@ -308,6 +316,13 @@ def _run(
     today_s = today.isoformat()
     health = dict(disc.source_health)
     run_id = disc.run_id
+    snap_ids = [
+        int(row[0])
+        for row in conn.execute(
+            "SELECT repo_id FROM snapshots WHERE snapshot_date=?", (today_s,)
+        )
+    ]
+    mark_observed(conn, snap_ids, today)
     conn.execute(
         """
         UPDATE daily_runs
@@ -405,6 +420,52 @@ def _run(
             """,
             (row.breakdown.selected_rank, run_id, repo_id),
         )
+
+    watch_now = load_watchlist(conn, today, settings.scoring)
+    watch_repo_ids = {int(w.repo_id) for w in watch_now}
+    selected_ids = {
+        id_by_name[row.full_name] for row in selected if row.full_name in id_by_name
+    }
+    admit_from_scores(
+        conn,
+        today=today,
+        scored_rows=scored_rows,
+        selected_ids=selected_ids,
+        watchlist_ids=watch_repo_ids,
+        disc=settings.discovery,
+    )
+    scored_ids = [repo_id for repo_id, _, _ in scored_rows]
+    v7_ok = sum(
+        1
+        for _, scored, _ in scored_rows
+        if ((scored.evidence or {}).get("windows") or {}).get("v7") is not None
+    )
+    v7_base = v7_eligible_count(
+        conn, scored_ids, today, settings.scoring.window_slack_days
+    )
+    retained, _prev_n, overlap = yesterday_overlap(conn, run_id, today)
+    system_n, _expired_total = count_states(conn)
+    system_ids = {e.repo_id for e in load_active(conn, today)}
+    origins = [c.origin for c in disc.capped.candidates]
+    health["user_watchlist_count"] = len(watch_now)
+    health["system_observed_count"] = system_n
+    health["observation_panel_size"] = len(watch_repo_ids | system_ids)
+    health["fresh_discovery_count"] = sum(1 for origin in origins if origin == "search")
+    health["retained_from_previous_day"] = retained
+    health["daily_overlap_rate"] = round(overlap, 4)
+    health["v7_baseline_eligible_count"] = v7_base
+    health["v7_available"] = v7_ok
+    health["v7_coverage_rate"] = (
+        round(v7_ok / len(scored_rows), 4) if scored_rows else 0.0
+    )
+    health["observation_expired_count"] = int(
+        health.get("observation_expired_count") or 0
+    )
+    health["explosion_available"] = sum(
+        1
+        for _, scored, _ in scored_rows
+        if scored.breakdown.explosion.value is not None
+    )
 
     snap_days = _snapshot_days(conn)
     status = "degraded" if is_degraded(health) else "complete"
