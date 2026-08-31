@@ -94,6 +94,8 @@ def render_markdown(report: ReportJSON) -> str:
                 f"`{item.get('full_name')}`" for item in report.watchlist_appendix[:10]
             )
             lines.append(f"Watchlist (not Top 5): {names}")
+        lines.append("")
+        lines.extend(_source_health_lines(report))
         return _join(lines)
 
     lines.append(_run_line(report))
@@ -421,9 +423,14 @@ def format_run_summary(
         lines.append(f"wrote config: {wrote_config}")
     lines.append(f"Foreshadow {date}")
     if skipped:
-        lines.append("already complete (use --force to re-run)")
+        lines.append(f"last run: {status}  selected {selected}")
+        lines.append(
+            f"already ran today ({status}; once per UTC day). "
+            "For debug: foreshadow run --force"
+        )
         if report_path:
             lines.append(f"report: {report_path}")
+        lines.append("next: foreshadow board")
         return _join(lines)
     extra = _health_reasons(health)
     counts = (
@@ -437,6 +444,19 @@ def format_run_summary(
     if snapshot_days < 7:
         hist += "  (Explosion still weak until ~7)"
     lines.append(hist)
+    v7_ok = int(health.get("v7_available") or 0)
+    v7_cov = health.get("v7_coverage_rate")
+    panel = health.get("observation_panel_size")
+    if panel is not None:
+        cov = f"{v7_cov:.0%}" if isinstance(v7_cov, float) else "n/a"
+        lines.append(
+            "observation: "
+            f"panel={panel} watch={int(health.get('user_watchlist_count') or 0)} "
+            f"system={int(health.get('system_observed_count') or 0)} "
+            f"fresh={int(health.get('fresh_discovery_count') or 0)} "
+            f"retained={int(health.get('retained_from_previous_day') or 0)} "
+            f"v7={v7_ok}/{scored} ({cov})"
+        )
     if report_path:
         lines.append(f"report: {report_path}")
     lines.append(f"review: foreshadow review {review_repo} interested")
@@ -675,8 +695,35 @@ def _source_health_lines(report: ReportJSON) -> list[str]:
         f"- graphql search: {gql}",
         f"- hydrate: {failed} failed",
         f"- missing windows: {v7_na}/{report.scored_count} repos have v7=NA",
-        "",
     ]
+    if health.get("observation_panel_size") is not None:
+        cov = health.get("v7_coverage_rate")
+        cov_s = f"{cov:.1%}" if isinstance(cov, float) else "n/a"
+        panel_n = int(health.get("observation_panel_size") or 0)
+        watch_n = int(health.get("user_watchlist_count") or 0)
+        sys_n = int(health.get("system_observed_count") or 0)
+        retained = int(health.get("retained_from_previous_day") or 0)
+        v7_n = int(health.get("v7_available") or 0)
+        base_n = int(health.get("v7_baseline_eligible_count") or 0)
+        expired = int(health.get("observation_expired_count") or 0)
+        lines.append(
+            f"- observation panel: {panel_n} (watch {watch_n}, system {sys_n})"
+        )
+        lines.append(
+            f"- fresh discovery: {int(health.get('fresh_discovery_count') or 0)}"
+        )
+        ov = health.get("daily_overlap_rate")
+        ov_s = f"{ov}" if ov is not None else "n/a"
+        lines.append(f"- retained from previous day: {retained} (overlap {ov_s})")
+        lines.append(
+            f"- v7 coverage: {v7_n}/{report.scored_count} ({cov_s}); "
+            f"t-7 baseline eligible {base_n}"
+        )
+        lines.append(
+            f"- explosion available: {int(health.get('explosion_available') or 0)}"
+        )
+        lines.append(f"- observation expired (this run): {expired}")
+    lines.append("")
     return lines
 
 

@@ -321,8 +321,11 @@ def test_force_only_when_complete(tmp_home, tmp_path, frozen_clock, monkeypatch)
     conn.execute("UPDATE daily_runs SET status='degraded' WHERE run_date='2026-08-24'")
     conn.commit()
     again = run_pipeline(clock=frozen_clock, force=False, llm=False, client=gh)
-    assert again.skipped is False
-    assert again.status == "complete"
+    assert again.skipped is True
+    assert again.status == "degraded"
+    assert again.skip_reason == "same_day"
+    forced_deg = run_pipeline(clock=frozen_clock, force=True, llm=False, client=gh)
+    assert forced_deg.skipped is False
 
     conn.execute("UPDATE daily_runs SET status='failed' WHERE run_date='2026-08-24'")
     conn.commit()

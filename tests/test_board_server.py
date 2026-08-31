@@ -170,6 +170,28 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         )
         assert "今日机会" in page.text
         assert "FORESHADOW" in page.text
+        assert "预览模式｜历史不足 v7" not in page.text
+        assert "空 Top 5 是成功" not in page.text
+        assert "max-width: 390px" in page.text
+        assert "min-width: 1440px" in page.text
+        assert "max-width: 1280px" in page.text
+        assert "max-width: 1024px" in page.text
+        assert "max-width: 768px" in page.text
+        assert ":focus-visible" in page.text
+        assert "查看详情" in page.text
+        assert "rowKey" in page.text
+        assert "empty-state" in page.text
+        assert "今日扫描不完整" in page.text
+        for leak in (
+            "node_id",
+            "TTL",
+            "admission",
+            "migration",
+            "worktree",
+            "dogfood",
+            "FakeGitHub",
+        ):
+            assert leak not in page.text
 
         anon = httpx.get(f"{base}/api/board")
         assert anon.status_code == 401
@@ -247,7 +269,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
         assert "已知为 0，不是未知" in page.text
         assert "记入观察清单" in page.text
         assert "查看任务" in page.text
-        assert "暂停扫描" in page.text
+        assert "查看任务" in page.text
         assert "Escape" in page.text
         assert "/api/mission" in page.text
         assert "正在准备本地环境" in page.text
@@ -563,3 +585,40 @@ def test_p0_view_enter_remote_and_official_gates():
         params = inspect.signature(fn).parameters
         assert params["min_opportunity"].default == 55
         assert params["min_explosion"].default == 35
+
+
+def test_port_in_use_message_is_actionable():
+    from foreshadow.board.server import port_in_use_message
+
+    msg = port_in_use_message("127.0.0.1", 8765)
+    assert "8765" in msg
+    assert "端口" in msg
+    assert "foreshadow board --port 8766" in msg
+    assert "lsof" in msg
+    assert "worktree" not in msg
+
+
+def test_serve_board_port_occupied(tmp_home, frozen_clock, capsys, monkeypatch):
+    import errno
+
+    from foreshadow.board.server import serve_board
+
+    class Boom:
+        def __init__(self, *_a, **_k):
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    monkeypatch.setattr("foreshadow.board.server.ThreadingHTTPServer", Boom)
+    with pytest.raises(SystemExit) as exited:
+        serve_board(
+            host="127.0.0.1",
+            port=8765,
+            date="2026-08-24",
+            preview=True,
+            clock=frozen_clock,
+            open_browser=False,
+        )
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert "8765" in err
+    assert "foreshadow board --port" in err
+    assert "lsof" in err

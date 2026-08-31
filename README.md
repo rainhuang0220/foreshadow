@@ -1,96 +1,103 @@
 # Foreshadow (伏笔)
 
-Find what the future has already foreshadowed.
+**Beta 0.2.0** — find what the future has already foreshadowed.
 
-Foreshadow is not trending. It is a local, explainable short-list of repos you might still be able to help, produced at most once a day, with you as the final decision maker.
+Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. If you choose to enter, it prepares a local clone and a plan, then **stops**. It never opens Issues, comments, or PRs, and it never pushes to someone else’s GitHub.
 
-**Status:** P0 implemented (`0.1.0`) on branch `p0-implementation`. Not tagged and not published to PyPI. GET-only radar; empty Top 5 is OK; Top 5 needs ~7 daily snapshots (`v7`); human review required.
+中文说明见 [README.zh-CN.md](README.zh-CN.md)。明早走查见 [docs/PRODUCT.md](docs/PRODUCT.md)。
 
-中文简介见 [`README.zh-CN.md`](README.zh-CN.md)。English README is the source of truth.
+## Install / update
 
-## What it does
-
-A local CLI that, at most once per UTC day:
-
-1. Discovers a shortlist of emerging public GitHub repositories (GET-only)
-2. Writes a daily star/fork/issue snapshot
-3. Scores Opportunity / Explosion / Contribution
-4. Emits a markdown report with **at most five** cards
-5. Records your Watch / Interested / Reject / Investigate / Enter / Later review
-
-## Non-goals (P0)
-
-- This is not trending.
-- No auto PR / issue / comment on third-party repos
-- No dashboard, SaaS, or multi-user cloud
-- No Reddit / HN / X / Hugging Face ingest
-- No ML ranker
-- Never pad the Top 5
-
-## Honest caveats
-
-- Empty Top 5 is OK.
-- Top 5 requires ~7 daily snapshots (`v7`); day 1 is empty by construction.
-- Lifetime `stars/age` is not Explosion.
-- Token stays on the machine.
-- We only GET public GitHub.
-
-## Security
-
-- Token stays on the machine. Prefer `GITHUB_TOKEN` or `GH_TOKEN` in the environment, or `gh auth token`. Never put the token in config, SQLite, reports, or logs.
-- Use a classic PAT with **no scopes**, or a fine-grained token with public read only. Do not request `repo` / `public_repo`.
-- We only GET public GitHub. The client must not write to third-party repos.
-
-## Install (dev)
-
-Requires Python 3.12+.
+Python **3.12+**. `git` is needed if you will enter a repo.
 
 ```bash
-uv sync --group dev
-uv run foreshadow --help
+# uv (recommended)
+uv tool install git+https://github.com/rainhuang0220/foreshadow.git
+
+# pip
+pip install "git+https://github.com/rainhuang0220/foreshadow.git"
 ```
 
-## Commands
-
-```text
-foreshadow run [--force] [--date YYYY-MM-DD] [--llm]
-foreshadow report [--date YYYY-MM-DD] [--json]
-foreshadow show <owner/repo>
-foreshadow review <owner/repo> <action> [-m note]
-foreshadow watchlist [action]
-foreshadow board [--preview] [--date YYYY-MM-DD] [--no-open] [--export-html] [--port 8765]
-foreshadow enter <owner/repo>
-```
-
-### Daily Review Board (interactive)
+Update:
 
 ```bash
-uv run foreshadow board --preview --no-open
+uv tool upgrade foreshadow-radar
+# or
+pip install -U "git+https://github.com/rainhuang0220/foreshadow.git"
 ```
 
-Then open **http://127.0.0.1:8765/** in a browser (the command also opens a tab unless `--no-open`).
+## GitHub token
 
-The server binds **127.0.0.1 only**. Register with username + email + password (hashed, never stored in plaintext). The first screen is a ranked list (composite score, descending). Click a row for the drawer: stage, earlyness, evidence, opportunity window, access, recommended entry path, five dimensions, Chair, and **开始进入**. That button creates an Entry Mission, writes `FORESHADOW.md`, and may `git clone --depth 1` into `$FORESHADOW_HOME/work/`. It never opens Issues/PRs or pushes. **查看任务** lists missions. Review radio **进入** only records a personal stance (hydrate / watchlist) — it does not start a mission.
-
-CLI: `foreshadow enter owner/repo`, `foreshadow missions`, `foreshadow outcome owner/repo --event maintainer_replied`. Walkthrough: [`docs/entry-mission.md`](docs/entry-mission.md).
-
-`--export-html` still writes a static Chinese list (accordion) under `preview/YYYY-MM-DD/` or `reports/`. It is an export, not the product.
-
-`board --preview` reads **real** snapshots. Missing `v7` shows as N/A / 预览模式. It does not write fake history. Official Top 5 stays empty until ~7 days of snapshots exist.
-
-## Development
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version:
+Foreshadow only **reads** public GitHub. Keep the token on this machine — never in a config file.
 
 ```bash
-uv sync --group dev
-uv run ruff check src tests
-uv run ruff format --check src tests
-uv run pytest
+export GITHUB_TOKEN=ghp_…     # classic PAT with no scopes
+# or GH_TOKEN
+# or: gh auth login           # Foreshadow uses `gh auth token`
 ```
 
-CI runs ruff + pytest on Python 3.12 and 3.13 with **no** live calls to `api.github.com`.
+A fine-grained token should be public-repo read only. Do not grant `repo` or write access.
+
+## Start
+
+```bash
+foreshadow init                 # default config; you usually do not edit it
+foreshadow schedule install     # optional: daily auto-run on this machine
+foreshadow run                  # run today yourself if you skipped the schedule
+foreshadow board                # opens http://127.0.0.1:8765/
+```
+
+`run` is at most once per day. If today already finished, it skips — that is normal.
+
+Register a local Board account (username, email, password). It stays on this machine. Then look at **今日候选榜**.
+
+## Empty Top 5 is success
+
+Official Top 5 is allowed to be **empty**. Foreshadow will not pad the list.
+
+The Board can still show candidates to watch. Explosion for a repo needs about seven days of Foreshadow’s own observations of **that same repo**. In the first week, expect an empty Official Top 5.
+
+## Enter a repo
+
+1. Open a candidate. Read **为什么现在** / **进入通道** / **推荐入口**.
+2. Click **开始进入**. Do not use **记入观察清单** — that only saves a personal stance.
+3. Wait for local prep: shallow clone, `FORESHADOW.md`, `ISSUE_DRAFT.md`.
+4. Status becomes **等待你确认远程操作**. Nothing is posted to GitHub.
+
+CLI equivalent: `foreshadow enter owner/repo`.
+
+## Safety
+
+- No automatic GitHub writes in this beta.
+- **尝试创建 PR（应被拒绝）** is refused on purpose.
+- The Board binds localhost only.
+- Discovery is GET-only. Clone is local. Remote writes stay blocked until you do them yourself.
+
+## Check
+
+```bash
+foreshadow doctor    # token, config, ready to run
+foreshadow status    # last daily run
+```
+
+## Known limitations
+
+- Search is truncated by design: first 25 hits × 14 queries. Not a bug.
+- Explosion needs t-7 data (a week of snapshots for that repo). Lifetime stars/age is not Explosion.
+- 7-day deterministic integration: **VERIFIED**.
+- Real 7-day soak: **IN PROGRESS**.
+
+## Tomorrow morning
+
+1. `foreshadow doctor`
+2. `foreshadow run` (skip if it already ran today)
+3. `foreshadow board`
+4. Look at observation / empty Official Top 5 — empty Top 5 is success
+5. Open a candidate and read why
+6. **开始进入**
+7. See local prep (clone + plan)
+8. Confirm remote write is blocked (**尝试创建 PR**)
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT. Engineer internals live in [`docs/`](docs/).

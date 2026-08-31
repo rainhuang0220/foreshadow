@@ -32,6 +32,7 @@ from foreshadow.pipeline.hydrate import (
     update_repo_from_graphql,
     upsert_repo_from_graphql,
 )
+from foreshadow.pipeline.observation import ObservationEntry, expire_due, load_active
 from foreshadow.pipeline.snapshot import payload_from_graphql, upsert_snapshot
 
 # Pool A/B/C recall. Stars are query bounds, never a fill target or pre-rank key.
@@ -407,7 +408,15 @@ def cap_candidates(
     search_hits: Sequence[SearchHit],
     max_candidates: int = 120,
     disc: DiscoverySettings | None = None,
+    *,
+    observations: Sequence[ObservationEntry] = (),
 ) -> CapResult:
+    """Watchlist first, then system observations, then fresh search.
+
+    Invariant G: after watchlist, ``fresh_discovery_floor`` seats stay
+    available for search even if the system panel is large. Watchlist may
+    still consume the full cap (existing contract).
+    """
     disc = disc or DiscoverySettings()
     watch: list[CappedCandidate] = []
     seen: set[str] = set()
@@ -431,6 +440,29 @@ def cap_candidates(
     present = {c.node_id for c in out}
     kept = [h for h in search_hits if lightweight_keep(h)]
     hits_by_id = {h.node_id: h for h in kept}
+    remaining = max(0, max_candidates - len(out))
+    floor = min(int(disc.fresh_discovery_floor), remaining)
+    obs_budget = max(0, remaining - floor)
+    ordered_obs = sorted(observations, key=lambda e: (e.added_on, e.node_id))
+    for entry in ordered_obs:
+        if len(out) >= max_candidates or obs_budget <= 0:
+            break
+        nid = str(entry.node_id)
+        if nid in present:
+            continue
+        present.add(nid)
+        hit = hits_by_id.get(nid)
+        out.append(
+            CappedCandidate(
+                node_id=nid,
+                full_name=str(entry.full_name),
+                origin="observation",
+                query_key=hit.query_key if hit is not None else None,
+                pool=hit.pool if hit is not None else None,
+                hit=hit,
+            )
+        )
+        obs_budget -= 1
     for cand in out:
         hit = hits_by_id.get(cand.node_id)
         if hit is not None:
@@ -628,12 +660,17 @@ def load_watchlist(
 
 
 def discovery_source(
-    action: str | None, in_watchlist: bool, query_key: str | None
+    action: str | None,
+    in_watchlist: bool,
+    query_key: str | None,
+    origin: str | None = None,
 ) -> str:
     if action == "enter":
         token = "active"
     elif in_watchlist:
         token = "watchlist"
+    elif origin == "observation":
+        token = "observation"
     elif query_key:
         token = f"search:{query_key}"
     else:
@@ -681,8 +718,14 @@ def discover_hydrate_snapshot(
     hits = search_candidates(client, settings, today, force=force, health=health)
     watch = load_watchlist(conn, today, settings.scoring)
     watch_by_id = {w.node_id: w for w in watch}
+    health["observation_expired_count"] = expire_due(conn, today)
+    observed = load_active(conn, today)
     capped = cap_candidates(
-        watch, hits, settings.discovery.max_candidates, disc=settings.discovery
+        watch,
+        hits,
+        settings.discovery.max_candidates,
+        disc=settings.discovery,
+        observations=observed,
     )
     health["watchlist_truncated"] = capped.watchlist_truncated
     health["search_capped"] = capped.search_capped
@@ -750,6 +793,7 @@ def discover_hydrate_snapshot(
             action,
             cand.origin == "watchlist" or wl is not None,
             cand.query_key,
+            origin=cand.origin,
         )
         conn.execute(
             """

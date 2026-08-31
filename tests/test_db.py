@@ -58,6 +58,13 @@ def test_sql_packaged():
         .read_text()
     )
     assert "CREATE TABLE contribution_events" in v5
+    v6 = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/006_observations.sql")
+        .read_text()
+    )
+    assert "CREATE TABLE observations" in v6
+    assert "expires_on" in v6
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):
@@ -76,6 +83,7 @@ def test_migrate_adds_users_and_backfills_reviews(tmp_home):
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert "score_compare" in tables
+    assert "observations" in tables
 
 
 def test_migrate_copies_existing_scores_as_v1(tmp_home):

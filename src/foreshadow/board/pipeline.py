@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as date_cls
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from foreshadow.pipeline.access import compute_access
 from foreshadow.pipeline.activity import compute_activity
 from foreshadow.pipeline.direction import load_direction_bags, score_direction
 from foreshadow.pipeline.hydrate import parse_dt
+from foreshadow.pipeline.observation import load_active
 from foreshadow.pipeline.s1 import compute_s1
 from foreshadow.pipeline.score import ScoredRepo, score_repo
 from foreshadow.pipeline.select import is_official_eligible
@@ -125,6 +127,12 @@ def _card(
         evidence=evidence,
         why_now=_why_now_text(row, extra_meta),
         suggested_contribution=suggested,
+        observation_age_days=_int_or_none(extra_meta.get("observation_age_days")),
+        observation_reason=(
+            str(extra_meta["observation_reason"])
+            if extra_meta.get("observation_reason")
+            else None
+        ),
         p0_opportunity=row.breakdown.opportunity.value,
         p0_explosion=row.breakdown.explosion.value,
         p0_contribution=row.breakdown.contribution.value,
@@ -354,6 +362,44 @@ def _snapshot_count(conn: sqlite3.Connection) -> int:
     return int(row[0]) if row else 0
 
 
+def _observation_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM observations").fetchone()
+    return int(row[0]) if row else 0
+
+
+def _run_meta(conn: sqlite3.Connection, date: str) -> dict[str, Any]:
+    any_n = int(conn.execute("SELECT COUNT(*) FROM daily_runs").fetchone()[0] or 0)
+    row = conn.execute(
+        """
+        SELECT status, source_health_json, finished_at
+        FROM daily_runs
+        WHERE run_date=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (date,),
+    ).fetchone()
+    health: dict[str, Any] = {}
+    status = None
+    finished = None
+    if row is not None:
+        status = str(row[0]) if row[0] is not None else None
+        finished = row[2]
+        raw = row[1]
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, dict):
+                health = parsed
+    return {
+        "any_run": any_n > 0,
+        "status": status,
+        "finished_at": finished,
+        "health": health,
+    }
+
+
 def load_scored_from_db(
     conn: sqlite3.Connection,
     date: str,
@@ -486,6 +532,18 @@ def load_scored_from_db(
             "strategy_why": list(strat.why),
         }
         snap_days = max(snap_days, len(data.get("snapshots") or []))
+    try:
+        day = date_cls.fromisoformat(date)
+    except ValueError:
+        day = clock.today()
+    for entry in load_active(conn, day):
+        extra = extras.get(entry.full_name)
+        if extra is None:
+            continue
+        extra["observation_age_days"] = (
+            day - date_cls.fromisoformat(entry.added_on)
+        ).days + 1
+        extra["observation_reason"] = entry.reason
     return scored, extras, snap_days
 
 
@@ -702,17 +760,22 @@ def build_board_from_db(
     conn = connect(db_path)
     migrate(conn)
     before = _snapshot_count(conn)
+    obs_before = _observation_count(conn)
     scored, extras, snap_days = load_scored_from_db(conn, date, clock, settings)
     board = assemble_board(
         scored,
         date=date,
         preview=preview,
         snapshot_days=snap_days,
+        meta={"run": _run_meta(conn, date)},
         settings=settings.board,
         scoring=settings.scoring,
         extras=extras,
     )
     after = _snapshot_count(conn)
+    obs_after = _observation_count(conn)
+    if obs_before != obs_after:
+        raise RuntimeError("board run mutated observations")
     return board, before, after
 
 

@@ -18,6 +18,7 @@ from foreshadow.config import (
     user_config_path,
 )
 from foreshadow.db import connect, migrate
+from foreshadow.lock import official_run_lock
 from foreshadow.models import ReportJSON
 from foreshadow.paths import resolve_data_dir
 from foreshadow.pipeline.compare import (
@@ -30,6 +31,14 @@ from foreshadow.pipeline.discover import (
     discover_hydrate_snapshot,
     is_degraded,
     load_watchlist,
+)
+from foreshadow.pipeline.observation import (
+    admit_from_scores,
+    count_states,
+    load_active,
+    mark_observed,
+    v7_eligible_count,
+    yesterday_overlap,
 )
 from foreshadow.pipeline.report import (
     build_report,
@@ -44,6 +53,7 @@ from foreshadow.pipeline.score_v2 import score_repo_v2
 from foreshadow.pipeline.select import select_top
 
 __all__ = [
+    "FINISHED_RUN_STATUSES",
     "RunResult",
     "discover_hydrate_snapshot",
     "is_degraded",
@@ -52,6 +62,8 @@ __all__ = [
     "run_pipeline",
     "show_repo",
 ]
+
+FINISHED_RUN_STATUSES = frozenset({"complete", "degraded"})
 
 
 @dataclass
@@ -68,6 +80,7 @@ class RunResult:
     review_repo: str = "owner/repo"
     summary: str = ""
     report: ReportJSON | None = None
+    skip_reason: str | None = None
 
 
 def run_pipeline(
@@ -91,12 +104,80 @@ def run_pipeline(
         loaded.llm.enabled = True
 
     data_dir = resolve_data_dir()
-    db_path = data_dir / "foreshadow.sqlite3"
-    conn = connect(db_path)
-    migrate(conn)
     today = clock.today()
     today_s = today.isoformat()
 
+    with official_run_lock(data_dir, blocking=False) as got_lock:
+        if not got_lock:
+            return _locked_result(today_s)
+
+        db_path = data_dir / "foreshadow.sqlite3"
+        conn = connect(db_path)
+        migrate(conn)
+        skipped = _skip_finished_run(conn, data_dir, today_s, force=force)
+        if skipped is not None:
+            return skipped
+
+        created_client = False
+        if client is None:
+            from foreshadow.github.client import GitHubClient, resolve_token
+
+            client = GitHubClient(
+                token=resolve_token(),
+                settings=loaded.github,
+                clock=clock,
+                force=force,
+            )
+            created_client = True
+
+        try:
+            return _run(
+                conn,
+                client,
+                loaded,
+                clock=clock,
+                force=force,
+                data_dir=data_dir,
+                wrote_config=wrote,
+            )
+        except Exception as exc:
+            _mark_run_unfinished(conn, clock, today_s, exc, failed=True)
+            raise
+        except BaseException:
+            _mark_run_unfinished(conn, clock, today_s, None, failed=False)
+            raise
+        finally:
+            if created_client and hasattr(client, "close"):
+                client.close()
+
+
+def _locked_result(today_s: str) -> RunResult:
+    result = RunResult(
+        status="locked",
+        report_path=None,
+        top5_count=0,
+        skipped=True,
+        skip_reason="locked",
+    )
+    result.summary = (
+        f"Foreshadow {today_s}\n"
+        "daily run already in progress\n"
+        "next: foreshadow status\n"
+    )
+    return result
+
+
+def _skip_finished_run(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    today_s: str,
+    *,
+    force: bool,
+) -> RunResult | None:
+    """Skip a second Official run on the same UTC date unless --force.
+
+    complete and degraded both count as finished. failed / running retry.
+    """
     existing = conn.execute(
         """
         SELECT status, report_path, top5_count, candidate_count, scored_count,
@@ -105,70 +186,39 @@ def run_pipeline(
         """,
         (today_s,),
     ).fetchone()
+    if existing is None:
+        return None
     report_file = (
-        Path(existing[1])
-        if existing and existing[1]
-        else data_dir / "reports" / f"{today_s}.md"
+        Path(existing[1]) if existing[1] else data_dir / "reports" / f"{today_s}.md"
     )
-    if existing and existing[0] == "complete" and not force and report_file.is_file():
-        path = report_file
-        health = _as_dict(existing[5])
-        snap_days = _snapshot_days(conn)
-        result = RunResult(
-            status="complete",
-            report_path=path,
-            top5_count=int(existing[2] or 0),
-            skipped=True,
-            discovered=int(existing[3] or 0),
-            scored=int(existing[4] or 0),
-            snapshot_days=snap_days,
-            source_health=health,
-        )
-        result.summary = format_run_summary(
-            date=today_s,
-            discovered=result.discovered,
-            hydrated=result.discovered,
-            scored=result.scored,
-            selected=result.top5_count,
-            status="complete",
-            health=health,
-            snapshot_days=snap_days,
-            report_path=result.report_path,
-            skipped=True,
-        )
-        return result
-
-    created_client = False
-    if client is None:
-        from foreshadow.github.client import GitHubClient, resolve_token
-
-        client = GitHubClient(
-            token=resolve_token(),
-            settings=loaded.github,
-            clock=clock,
-            force=force,
-        )
-        created_client = True
-
-    try:
-        return _run(
-            conn,
-            client,
-            loaded,
-            clock=clock,
-            force=force,
-            data_dir=data_dir,
-            wrote_config=wrote,
-        )
-    except Exception as exc:
-        _mark_run_unfinished(conn, clock, today_s, exc, failed=True)
-        raise
-    except BaseException:
-        _mark_run_unfinished(conn, clock, today_s, None, failed=False)
-        raise
-    finally:
-        if created_client and hasattr(client, "close"):
-            client.close()
+    if existing[0] not in FINISHED_RUN_STATUSES or force or not report_file.is_file():
+        return None
+    health = _as_dict(existing[5])
+    snap_days = _snapshot_days(conn)
+    result = RunResult(
+        status=str(existing[0]),
+        report_path=report_file,
+        top5_count=int(existing[2] or 0),
+        skipped=True,
+        skip_reason="same_day",
+        discovered=int(existing[3] or 0),
+        scored=int(existing[4] or 0),
+        snapshot_days=snap_days,
+        source_health=health,
+    )
+    result.summary = format_run_summary(
+        date=today_s,
+        discovered=result.discovered,
+        hydrated=result.discovered,
+        scored=result.scored,
+        selected=result.top5_count,
+        status=result.status,
+        health=health,
+        snapshot_days=snap_days,
+        report_path=result.report_path,
+        skipped=True,
+    )
+    return result
 
 
 def _mark_run_unfinished(
@@ -308,6 +358,13 @@ def _run(
     today_s = today.isoformat()
     health = dict(disc.source_health)
     run_id = disc.run_id
+    snap_ids = [
+        int(row[0])
+        for row in conn.execute(
+            "SELECT repo_id FROM snapshots WHERE snapshot_date=?", (today_s,)
+        )
+    ]
+    mark_observed(conn, snap_ids, today)
     conn.execute(
         """
         UPDATE daily_runs
@@ -405,6 +462,52 @@ def _run(
             """,
             (row.breakdown.selected_rank, run_id, repo_id),
         )
+
+    watch_now = load_watchlist(conn, today, settings.scoring)
+    watch_repo_ids = {int(w.repo_id) for w in watch_now}
+    selected_ids = {
+        id_by_name[row.full_name] for row in selected if row.full_name in id_by_name
+    }
+    admit_from_scores(
+        conn,
+        today=today,
+        scored_rows=scored_rows,
+        selected_ids=selected_ids,
+        watchlist_ids=watch_repo_ids,
+        disc=settings.discovery,
+    )
+    scored_ids = [repo_id for repo_id, _, _ in scored_rows]
+    v7_ok = sum(
+        1
+        for _, scored, _ in scored_rows
+        if ((scored.evidence or {}).get("windows") or {}).get("v7") is not None
+    )
+    v7_base = v7_eligible_count(
+        conn, scored_ids, today, settings.scoring.window_slack_days
+    )
+    retained, _prev_n, overlap = yesterday_overlap(conn, run_id, today)
+    system_n, _expired_total = count_states(conn)
+    system_ids = {e.repo_id for e in load_active(conn, today)}
+    origins = [c.origin for c in disc.capped.candidates]
+    health["user_watchlist_count"] = len(watch_now)
+    health["system_observed_count"] = system_n
+    health["observation_panel_size"] = len(watch_repo_ids | system_ids)
+    health["fresh_discovery_count"] = sum(1 for origin in origins if origin == "search")
+    health["retained_from_previous_day"] = retained
+    health["daily_overlap_rate"] = None if overlap is None else round(overlap, 4)
+    health["v7_baseline_eligible_count"] = v7_base
+    health["v7_available"] = v7_ok
+    health["v7_coverage_rate"] = (
+        round(v7_ok / len(scored_rows), 4) if scored_rows else 0.0
+    )
+    health["observation_expired_count"] = int(
+        health.get("observation_expired_count") or 0
+    )
+    health["explosion_available"] = sum(
+        1
+        for _, scored, _ in scored_rows
+        if scored.breakdown.explosion.value is not None
+    )
 
     snap_days = _snapshot_days(conn)
     status = "degraded" if is_degraded(health) else "complete"
