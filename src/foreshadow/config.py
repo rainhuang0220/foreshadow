@@ -35,7 +35,11 @@ pool_b_quota = 50
 pool_c_quota = 30
 per_query_floor = 6
 pushed_within_days = 45       # templates {pushed45} = today − this
-max_candidates = 120          # union of watchlist + search; underfill is OK
+max_candidates = 120          # union of watchlist + observation + search
+fresh_discovery_floor = 24    # seats reserved for new search after watchlist
+observation_ttl_days = 14     # system panel TTL from added_on; covers v7 + missed days
+observation_admit_max = 24    # new system promotions per day (not Official pins)
+observation_admit_min = 25    # min v1 opportunity to promote; not Official 55
 max_deep_hydrate = 30
 max_watchlist_deep = 20       # Phase B reserved for rankable watchlist only (watch/interested/investigate); enter does not consume
 max_medium_hydrate = 30       # cheaper REST (C/commits/releases); not issue/PR sample
@@ -115,6 +119,10 @@ class DiscoverySettings(BaseModel):
     per_query_floor: int = 6
     pushed_within_days: int = 45
     max_candidates: int = 120
+    fresh_discovery_floor: int = 24
+    observation_ttl_days: int = 14
+    observation_admit_max: int = 24
+    observation_admit_min: int = 25
     max_deep_hydrate: int = 30
     max_watchlist_deep: int = 20
     max_medium_hydrate: int = 30
