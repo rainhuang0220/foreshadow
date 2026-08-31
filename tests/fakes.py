@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -172,6 +172,8 @@ class FakeGitHub:
     rest_status: dict[tuple[str, str], int] = field(default_factory=dict)
     search_nodes: list[dict[str, Any]] = field(default_factory=list)
     search_pages: list[list[dict[str, Any]]] | None = None
+    search_by_day: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    day: str | None = None
     search_total_override: int | None = None
     contributors: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     contributor_pages: dict[str, list[list[dict[str, Any]]]] = field(
@@ -196,6 +198,16 @@ class FakeGitHub:
     )
     _q_chunks: dict[str, list[dict[str, Any]]] = field(default_factory=dict, repr=False)
     _q_index: dict[str, int] = field(default_factory=dict, repr=False)
+
+    def begin_day(self, day: date | str | None = None) -> None:
+        """Reset per-day GraphQL search/hydrate cache. Same UTC date = same cache."""
+        if day is not None:
+            self.day = day if isinstance(day, str) else day.isoformat()
+        self._q_chunks.clear()
+        self._q_index.clear()
+        self._cache.clear()
+        self.search_queries.clear()
+        self.hydrate_ids.clear()
 
     def should_stop(self) -> bool:
         if self.graphql_used >= self.budget_graphql_points - 80:
@@ -321,6 +333,10 @@ class FakeGitHub:
     def _chunk_for_q(self, q: str, n: int) -> list[dict[str, Any]]:
         if q in self._q_chunks:
             return self._q_chunks[q]
+        if self.search_by_day:
+            chunk = list(self.search_by_day.get(self.day or "", []))[:n]
+            self._q_chunks[q] = chunk
+            return chunk
         idx = len(self._q_index)
         self._q_index[q] = idx
         if self.search_pages is not None:

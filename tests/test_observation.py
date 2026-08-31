@@ -107,19 +107,22 @@ def test_day0_to_day7_search_miss_forms_v7(tmp_home, monkeypatch):
     monkeypatch.delenv("FORESHADOW_CONFIG", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     node = _keep_node(100)
-    gh = FakeGitHub(nodes={"R_keep": node}, search_nodes=[node])
+    gh = FakeGitHub(
+        nodes={"R_keep": node},
+        search_by_day={"2026-08-24": [node]},
+    )
     settings = Settings()
     settings.discovery.observation_admit_min = 0
     start = datetime(2026, 8, 24, 0, 5, tzinfo=UTC)
     for day in range(8):
-        node["stargazerCount"] = 100 + day * 10
-        gh.search_nodes = [node] if day == 0 else []
-        gh._cache.clear()
         clock = Clock(now=start + timedelta(days=day))
+        gh.begin_day(clock.today())
+        node["stargazerCount"] = 100 + day * 10
         result = run_pipeline(
-            clock=clock, force=True, llm=False, client=gh, settings=settings
+            clock=clock, force=False, llm=False, client=gh, settings=settings
         )
         assert result.skipped is False
+        assert "R_keep" in gh.hydrate_ids
     conn = connect(tmp_home / "foreshadow.sqlite3")
     dates = [
         row[0]
