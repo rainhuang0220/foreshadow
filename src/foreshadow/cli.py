@@ -105,12 +105,26 @@ def version() -> None:
 
 
 @app.command(rich_help_panel="Start here")
-def init() -> None:
+def init(
+    schedule: bool = typer.Option(
+        False, "--schedule", help="Also install the daily scheduler"
+    ),
+) -> None:
     """Create local data and default config. Safe to run more than once."""
     from foreshadow.doctor import format_init, initialize
 
     info = initialize()
     sys.stdout.write(format_init(info))
+    if schedule:
+        from foreshadow.schedule import ScheduleError, format_install, install_schedule
+
+        try:
+            sched = install_schedule()
+        except (ScheduleError, RuntimeError) as exc:
+            print(f"scheduler install failed: {exc}", file=sys.stderr)
+            print("next: foreshadow doctor", file=sys.stderr)
+            raise SystemExit(EXIT_FAIL) from exc
+        sys.stdout.write(format_install(sched))
     if not info.get("token_ok"):
         raise SystemExit(EXIT_OK)
 
@@ -502,7 +516,7 @@ def watchlist(
 
 @schedule_app.command("install")
 def schedule_install(
-    at: str = typer.Option("08:00", "--at", help="Local time HH:MM"),
+    at: str = typer.Option("07:00", "--at", help="Local time HH:MM"),
 ) -> None:
     """Install the daily job. Idempotent. Refuses Desktop/worktree paths."""
     from foreshadow.schedule import ScheduleError, install, scheduler_status
