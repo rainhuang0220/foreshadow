@@ -367,6 +367,39 @@ def _observation_count(conn: sqlite3.Connection) -> int:
     return int(row[0]) if row else 0
 
 
+def _run_meta(conn: sqlite3.Connection, date: str) -> dict[str, Any]:
+    any_n = int(conn.execute("SELECT COUNT(*) FROM daily_runs").fetchone()[0] or 0)
+    row = conn.execute(
+        """
+        SELECT status, source_health_json, finished_at
+        FROM daily_runs
+        WHERE run_date=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (date,),
+    ).fetchone()
+    health: dict[str, Any] = {}
+    status = None
+    finished = None
+    if row is not None:
+        status = str(row[0]) if row[0] is not None else None
+        finished = row[2]
+        raw = row[1]
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, dict):
+                health = parsed
+    return {
+        "any_run": any_n > 0,
+        "status": status,
+        "finished_at": finished,
+        "health": health,
+    }
+
+
 def load_scored_from_db(
     conn: sqlite3.Connection,
     date: str,
@@ -734,6 +767,7 @@ def build_board_from_db(
         date=date,
         preview=preview,
         snapshot_days=snap_days,
+        meta={"run": _run_meta(conn, date)},
         settings=settings.board,
         scoring=settings.scoring,
         extras=extras,

@@ -26,7 +26,7 @@ Search discovers. Observation collects longitudinal evidence. Scoring still requ
 2. Active system observations, oldest `added_on` then `node_id`, leaving `fresh_discovery_floor` (24) seats.
 3. Fresh search fills the remainder with existing A/B/C quotas.
 
-Panel cap for system rows = `max_candidates - fresh_discovery_floor` (96). Admission: not vetoed, opportunity ≥ `observation_admit_min` (25), at most `observation_admit_max` (24) new rows per day, plus any Official Top 5 pins (`previous_official`). TTL is **14 days from `added_on`**, not sliding — enough for `v7` plus missed-run slack. Expired rows stop seating.
+Panel cap for system rows = `max_candidates - fresh_discovery_floor` (96). Admission: not vetoed, opportunity ≥ `observation_admit_min` (25), at most `observation_admit_max` (24) new rows per day, plus any Official Top 5 pins (`previous_official`). TTL is **14 days from `added_on`**, not sliding: `expires_on = added_on + 14` calendar days, live while `today <= expires_on` (inclusive of the expiry date), gone the UTC day after. Last observation does not extend membership. Expired rows stop seating.
 
 Preview / Board **read** the table. They do not insert, expire, or refresh it.
 

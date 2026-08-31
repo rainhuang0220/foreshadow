@@ -37,7 +37,11 @@ class ObservationEntry:
 
 
 def expire_due(conn: Any, today: date) -> int:
-    """Mark system rows past expires_on. Does not touch reviews."""
+    """Expire system rows when ``expires_on < today``.
+
+    ``expires_on = added_on + observation_ttl_days`` (calendar addition).
+    Live while ``today <= expires_on`` (inclusive). Does not touch reviews.
+    """
     cur = conn.execute(
         """
         UPDATE observations
@@ -98,6 +102,7 @@ def panel_cap(disc: DiscoverySettings) -> int:
 
 
 def _expires_on(added: date, ttl_days: int) -> str:
+    """UTC calendar date addition. Inclusive of the returned day."""
     return (added + timedelta(days=int(ttl_days))).isoformat()
 
 

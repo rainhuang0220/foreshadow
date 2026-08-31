@@ -339,13 +339,16 @@ def test_resolve_token_gh_auth_not_printed(monkeypatch, capsys):
     assert "gho_fromcli" not in captured.err
 
 
-def test_resolve_token_missing_exits_2(monkeypatch):
+def test_resolve_token_missing_exits_2(monkeypatch, capsys):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.setattr("foreshadow.github.client.shutil.which", lambda cmd: None)
     with pytest.raises(SystemExit) as ei:
         resolve_token()
     assert ei.value.code == 2
+    err = capsys.readouterr().err
+    assert "GITHUB_TOKEN" in err
+    assert "gh auth" in err.lower()
 
 
 def test_contributors_fixture_k18(respx_mock):

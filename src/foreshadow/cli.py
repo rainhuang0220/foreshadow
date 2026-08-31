@@ -19,61 +19,214 @@ from foreshadow.reviews import (
     needs_hydrate,
 )
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_USAGE = 2
+EXIT_SKIPPED = 3
+
+APP_HELP = """Find what the future has already foreshadowed.
+
+A local daily short-list of GitHub repos you might still be able to help.
+Nothing is posted to GitHub unless you say so.
+
+Start here:
+  foreshadow init
+  foreshadow run
+  foreshadow board"""
+
+APP_EPILOG = """GitHub token (read-only, this machine only):
+  export GITHUB_TOKEN=ghp_...     classic PAT, no scopes
+  or  export GH_TOKEN=...
+  or  gh auth login
+
+Exit codes: 0 ok, 1 failure, 2 usage, 3 already ran today (use --force to debug)"""
+
+GIT_MISSING = (
+    "git is not installed, so the repo was not cloned.\n"
+    "Install git (macOS: xcode-select --install) then run the same command again.\n"
+    "https://git-scm.com/downloads"
+)
+
+app = typer.Typer(
+    name="foreshadow",
+    no_args_is_help=True,
+    add_completion=False,
+    pretty_exceptions_enable=False,
+    pretty_exceptions_show_locals=False,
+    help=APP_HELP,
+    epilog=APP_EPILOG,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+schedule_app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+    help="Install a daily local job (optional). Does not depend on the current directory.",
+)
+app.add_typer(schedule_app, name="schedule", rich_help_panel="Setup")
 
 
-@app.command()
-def run(
-    force: bool = False,
-    date: str | None = None,
-    llm: bool = False,
+def _show_version(value: bool) -> None:
+    if value:
+        from foreshadow import __version__
+
+        sys.stdout.write(f"foreshadow {__version__}\n")
+        raise typer.Exit(EXIT_OK)
+
+
+@app.callback()
+def _root(
+    show_version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Print version and exit.",
+        callback=_show_version,
+        is_eager=True,
+    ),
 ) -> None:
+    """Find what the future has already foreshadowed.
+
+    A local daily short-list of GitHub repos you might still be able to help.
+    Nothing is posted to GitHub unless you say so.
+
+    Start here:
+      foreshadow init
+      foreshadow run
+      foreshadow board
+    """
+
+
+@app.command(rich_help_panel="Setup")
+def version() -> None:
+    """Print the installed version."""
+    from foreshadow import __version__
+
+    sys.stdout.write(f"foreshadow {__version__}\n")
+
+
+@app.command(rich_help_panel="Start here")
+def init() -> None:
+    """Create local data and default config. Safe to run more than once."""
+    from foreshadow.doctor import format_init, initialize
+
+    info = initialize()
+    sys.stdout.write(format_init(info))
+    if not info.get("token_ok"):
+        raise SystemExit(EXIT_OK)
+
+
+@app.command(rich_help_panel="Setup")
+def doctor() -> None:
+    """Check token, git, data dir, last run, and scheduler."""
+    from foreshadow.doctor import collect_doctor, format_doctor
+
+    info = collect_doctor()
+    sys.stdout.write(format_doctor(info))
+    if not info.get("ok"):
+        raise SystemExit(EXIT_FAIL)
+
+
+@app.command(rich_help_panel="Setup")
+def status() -> None:
+    """Show last Official run, observation panel, and scheduler."""
+    from foreshadow.doctor import collect_status, format_status
+
+    sys.stdout.write(format_status(collect_status()))
+
+
+def _execute_run(*, force: bool, date: str | None, llm: bool) -> None:
     clock = _clock(date)
     try:
         result = run_pipeline(clock=clock, force=force, llm=llm)
-    except SystemExit:
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else EXIT_FAIL
+        if code == EXIT_USAGE:
+            print(
+                "GitHub credentials unavailable.\n"
+                "next: export GITHUB_TOKEN=… then foreshadow doctor",
+                file=sys.stderr,
+            )
         raise
     except Exception as exc:
-        from foreshadow.github.client import redact
+        from foreshadow.github.client import GitHubError, redact
 
-        print(redact(str(exc)), file=sys.stderr)
-        raise SystemExit(1) from exc
+        print("Foreshadow daily run failed", file=sys.stderr)
+        print(f"Reason: {redact(str(exc))}", file=sys.stderr)
+        if isinstance(exc, GitHubError) and exc.status == 401:
+            from foreshadow.github.client import missing_token_message
+
+            print(missing_token_message(), file=sys.stderr, end="")
+        _print_recovery()
+        raise SystemExit(EXIT_FAIL) from exc
+    if result.skipped and result.status == "locked":
+        print("Foreshadow daily run already in progress", file=sys.stderr)
+        _print_recovery()
+        raise SystemExit(EXIT_FAIL)
     text = result.summary or ""
     sys.stdout.write(text if text.endswith("\n") else text + "\n")
+    if result.skipped and result.skip_reason == "same_day":
+        raise SystemExit(EXIT_SKIPPED)
 
 
-@app.command()
+@app.command(rich_help_panel="Start here")
+def run(
+    force: bool = typer.Option(
+        False, "--force", help="Re-run today's completed scan (debug)."
+    ),
+    date: str | None = typer.Option(None, "--date", help="UTC date override (debug)."),
+    llm: bool = typer.Option(
+        False, "--llm", help="Optional narrative. Never changes scores."
+    ),
+) -> None:
+    """Scan public GitHub once for today (UTC). Empty Top 5 is OK."""
+    _execute_run(force=force, date=date, llm=llm)
+
+
+@app.command(rich_help_panel="Daily")
 def report(
     date: str | None = None,
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
+    """Print the latest daily report."""
     clock = _clock(date)
     day = _resolve_report_date(clock, date)
     if day is None:
-        print("no report", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            "no report yet.\nStart here:\n  foreshadow init\n  foreshadow run",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
     path = resolve_data_dir() / "reports" / f"{day}{'.json' if as_json else '.md'}"
     if not path.is_file():
-        print(f"no report for {day}", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            f"no report for {day}\nRun:  foreshadow run",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
     sys.stdout.write(path.read_text(encoding="utf-8"))
 
 
-@app.command()
+@app.command(rich_help_panel="Daily")
 def show(repo: str) -> None:
+    """Show the latest local score card for a repo."""
     text = show_repo(repo)
     if text is None:
-        print(f"unknown repo: {repo}", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            f"unknown repo: {repo}\n"
+            "Run `foreshadow run` first, then use a name from the report.",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
     sys.stdout.write(text if text.endswith("\n") else text + "\n")
 
 
-@app.command()
+@app.command(rich_help_panel="Daily")
 def review(
     repo: str,
     action: str,
     m: str | None = typer.Option(None, "-m", help="Note"),
 ) -> None:
+    """Record a stance: watch, interested, reject, investigate, enter, later."""
     action_n = action.strip().lower()
     if action_n not in ACTIONS:
         print(f"unknown action: {action} ({', '.join(ACTIONS)})", file=sys.stderr)
@@ -114,7 +267,7 @@ def review(
     sys.stdout.write(f"recorded {action_n} for {repo}\n")
 
 
-@app.command()
+@app.command(rich_help_panel="Start here")
 def board(
     date: str | None = None,
     preview: bool = False,
@@ -123,14 +276,20 @@ def board(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
 ) -> None:
-    """Open the interactive Daily Board on localhost. --export-html writes a static file."""
+    """Open the Daily Board in your browser (localhost only)."""
     from foreshadow.board.pipeline import build_board_from_db, write_board
-    from foreshadow.board.server import serve_board, validate_host
+    from foreshadow.board.server import port_in_use_message, serve_board, validate_host
 
     db_path = resolve_data_dir() / "foreshadow.sqlite3"
     if not db_path.is_file():
-        print("no database — run `foreshadow run` first", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            "No daily data yet. Start here:\n"
+            "  foreshadow init\n"
+            "  foreshadow run\n"
+            "  foreshadow board",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
     clock = _clock(date)
     day = date or clock.today().isoformat()
     if not date:
@@ -160,17 +319,21 @@ def board(
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from exc
-    serve_board(
-        host=host,
-        port=port,
-        date=day,
-        preview=preview,
-        clock=clock,
-        open_browser=not no_open,
-    )
+    try:
+        serve_board(
+            host=host,
+            port=port,
+            date=day,
+            preview=preview,
+            clock=clock,
+            open_browser=not no_open,
+        )
+    except OSError:
+        print(port_in_use_message(host, port), file=sys.stderr)
+        raise SystemExit(EXIT_FAIL)
 
 
-@app.command()
+@app.command(rich_help_panel="Enter")
 def enter(
     repo: str = typer.Argument(..., help="owner/repo"),
 ) -> None:
@@ -215,10 +378,13 @@ def enter(
         if text:
             lines.append(text)
     lines.append("remote GitHub writes are blocked until you approve them.")
+    if clone_status == "no_git":
+        lines.append("")
+        lines.append(GIT_MISSING)
     sys.stdout.write("\n".join(lines) + "\n")
 
 
-@app.command()
+@app.command(rich_help_panel="Enter")
 def outcome(
     repo: str = typer.Argument(..., help="owner/repo"),
     event: str = typer.Option(
@@ -257,17 +423,20 @@ def outcome(
     )
 
 
-@app.command()
+@app.command(rich_help_panel="Advanced")
 def sample_access() -> None:
-    """GET closed PRs for medium-tier snapshots. Does not change official v1 scores."""
+    """Fetch extra access signals (advanced). Does not change Official scores."""
     from foreshadow.config import load_config
     from foreshadow.github.client import GitHubClient, resolve_token
     from foreshadow.pipeline.access_sample import sample_medium_access
 
     path = resolve_data_dir() / "foreshadow.sqlite3"
     if not path.is_file():
-        print("no database — run `foreshadow run` first", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            "No daily data yet. Start here:\n  foreshadow init\n  foreshadow run",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
     conn = connect(path)
     migrate(conn)
     try:
@@ -282,7 +451,7 @@ def sample_access() -> None:
     )
 
 
-@app.command("missions")
+@app.command("missions", rich_help_panel="Enter")
 def missions_cmd() -> None:
     """List local Entry Missions. Never talks to GitHub."""
     from foreshadow.auth import resolve_cli_user
@@ -308,10 +477,11 @@ def missions_cmd() -> None:
         )
 
 
-@app.command()
+@app.command(rich_help_panel="Daily")
 def watchlist(
     action: str | None = typer.Option(None, "--action", help="Filter by stance"),
 ) -> None:
+    """List current review stances."""
     action_n = action.strip().lower() if action else None
     if action_n is not None and action_n not in ACTIONS:
         print(f"unknown action: {action} ({', '.join(ACTIONS)})", file=sys.stderr)
@@ -330,10 +500,74 @@ def watchlist(
     sys.stdout.write(format_stances(rows, action=action_n))
 
 
+@schedule_app.command("install")
+def schedule_install(
+    at: str = typer.Option("08:00", "--at", help="Local time HH:MM"),
+) -> None:
+    """Install the daily job. Idempotent. Refuses Desktop/worktree paths."""
+    from foreshadow.schedule import ScheduleError, install, scheduler_status
+    from foreshadow.schedule import format_status as format_sched
+
+    try:
+        _spec, notes = install(at=at)
+    except ScheduleError as exc:
+        print(f"scheduler install failed: {exc}", file=sys.stderr)
+        print("next: foreshadow doctor", file=sys.stderr)
+        raise SystemExit(1) from exc
+    for note in notes:
+        sys.stdout.write(note + "\n")
+    sys.stdout.write(format_sched(scheduler_status()))
+
+
+@schedule_app.command("status")
+def schedule_status_cmd() -> None:
+    """Show whether the daily job is installed."""
+    from foreshadow.schedule import format_status as format_sched
+    from foreshadow.schedule import scheduler_status
+
+    sys.stdout.write(format_sched(scheduler_status()))
+
+
+@schedule_app.command("run-now")
+def schedule_run_now(
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Run today's Official job the same way the scheduler would."""
+    from foreshadow.schedule import ScheduleError, run_now
+
+    try:
+        code = run_now(force=force)
+    except ScheduleError:
+        _execute_run(force=force, date=None, llm=False)
+        return
+    raise SystemExit(code)
+
+
+@schedule_app.command("uninstall")
+def schedule_uninstall() -> None:
+    """Remove the daily job. Does not delete your database."""
+    from foreshadow.schedule import uninstall
+
+    for note in uninstall():
+        sys.stdout.write(note + "\n")
+
+
+def _print_recovery() -> None:
+    from foreshadow.doctor import last_successful_run
+
+    last = last_successful_run()
+    print(f"last successful run: {last or 'none'}", file=sys.stderr)
+    print("next: foreshadow doctor", file=sys.stderr)
+
+
 def _clock(date_str: str | None) -> Clock:
     if not date_str:
         return Clock()
-    day = date.fromisoformat(date_str)
+    try:
+        day = date.fromisoformat(date_str)
+    except ValueError:
+        print(f"invalid date {date_str!r} (use YYYY-MM-DD)", file=sys.stderr)
+        raise SystemExit(EXIT_USAGE) from None
     return Clock(now=datetime(day.year, day.month, day.day, 0, 5, tzinfo=UTC))
 
 

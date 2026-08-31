@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import re
 import sys
@@ -503,6 +504,26 @@ def validate_host(host: str) -> str:
     return h
 
 
+def _is_addr_in_use(exc: OSError) -> bool:
+    codes = {errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", 10048)}
+    if getattr(exc, "errno", None) in codes:
+        return True
+    if getattr(exc, "winerror", None) in codes:
+        return True
+    msg = str(exc).lower()
+    return "address already in use" in msg or "already in use" in msg
+
+
+def port_in_use_message(host: str, port: int) -> str:
+    nxt = port + 1 if port else 8766
+    return (
+        f"端口 {port} 已被占用，看板无法在 http://{host}:{port}/ 启动。\n"
+        f"换一个端口：  foreshadow board --port {nxt}\n"
+        f"查看占用该端口的进程：  lsof -nP -iTCP:{port} -sTCP:LISTEN\n"
+        "结束后再运行 foreshadow board。"
+    )
+
+
 def make_server(
     *,
     host: str = "127.0.0.1",
@@ -535,9 +556,22 @@ def serve_board(
     settings: Settings | None = None,
     open_browser: bool = True,
 ) -> None:
-    httpd = make_server(
-        host=host, port=port, date=date, preview=preview, clock=clock, settings=settings
-    )
+    host = validate_host(host)
+    try:
+        httpd = make_server(
+            host=host,
+            port=port,
+            date=date,
+            preview=preview,
+            clock=clock,
+            settings=settings,
+        )
+    except OSError as exc:
+        if _is_addr_in_use(exc):
+            print(port_in_use_message(host, port), file=sys.stderr, flush=True)
+            raise SystemExit(1) from exc
+        print(f"无法启动看板：{exc}", file=sys.stderr, flush=True)
+        raise SystemExit(1) from exc
     actual_port = httpd.server_address[1]
     url = f"http://{host}:{actual_port}/"
     print(f"Foreshadow Board  {url}", flush=True)

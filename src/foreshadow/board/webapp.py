@@ -22,13 +22,10 @@ APP_HTML = r"""<!DOCTYPE html>
   --cinnabar-dim: #8b342c;
   --ink-blue: #243b55;
   --jade: #3d5c4a;
-  --wash: rgba(246, 243, 236, .82);
+  --wash: rgba(246, 243, 236, .84);
   --panel: #f8f5ee;
-  --night: #f6f3ec;
-  --night-2: #fffdf8;
   --gold: #8a6a2f;
-  --paper-ink: #1c1917;
-  --paper-muted: #6f6860;
+  --focus: #8a6a2f;
   --font-display: "Source Serif 4", "Newsreader", "Iowan Old Style", "Songti SC", serif;
   --font-ui: "PingFang SC", "Hiragino Sans GB", "Source Sans 3", sans-serif;
 }
@@ -56,10 +53,24 @@ body::before {
 }
 a { color: inherit; }
 button, input, select { font: inherit; color: inherit; }
+.skip {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  z-index: 40;
+  padding: .35rem .7rem;
+  background: var(--ink);
+  color: var(--paper);
+  text-decoration: none;
+}
+.skip:focus, .skip:focus-visible {
+  left: 1rem;
+  top: 1rem;
+}
 .wrap {
   position: relative;
   z-index: 1;
-  max-width: 920px;
+  width: min(1080px, 100%);
   margin: 0 auto;
   padding: 2.25rem 2rem 5.5rem;
 }
@@ -73,7 +84,7 @@ h1, h2, h3, h4 {
   font-family: var(--font-display);
   font-weight: 600;
 }
-.mast { margin: 0 0 2.1rem; }
+.mast { margin: 0 0 1.7rem; }
 .mast h1 {
   font-size: 1.7rem;
   margin: .1rem 0 .45rem;
@@ -90,7 +101,7 @@ h1, h2, h3, h4 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: .4rem 0;
+  gap: .4rem .55rem;
   margin: .1rem 0 .85rem;
 }
 .ribbon {
@@ -98,17 +109,18 @@ h1, h2, h3, h4 {
   align-items: center;
   gap: .4rem;
   margin: 0;
-  padding: .12rem .45rem;
+  padding: .14rem .5rem;
   border: 1px solid var(--cinnabar);
   color: var(--cinnabar);
-  letter-spacing: .08em;
+  letter-spacing: .06em;
   font-size: .7rem;
   background: transparent;
+  max-width: 100%;
+  line-height: 1.35;
 }
 .ribbon.official {
   border-color: var(--jade);
   color: var(--jade);
-  background: transparent;
 }
 .counts {
   display: flex;
@@ -151,9 +163,9 @@ h2 { font-size: 1.05rem; margin: 0 0 .55rem; }
 .list { border-top: 1px solid var(--rule); }
 .row {
   display: grid;
-  grid-template-columns: 2.6rem minmax(0,1fr) auto;
-  gap: .15rem 1.05rem;
-  padding: 1.15rem 0;
+  grid-template-columns: 2.4rem minmax(0,1fr) auto;
+  gap: .2rem 1.05rem;
+  padding: 1.15rem .35rem 1.15rem 0;
   border-bottom: 1px solid var(--rule);
   cursor: pointer;
   align-items: start;
@@ -168,17 +180,31 @@ h2 { font-size: 1.05rem; margin: 0 0 .55rem; }
   padding-top: .12rem;
 }
 .nm {
-  font-size: 1rem;
+  font-size: 1.02rem;
   word-break: break-all;
   font-weight: 500;
 }
 .final {
-  font-family: var(--font-display);
-  font-size: .92rem;
+  font-family: var(--font-ui);
+  font-size: .78rem;
   font-variant-numeric: tabular-nums;
   text-align: left;
   line-height: inherit;
-  font-weight: 600;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+.why {
+  margin-top: .38rem;
+  font-size: .94rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.why .lbl {
+  display: block;
+  color: var(--ink-dim);
+  font-size: .7rem;
+  letter-spacing: .08em;
+  margin-bottom: .12rem;
 }
 .sub {
   color: var(--ink-dim);
@@ -186,16 +212,32 @@ h2 { font-size: 1.05rem; margin: 0 0 .55rem; }
   margin-top: .22rem;
   line-height: 1.45;
 }
-.sub.entry { color: var(--ink); }
+.sub.entry { color: var(--ink-dim); }
 .sub.entry b { color: var(--ink); }
 .sub.scores {
   color: var(--ink-faint);
-  font-size: .78rem;
+  font-size: .75rem;
   font-variant-numeric: tabular-nums;
+  margin-top: .28rem;
+}
+.obs {
+  display: inline-block;
+  margin-left: .45rem;
+  font-size: .68rem;
+  letter-spacing: .05em;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  padding: .02rem .34rem;
+  vertical-align: .12rem;
+  font-weight: 400;
+}
+.obs.yours {
+  color: var(--jade);
+  border-color: var(--jade);
 }
 .row .act {
   grid-column: 3;
-  grid-row: 1;
+  grid-row: 1 / span 2;
   text-align: right;
   align-self: center;
   display: flex;
@@ -346,6 +388,34 @@ h2 { font-size: 1.05rem; margin: 0 0 .55rem; }
   cursor: pointer;
 }
 .empty { color: var(--ink-dim); padding: 2.4rem 0; }
+.empty-state {
+  padding: 2rem 0 2.6rem;
+  max-width: 36rem;
+}
+.empty-state h2 { font-size: 1.2rem; margin: 0 0 .45rem; }
+.empty-state p { color: var(--ink-dim); margin: 0 0 .7rem; }
+.empty-state.ok h2 { color: var(--jade); }
+.empty-state pre, .banner pre {
+  margin: .2rem 0 .8rem;
+  padding: .45rem .65rem;
+  background: rgba(28, 25, 23, .04);
+  border: 1px solid var(--rule);
+  overflow-x: auto;
+  font-size: .9rem;
+}
+.banner {
+  border: 1px solid var(--rule-strong);
+  padding: .85rem 1rem;
+  margin: 0 0 1.2rem;
+}
+.banner h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.banner p { margin: .2rem 0; }
+.banner ul { margin: .25rem 0 .4rem; padding-left: 1.2rem; }
+.banner.ok { border-color: var(--jade); }
+.banner.warn {
+  border-color: var(--cinnabar);
+  color: var(--cinnabar-dim);
+}
 button.primary {
   background: var(--ink);
   color: var(--paper);
@@ -354,8 +424,12 @@ button.primary {
   cursor: pointer;
 }
 button.primary:hover { filter: brightness(1.08); }
-button:focus-visible {
-  outline: 2px solid var(--gold);
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, .row:focus-visible {
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 button:disabled {
@@ -370,7 +444,11 @@ button.ghost, .toolbar button {
   padding: .32rem .65rem;
   cursor: pointer;
 }
+button.ghost:hover, .toolbar button:hover:not(:disabled) {
+  background: rgba(28, 25, 23, .04);
+}
 .toolbar button { color: var(--ink); }
+.gh-mini:hover, a.gh:hover { border-bottom-color: var(--ink); }
 .mission-list { margin: 0 0 1.4rem; border-top: 1px solid var(--rule); }
 .mission-list .row { cursor: default; grid-template-columns: minmax(0,1fr) 7rem; }
 details.git-ops { margin: .8rem 0; color: var(--ink-dim); font-size: .86rem; }
@@ -447,10 +525,27 @@ ul.checklist {
   font-size: .95rem;
 }
 ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
-@media (max-width: 900px) {
-  .counts { gap: .85rem 1.2rem; }
-  .wrap { padding: 1.25rem 1.1rem 5rem; }
-  .row { grid-template-columns: 2.2rem minmax(0,1fr); }
+.obs-panel {
+  border: 1px solid var(--rule);
+  padding: .7rem .8rem;
+  margin: .55rem 0 .9rem;
+}
+.obs-panel h3 { margin: 0 0 .25rem; font-size: 1rem; }
+@media (min-width: 1440px) {
+  .wrap { width: min(1080px, 100%); padding: 2.5rem 2rem 5.5rem; }
+}
+@media (max-width: 1280px) {
+  .wrap { width: min(960px, 100%); }
+}
+@media (max-width: 1024px) {
+  .wrap { width: 100%; padding: 1.6rem 1.4rem 5rem; }
+  .mast h1 { font-size: 1.5rem; }
+  .drawer { width: min(480px, 100%); }
+}
+@media (max-width: 768px) {
+  body { background-attachment: scroll; }
+  .wrap { padding: 1.2rem 1.05rem 5rem; }
+  .row { grid-template-columns: 2.1rem minmax(0,1fr); padding-right: 0; }
   .row .act {
     grid-column: 1 / -1;
     grid-row: auto;
@@ -460,6 +555,23 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
     flex-wrap: wrap;
   }
   .final { text-align: left; }
+  .drawer { width: 100%; border-left: 0; }
+  .counts { gap: .85rem 1.2rem; }
+  .mast-meta { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 390px) {
+  .wrap { padding: .95rem .8rem 4.5rem; }
+  .mast h1 { font-size: 1.22rem; }
+  .nm { font-size: .95rem; }
+  .why { font-size: .88rem; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar label, .toolbar button { width: 100%; }
+  .who { font-size: .78rem; }
+  .row .act { gap: .35rem; }
+  .row .act button { flex: 1 1 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawer-bg { transition: none; }
 }
 </style>
 </head>
@@ -549,7 +661,7 @@ function authView() {
   <header class="mast">
     <div class="brand">伏笔</div>
     <h1>FORESHADOW · 今日机会</h1>
-    <p class="kicker">今日机会审查。人审工作台。先登录，再看今日候选榜。</p>
+    <p class="kicker">先登录，再看今天新出现的仓库、近几日的观察，以及值不值得现在动手。</p>
   </header>
   <form class="auth" onsubmit="return submitAuth(event)">
     <h2>${t ? "注册" : "登录"}</h2>
@@ -566,8 +678,11 @@ function authView() {
 
 function header(board) {
   const preview = board.mode !== "official";
-  const c = board.counts;
+  const c = board.counts || {};
+  const labels = board.count_labels || {};
+  const ribbon = board.ribbon_zh || (preview ? "参考排名 · 不是正式入选" : "正式入选");
   return `
+  <a class="skip" href="#board-list">跳到今日名单</a>
   <div class="who">
     <span>${esc(state.user.username)}</span>
     <button type="button" onclick="logout()">退出</button>
@@ -577,22 +692,64 @@ function header(board) {
     <h1>FORESHADOW · 今日机会</h1>
     <div class="mast-meta">
       <p class="date">${esc(board.date)}</p>
-      <div class="ribbon ${preview ? "" : "official"}">
-        ${preview ? "预览模式｜历史不足 v7｜不是正式预测" : "正式模式｜v7 历史完整"}
-      </div>
+      <div class="ribbon ${preview ? "" : "official"}">${esc(ribbon)}</div>
     </div>
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
-    <p class="meta">扫描由每日命令运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
+    <p class="meta">扫描由每日命令或调度运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
     ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
     <div class="counts">
-      <div><b>${c.discovered}</b>发现项目</div>
-      <div><b>${c.shortlisted}</b>候选项目</div>
-      <div><b>${c.deep_reviewed}</b>深度评审</div>
-      <div><b>${c.official_top5}</b>正式 Top 5</div>
-      <div><b>${c.provisional}</b>预览候选</div>
+      <div><b>${c.discovered ?? 0}</b>${esc(labels.discovered || "发现项目")}</div>
+      <div><b>${c.shortlisted ?? 0}</b>${esc(labels.shortlisted || "候选项目")}</div>
+      <div><b>${c.deep_reviewed ?? 0}</b>${esc(labels.deep_reviewed || "深度评审")}</div>
+      <div><b>${c.official_top5 ?? 0}</b>${esc(labels.official_top5 || "正式入选")}</div>
+      <div><b>${c.provisional ?? 0}</b>${esc(labels.provisional || "参考候选")}</div>
+      ${c.observing != null ? `<div><b>${c.observing}</b>${esc(labels.observing || "持续观察")}</div>` : ""}
     </div>
-  </header>`;
+  </header>
+  ${runBanner(board)}`;
+}
+
+function runBanner(board) {
+  const r = board.run || {};
+  const reasons = (r.reasons_zh || []).map(x => `<li>${esc(x)}</li>`).join("");
+  if (r.status === "degraded") {
+    return `<div class="banner warn" role="status">
+      <h3>今日扫描不完整</h3>
+      <p>${esc(r.note || "下面的名单不能当作完整结果。")}</p>
+      ${reasons ? `<ul>${reasons}</ul>` : ""}
+      <p>建议稍后再次运行 <code>foreshadow run</code>，或等待每日调度。</p>
+    </div>`;
+  }
+  if (r.status === "failed") {
+    return `<div class="banner warn" role="status">
+      <h3>今日扫描失败</h3>
+      <p>${esc(r.note || "请运行 foreshadow run 重试。")}</p>
+    </div>`;
+  }
+  if (r.status === "running") {
+    return `<div class="banner" role="status">
+      <h3>今日扫描仍在进行</h3>
+      <p>${esc(r.note || "请稍后再打开看板。")}</p>
+    </div>`;
+  }
+  if ((board.candidates || []).length && board.official_empty_note) {
+    return `<div class="banner ok" role="status"><p>${esc(board.official_empty_note)}</p></div>`;
+  }
+  return "";
+}
+
+function emptyState(board) {
+  const e = board.empty || {};
+  const title = e.title || "今日没有可展示的项目";
+  const body = e.body || "空的入选名单是正常结果，不是故障。";
+  const ok = !!e.is_success;
+  const action = e.action ? `<pre><code>${esc(e.action)}</code></pre>` : "";
+  return `<div class="empty-state${ok ? " ok" : ""}">
+    <h2>${esc(title)}</h2>
+    <p>${esc(body)}</p>
+    ${action}
+  </div>`;
 }
 
 function cardIntro(c) {
@@ -612,31 +769,46 @@ function missionIsOpen(c) {
 function enterOrMissionBtn(c) {
   const id = Number(c.mission_id) || 0;
   if (id && (cloneOkFor(c) || missionIsOpen(c))) {
-    return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})">查看任务</button>`;
+    return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})" aria-label="查看任务 ${esc(c.full_name)}">查看任务</button>`;
   }
-  return `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')">开始进入</button>`;
+  return `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')" aria-label="开始进入 ${esc(c.full_name)}，在本机准备项目">开始进入</button>`;
+}
+
+function rowKey(ev, name) {
+  if (ev.target !== ev.currentTarget) return;
+  if (ev.key === "Enter" || ev.key === " ") {
+    ev.preventDefault();
+    openCard(name);
+  }
 }
 
 function listView(board) {
-  const rows = applySortFilter(board.candidates || []);
-  if (!rows.length) return `<p class="empty">今日没有可展示的候选。空 Top 5 是成功。</p>`;
+  const all = board.candidates || [];
+  const rows = applySortFilter(all);
+  if (!rows.length) {
+    if (!all.length) return emptyState(board);
+    return `<p class="empty">当前筛选下没有项目。把筛选改回「全部」即可看到今日名单。</p>`;
+  }
   return rows.map(c => {
     const why = cardWhy(c);
     const desc = cardIntro(c);
     const match = (c.match_score != null && c.match_score !== "") ? ` · 匹配度 ${n(c.match_score)}` : "";
+    const obs = c.observation_zh
+      ? `<span class="obs ${c.observation_kind==="yours"?"yours":"watching"}">${esc(c.observation_zh)}</span>`
+      : "";
     return `
-    <div class="row ${state.open===c.full_name?"active":""}" onclick="openCard('${esc(c.full_name)}')">
+    <div class="row ${state.open===c.full_name?"active":""}" tabindex="0" role="button" aria-expanded="${state.open===c.full_name?"true":"false"}" onclick="openCard('${esc(c.full_name)}')" onkeydown="rowKey(event, '${esc(c.full_name)}')">
       <div class="rk">#${esc(c.rank)}</div>
       <div>
-        <div class="nm">${esc(c.full_name)}
+        <div class="nm">${esc(c.full_name)}${obs}
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
+        ${why ? `<div class="why">为什么现在：${esc(why)}</div>` : ""}
         <div class="sub entry">${esc(desc || "—")}</div>
-        <div class="sub scores"><span class="final">${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}${c.observation_zh ? " · " + esc(c.observation_zh) : ""}</div>
-        ${why ? `<div class="sub">为什么现在：${esc(why)}</div>` : ""}
+        <div class="sub scores"><span class="final">综合 ${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage_zh || c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
       </div>
       <div class="act">
-        <button type="button" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">查看详情</button>
+        <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
         ${state.open===c.full_name ? "" : enterOrMissionBtn(c)}
       </div>
     </div>`;
@@ -685,8 +857,12 @@ function drawerView(card) {
   <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
   <aside class="drawer ${state.open?"on":""}" role="dialog" aria-modal="true" aria-label="项目详情">
     <button class="close" type="button" onclick="closeCard()">关闭</button>
-    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式预测" : "正式排名"}${card.observation_zh ? " · " + esc(card.observation_zh) : ""}</p>
+    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式入选" : "正式排名"}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
+    ${card.observation_zh ? `<section class="obs-panel">
+      <h3>${esc(card.observation_zh)}</h3>
+      <p class="meta">${esc(card.observation_hint || (card.observation_kind==="yours" ? "这是你标记关注的仓库。" : "伏笔正在连续看这个仓库近几日的变化。"))}</p>
+    </section>` : ""}
     <section class="enter-plan">
       ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
       <p><strong>项目简介：</strong>${esc(intro)}</p>
@@ -701,15 +877,15 @@ function drawerView(card) {
         ${enterOrMissionBtn(card)}
         <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
       </p>
-      <p class="meta">「记入观察清单」不会创建任务，只记个人立场。</p>
+      <p class="meta">「开始进入」只在本机准备项目，不会向 GitHub 发内容。「记入观察清单」不会创建任务，只记个人立场。</p>
     </section>
     <p><strong>最终综合评分：</strong>${n(card.final_score)}
       <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
-    <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.p0_confidence_zh || "低")}（完整度低不是低分）</p>
+    <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.confidence_zh || "低")}（完整度低不是低分）</p>
     <p class="meta">活跃度：${esc(card.activity_class_zh || "未知")}${card.activity_momentum != null ? "　" + n(card.activity_momentum) + " / 100" : ""}</p>
     <p class="meta">近 7 天提交：${n(card.commits_7d)} · 近 30 天提交：${n(card.commits_30d)} · 近 30 天 Release：${n(card.releases_30d)} · 近 7 天贡献者：${n(card.recent_contributors_7d)}${card.activity_concentration != null ? " · 活动集中度：" + n(card.activity_concentration) : ""}</p>
     <p class="meta">${esc(card.activity_note || "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
-    <p class="meta">阶段：${esc(card.s1_stage || "—")} · ${esc(card.s1_pool_zh || "")}</p>
+    <p class="meta">阶段：${esc(card.s1_stage_zh || card.s1_stage || "—")} · ${esc(card.s1_pool_zh || "")}</p>
     <p class="meta">早期程度：${n(card.s1_earlyness)} · 证据强度：${n(card.s1_evidence)} · 机会窗口：${n(card.s1_window)}</p>
     <p class="meta">早期加分：${esc((card.s1_earlyness_plus || []).join("；") || "—")}</p>
     <p class="meta">早期扣分：${esc((card.s1_earlyness_minus || []).join("；") || "—")}</p>
@@ -770,11 +946,11 @@ function boardView() {
       </select>
     </label>
     <span class="date">当前按${state.sort==="final_score"?"综合评分":"所选指标"}排序</span>
-    <button type="button" disabled title="扫描由每日 foreshadow run 执行，本页不在后台扫 GitHub">暂停扫描</button>
+    <button type="button" disabled title="扫描由每日 foreshadow run 或调度执行，本页不在后台扫 GitHub">暂停扫描</button>
     <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
   ${state.showMissions ? missionListView() : ""}
-  <h2>今日候选榜</h2>
+  <h2 id="board-list">今日候选榜</h2>
   <div class="list">${listView(b)}</div>
   ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
   ${missionView(state.mission)}

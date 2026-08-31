@@ -61,5 +61,37 @@ def test_help_lists_commands():
         "outcome",
         "missions",
         "sample-access",
+        "init",
+        "doctor",
+        "status",
+        "version",
+        "schedule",
     ):
         assert name in result.stdout
+
+
+def test_help_is_product_facing():
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    text = result.stdout
+    assert "foreshadow init" in text
+    assert "foreshadow run" in text
+    assert "foreshadow board" in text
+    assert "GITHUB_TOKEN" in text
+    assert "Exit codes" in text
+    assert "export FORESHADOW_HOME" not in text
+    assert "argparse" not in text.lower()
+    assert "GraphQL" not in text
+    assert "sqlite" not in text.lower()
+
+
+def test_version_command_and_flag():
+    from foreshadow import __version__
+
+    runner = CliRunner()
+    named = runner.invoke(app, ["version"])
+    assert named.exit_code == 0
+    assert __version__ in named.stdout
+    flagged = runner.invoke(app, ["--version"])
+    assert flagged.exit_code == 0
+    assert __version__ in flagged.stdout

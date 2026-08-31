@@ -1,44 +1,45 @@
 # Foreshadow（伏笔）
 
-本地 GitHub 机会雷达 CLI。
+**Beta 0.2.0** — 找出未来已经埋伏下的项目。
 
-**完整说明以英文 [`README.md`](README.md) 为准。** 本文仅为短简介。
+Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发现新兴的公开 GitHub 仓库，持续观察还来得及进入的项目，在 Board 上告诉你今天值得看什么、以及为什么。点 **开始进入** 后，它只做本地准备（clone 和计划），然后停下。它不会替你在别人的 GitHub 上发 Issue、评论、PR，也不会 push。
 
-## 一句话
+完整说明以英文 [README.md](README.md) 为准。明早走查：[docs/PRODUCT.md](docs/PRODUCT.md)。
 
-Foreshadow 不是 trending。它是一个本地、可解释的短名单：每天最多一次，找出你或许还能帮上忙的公开仓库，最终由你决定。
+## 安装
 
-## 现状
-
-P0 已合入 `main`（`0.1.0`）。P1 增加**持续观察池**：Search 用来发现，Observation 用来留下 longitudinal 证据。正式评分仍是 v1（55 / 35 / 本地 `v7`）。空 Top 5 合法。需人工 review。
-
-## 必读约定（与英文 README 一致）
-
-- Empty Top 5 is OK.
-- Top 5 需要**同一仓库**的本地 `v7`（`t-7` ± 1 天），不是全局 snapshot 天数凑满 7。
-- Lifetime `stars/age` is not Explosion.
-- Token stays on the machine.
-- We only GET public GitHub.
-- This is not trending.
-
-## 今日机会榜
+需要 Python 3.12+。要进入仓库还需要 `git`。
 
 ```bash
-uv sync --group dev
-FORESHADOW_HOME=… uv run foreshadow board --preview
+uv tool install git+https://github.com/rainhuang0220/foreshadow.git
+# 或
+pip install "git+https://github.com/rainhuang0220/foreshadow.git"
 ```
 
-浏览器打开 **http://127.0.0.1:8765/**（仅本机）。先注册/登录，点开项目看阶段 / 证据 / 进入通道 / 推荐入口，再点 **开始进入**。系统会生成本地 Entry Mission，并可 `git clone --depth 1`。**不会**自动向第三方仓库发 Issue / PR。远程操作会停在「等待你的确认」。点 **查看任务** 看已进入的项目。
+更新：`uv tool upgrade foreshadow-radar`
 
-静态导出：`foreshadow board --preview --export-html`。
+## Token
 
-当前仍是预览模式：本地快照还不足 v7，正式 Top 5 为空是成功，不是故障。
-
-## 开发
+只读公开仓库。Token 留在本机，不要写进配置文件。
 
 ```bash
-uv sync --group dev
-uv run pytest
+export GITHUB_TOKEN=ghp_…    # 无 scope 的 classic PAT，或 gh auth login
 ```
 
-详见 [`CONTRIBUTING.md`](CONTRIBUTING.md) 与英文 README。
+## 开始
+
+```bash
+foreshadow init
+foreshadow schedule install    # 可选，本机每日自动跑
+foreshadow run                 # 没有装 schedule 就自己跑
+foreshadow board               # 打开 http://127.0.0.1:8765/
+```
+
+今天已经跑过会跳过，这是正常的。空的正式 Top 5 是成功，不是故障。Explosion 需要同一仓库大约 7 天的观察。
+
+进入：打开候选 → **开始进入**（不要点「记入观察清单」）→ 等本地 clone → 状态变成「等待你确认远程操作」。点「尝试创建 PR」应被拒绝。
+
+```bash
+foreshadow doctor
+foreshadow status
+```

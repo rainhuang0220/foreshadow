@@ -423,9 +423,14 @@ def format_run_summary(
         lines.append(f"wrote config: {wrote_config}")
     lines.append(f"Foreshadow {date}")
     if skipped:
-        lines.append("already complete (use --force to re-run)")
+        lines.append(f"last run: {status}  selected {selected}")
+        lines.append(
+            f"already ran today ({status}; once per UTC day). "
+            "For debug: foreshadow run --force"
+        )
         if report_path:
             lines.append(f"report: {report_path}")
+        lines.append("next: foreshadow board")
         return _join(lines)
     extra = _health_reasons(health)
     counts = (

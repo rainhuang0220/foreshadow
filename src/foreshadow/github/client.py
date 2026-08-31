@@ -92,11 +92,12 @@ def redact(text: str, extra: str | None = None) -> str:
     return out
 
 
-def resolve_token() -> str:
+def _load_token() -> tuple[str | None, str | None]:
+    """Return (token, source_label). Never prints the secret."""
     for key in ("GITHUB_TOKEN", "GH_TOKEN"):
         value = os.environ.get(key)
         if value and value.strip():
-            return value.strip()
+            return value.strip(), key
     if shutil.which("gh"):
         try:
             result = subprocess.run(
@@ -108,8 +109,35 @@ def resolve_token() -> str:
         except OSError:
             result = None
         if result is not None and result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    print("missing GitHub token", file=sys.stderr)
+            return result.stdout.strip(), "gh"
+    return None, None
+
+
+def token_source() -> str | None:
+    """Where a token would come from (`GITHUB_TOKEN` / `GH_TOKEN` / `gh`), or None."""
+    _token, source = _load_token()
+    return source
+
+
+def missing_token_message() -> str:
+    return (
+        "missing GitHub token\n"
+        "\n"
+        "Foreshadow only reads public GitHub. Set a token on this machine:\n"
+        "\n"
+        "  export GITHUB_TOKEN=ghp_...     # classic PAT, no scopes\n"
+        "  export GH_TOKEN=...             # alternative name\n"
+        "  gh auth login                   # then Foreshadow uses `gh auth token`\n"
+        "\n"
+        "Do not put the token in config.toml or the database.\n"
+    )
+
+
+def resolve_token() -> str:
+    token, _source = _load_token()
+    if token:
+        return token
+    print(missing_token_message(), file=sys.stderr, end="")
     raise SystemExit(2)
 
 

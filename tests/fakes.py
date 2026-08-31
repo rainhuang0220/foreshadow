@@ -169,6 +169,7 @@ class FakeGitHub:
     missing: set[str] = field(default_factory=set)
     b_missing: set[str] = field(default_factory=set)
     fail_ids: set[str] = field(default_factory=set)
+    rate_limit_ids: set[str] = field(default_factory=set)
     rest_status: dict[tuple[str, str], int] = field(default_factory=dict)
     search_nodes: list[dict[str, Any]] = field(default_factory=list)
     search_pages: list[list[dict[str, Any]]] | None = None
@@ -299,6 +300,14 @@ class FakeGitHub:
                 self.hydrate_a_calls += 1
             else:
                 self.hydrate_b_calls += 1
+            if nid in self.rate_limit_ids:
+                raise GitHubError(
+                    "rate_limit",
+                    "API rate limit exceeded",
+                    retryable=False,
+                    status=403,
+                    source=op,
+                )
             if nid in self.fail_ids:
                 raise GitHubError(
                     "http_5xx",

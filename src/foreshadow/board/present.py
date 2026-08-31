@@ -33,7 +33,7 @@ ACTION_LABELS = {
 
 STATUS_LABELS = {
     "official": "正式入选",
-    "preview_top": "预览候选",
+    "preview_top": "参考候选",
     "deep": "深度评审",
     "shortlist": "高分候选",
     "excluded": "未入选",
@@ -57,8 +57,25 @@ REC_LABELS = {
     "pass": "暂不推荐",
     "reject": "否决",
 }
+STAGE_LABELS = {
+    "EXPERIMENTAL": "实验期",
+    "VALIDATED_EARLY": "早期已验证",
+    "EMERGING": "兴起中",
+    "BREAKOUT": "快速放大",
+    "SCALING": "扩张中",
+    "MATURE": "已成熟",
+    "ESTABLISHED": "已站稳",
+    "STAGNANT": "停滞",
+}
 
 NA_NOTE = "当前历史数据不足，不参与虚假的补零。"
+
+_RUN_STATUS_ZH = {
+    "complete": "扫描完成",
+    "degraded": "扫描不完整",
+    "failed": "扫描失败",
+    "running": "扫描进行中",
+}
 
 REVIEWER_FOCUS = {
     "trend": ["增长动能", "增长加速度", "外部关注", "技术趋势", "提前进入"],
@@ -131,6 +148,23 @@ def _observation_zh(card: BoardCard, my_action: str | None) -> str | None:
     return None
 
 
+def _observation_kind(card: BoardCard, my_action: str | None) -> str | None:
+    if my_action in {"watch", "interested", "investigate", "enter"}:
+        return "yours"
+    days = card.observation_age_days
+    if days is not None and days > 0:
+        return "watching"
+    return None
+
+
+def _observation_hint(kind: str | None) -> str | None:
+    if kind == "yours":
+        return "这是你标记关注的仓库，会持续出现在名单里。"
+    if kind == "watching":
+        return "伏笔正在连续看这个仓库近几日的变化，而不只看今天新搜到的名单。"
+    return None
+
+
 def _headline(card: BoardCard, status: str) -> str:
     if card.vetoed:
         return "硬规则否决，不进入候选。"
@@ -169,7 +203,7 @@ def _headline(card: BoardCard, status: str) -> str:
     if (early or 0) <= 8:
         return "项目已经比较成熟，提前进入空间有限。"
     if mom is None:
-        return "历史不足，综合分仅供预览，不是正式预测。"
+        return "历史不足，综合分仅供参考，不是正式入选。"
     return "尚未进入今日前列，详情见淘汰原因。"
 
 
@@ -195,7 +229,7 @@ def _evidence_lines(item: EvidenceItem, snapshot_days: int) -> list[str]:
     lines: list[str] = []
     if item.metric == "momentum":
         if item.observed is None or "insufficient" in detail.lower() or "N/A" in detail:
-            lines.append(f"本地仅有 {snapshot_days} 天快照，v7 尚未形成。")
+            lines.append(f"本地仅有 {snapshot_days} 天快照，近 7 日增长趋势尚未形成。")
             lines.append(NA_NOTE)
             return lines
         if "rel_growth_7d" in kv:
@@ -244,13 +278,13 @@ def _evidence_lines(item: EvidenceItem, snapshot_days: int) -> list[str]:
             lines.append("若再放大一个数量级，提前进入空间会明显变小")
     elif item.metric == "windows":
         if "v7=None" in detail or kv.get("v7") in {None, "None", ""}:
-            lines.append(f"v7 不可用（快照天数 {snapshot_days}）。")
+            lines.append(f"近 7 日增长趋势暂不可用（本地快照 {snapshot_days} 天）。")
             lines.append(NA_NOTE)
         else:
             if kv.get("v7") and kv["v7"] != "None":
-                lines.append(f"v7 = {_fmt_num(kv['v7'])}")
+                lines.append(f"近 7 日增长 {_fmt_num(kv['v7'])}")
             if kv.get("v30") and kv["v30"] != "None":
-                lines.append(f"v30 = {_fmt_num(kv['v30'])}")
+                lines.append(f"近 30 日增长 {_fmt_num(kv['v30'])}")
     if not lines:
         if detail:
             lines.append(detail)
@@ -271,7 +305,10 @@ def _dimension_block(card: BoardCard, snapshot_days: int) -> list[dict[str, Any]
         for item in by_metric.get(key, []):
             lines.extend(_evidence_lines(item, snapshot_days))
         if key == "momentum" and na and not lines:
-            lines = [f"本地仅有 {snapshot_days} 天快照，v7 尚未形成。", NA_NOTE]
+            lines = [
+                f"本地仅有 {snapshot_days} 天快照，近 7 日增长趋势尚未形成。",
+                NA_NOTE,
+            ]
         out.append(
             {
                 "key": key,
@@ -343,9 +380,9 @@ def _zh_weakness(text: str) -> str:
 
 def _zh_risk(text: str) -> str:
     if "insufficient" in text.lower() or text.startswith("NA"):
-        return "历史仍然偏薄；在 v7 形成前只能当预览。"
+        return "历史仍然偏薄；近 7 日趋势形成前，分数仅供参考。"
     if text.startswith("v7=None"):
-        return "v7 不可用，不能把当前分当成正式趋势。"
+        return "近 7 日趋势尚未形成，不能把当前分数当成正式判断。"
     return text
 
 
@@ -418,7 +455,7 @@ def _why_excluded(card: BoardCard) -> list[str]:
     if card.veto_reason:
         bullets.append(f"硬规则否决（{card.veto_reason}）")
     if card.momentum_na:
-        bullets.append("增长趋势不足：v7 历史尚未形成，不能当作正式预测")
+        bullets.append("增长趋势不足：近 7 日历史尚未形成，不能当作正式判断")
     dims = {k: v for k, v in card.dimensions.items() if v is not None}
     if dims:
         weakest = min(dims, key=lambda k: dims[k])
@@ -454,7 +491,7 @@ def _chair_judgment(card: BoardCard) -> str:
     mom = dims.get("momentum")
     bits = []
     if mom is None:
-        bits.append("项目增长信号无法用 v7 验证")
+        bits.append("项目增长信号还无法用近 7 日数据验证")
     elif mom >= 14:
         bits.append("项目增长信号较强")
     else:
@@ -496,6 +533,9 @@ def present_card(
     rank_kind = "official" if board.mode == "official" else "preview"
     dims = _dimension_block(card, board.snapshot_days)
     acc_zh, acc_score, acc_unknown = _access_view(card)
+    obs_kind = _observation_kind(card, my_action)
+    why_glance = _why_glance(card, status)
+    conf_zh = CONF_LABELS.get(card.p0_confidence or "low", "低")
     return {
         "rank": card.list_rank,
         "full_name": card.full_name,
@@ -521,11 +561,14 @@ def present_card(
         "contributor": _n(card.contributor.score),
         "chair": _n(card.chair.score),
         "headline": _headline(card, status),
+        "why_glance": why_glance,
         "observation_zh": _observation_zh(card, my_action),
+        "observation_kind": obs_kind,
+        "observation_hint": _observation_hint(obs_kind),
         "status": status,
         "status_zh": STATUS_LABELS[status],
         "rank_kind": rank_kind,
-        "rank_kind_zh": "正式排名" if rank_kind == "official" else "预览排名",
+        "rank_kind_zh": "正式排名" if rank_kind == "official" else "参考排名",
         "not_official": rank_kind != "official",
         "official_eligible": card.official_eligible,
         "momentum_na": card.momentum_na,
@@ -535,7 +578,8 @@ def present_card(
             card.data_completeness or "low", "低"
         ),
         "p0_confidence": card.p0_confidence,
-        "p0_confidence_zh": CONF_LABELS.get(card.p0_confidence or "low", "低"),
+        "p0_confidence_zh": conf_zh,
+        "confidence_zh": conf_zh,
         "activity_momentum": card.activity_momentum,
         "activity_class": card.activity_class,
         "activity_class_zh": ACTIVITY_CLASS_LABELS.get(
@@ -549,6 +593,7 @@ def present_card(
         "recent_contributors_7d": card.recent_contributors_7d,
         "activity_note": "活跃度反映开发与社区活动，不代表 Star 增长。",
         "s1_stage": card.s1_stage,
+        "s1_stage_zh": STAGE_LABELS.get(card.s1_stage or "", card.s1_stage),
         "s1_earlyness": card.s1_earlyness,
         "s1_evidence": card.s1_evidence,
         "s1_window": card.s1_window,
@@ -605,7 +650,7 @@ def present_card(
                 "judgment": _chair_judgment(card),
                 "justification_zh": _chair_judgment(card),
                 "main_risk": _risk_zh(card),
-                "confidence_note": "置信度随 v7 与数据完整度变化；缺字段是 N/A，不是 0 分。",
+                "confidence_note": "置信度随增长历史与数据完整度变化；缺字段是 N/A，不是 0 分。",
                 "data_completeness": card.data_completeness,
                 "data_completeness_zh": COMPLETENESS_LABELS.get(
                     card.data_completeness or "low", "低"
@@ -630,7 +675,7 @@ def present_card(
 def _risk_zh(card: BoardCard) -> str:
     filled = {k: v for k, v in card.dimensions.items() if v is not None}
     if card.momentum_na:
-        return "增长还没有被本地快照验证，不能把预览分当成正式预测。"
+        return "增长还没有被本地快照验证，不能把参考分当成正式判断。"
     if not filled:
         return "证据仍然不完整。"
     weakest = min(filled, key=lambda k: filled[k])
@@ -643,14 +688,185 @@ def _risk_zh(card: BoardCard) -> str:
     }.get(weakest, "证据仍不完整。")
 
 
+def _why_glance(card: BoardCard, status: str) -> str:
+    if card.why_now:
+        text = str(card.why_now).strip()
+        if text:
+            return text
+    reasons = [
+        str(item).strip() for item in (card.strategy_why or []) if str(item).strip()
+    ]
+    if reasons:
+        return reasons[0]
+    return _headline(card, status)
+
+
+def _mode_reason_zh(reason: str, preview: bool) -> str:
+    raw = reason or ""
+    if "no repo passed" in raw:
+        return "今日没有项目达到正式入选标准"
+    if "preview flag" in raw:
+        return "当前为参考查看，正式入选标准未变"
+    if "insufficient" in raw or ("history" in raw and "available" not in raw):
+        return "增长历史还不够，今日为参考排名，不是正式入选"
+    if "available" in raw and not preview:
+        return "增长历史已足够，今日为正式入选"
+    if not preview:
+        return "今日为正式入选"
+    return "参考排名，不是正式入选"
+
+
+def _ribbon_zh(board: BoardDocument, preview: bool) -> str:
+    raw = board.mode_reason or ""
+    if not preview:
+        return "正式入选 · 增长历史已足够"
+    if "no repo passed" in raw:
+        return "参考排名 · 今日没有正式入选 · 不是故障"
+    if "insufficient" in raw or "history" in raw:
+        return "参考排名 · 增长历史还不够 · 不是正式入选"
+    return "参考排名 · 不是正式入选"
+
+
+def _health_reasons_zh(health: dict[str, Any] | None) -> list[str]:
+    health = health or {}
+    bits: list[str] = []
+    if health.get("search_truncated"):
+        bits.append("搜索结果被截断，部分仓库可能没被纳入")
+    failed = health.get("hydrate_failed") or 0
+    try:
+        failed_n = int(failed)
+    except (TypeError, ValueError):
+        failed_n = 0
+    if failed_n:
+        bits.append(f"{failed_n} 个项目详情未能取全，名单可能不完整")
+    if health.get("budget_abort"):
+        bits.append("今日扫描额度用尽，结果不完整")
+    if health.get("watchlist_truncated"):
+        bits.append("关注列表过长，部分仓库本次未能全部扫描")
+    return bits
+
+
+def _run_payload(run: dict[str, Any] | None) -> dict[str, Any]:
+    run = run or {}
+    status = run.get("status")
+    health = run.get("health") if isinstance(run.get("health"), dict) else {}
+    reasons = _health_reasons_zh(health)
+    note = None
+    if status == "degraded":
+        note = "下面的名单不能当作完整结果。"
+    elif status == "failed":
+        note = "今日扫描失败，名单可能缺失或过期。"
+    elif status == "running":
+        note = "今日扫描仍在进行，请稍后再打开。"
+    elif status == "complete":
+        note = "今日扫描已完成。"
+    return {
+        "any_run": run.get("any_run"),
+        "status": status,
+        "status_zh": _RUN_STATUS_ZH.get(str(status) if status else "", None),
+        "finished_at": run.get("finished_at"),
+        "note": note,
+        "reasons_zh": reasons,
+    }
+
+
+def _empty_payload(board: BoardDocument, run: dict[str, Any] | None) -> dict[str, Any]:
+    run = run or {}
+    status = run.get("status")
+    any_run = run.get("any_run")
+    no_rows = board.discovered == 0 and board.shortlisted == 0
+    if not no_rows:
+        return {
+            "kind": "none",
+            "title": "",
+            "body": "",
+            "is_success": False,
+            "action": None,
+        }
+    if any_run is False:
+        return {
+            "kind": "never_run",
+            "title": "还没有扫描记录",
+            "body": (
+                "伏笔不会在这个页面后台扫描 GitHub。"
+                "请在本机运行下面的命令，或等待每日调度自动运行。"
+            ),
+            "is_success": False,
+            "action": "foreshadow run",
+        }
+    if status is None and any_run:
+        return {
+            "kind": "no_run_today",
+            "title": "这一天还没有扫描记录",
+            "body": (
+                "打开看板不会触发扫描。请运行 foreshadow run，"
+                "或等待每日调度；也可以查看最近一次已完成扫描的日期。"
+            ),
+            "is_success": False,
+            "action": "foreshadow run",
+        }
+    if status == "degraded":
+        return {
+            "kind": "degraded",
+            "title": "今日扫描不完整",
+            "body": "没有可展示的项目，且本次扫描并不完整，不能当作成功的空名单。",
+            "is_success": False,
+            "action": "foreshadow run",
+        }
+    if status == "failed":
+        return {
+            "kind": "failed",
+            "title": "今日扫描失败",
+            "body": "请运行 foreshadow run 重试。本页不会在后台扫描 GitHub。",
+            "is_success": False,
+            "action": "foreshadow run",
+        }
+    if status == "running":
+        return {
+            "kind": "running",
+            "title": "今日扫描仍在进行",
+            "body": "请稍后再打开看板。完成后会列出今日发现和持续观察的仓库。",
+            "is_success": False,
+            "action": None,
+        }
+    return {
+        "kind": "empty_success",
+        "title": "今日没有可展示的项目",
+        "body": (
+            "空的入选名单是正常结果，不是故障。达不到标准就不会凑数填满。"
+            "若还从未扫描过，请运行 foreshadow run，或等待每日调度。"
+        ),
+        "is_success": True,
+        "action": "foreshadow run" if status is None else None,
+    }
+
+
+def _official_empty_note(
+    board: BoardDocument, run: dict[str, Any] | None
+) -> str | None:
+    if board.official_top5 != 0:
+        return None
+    status = (run or {}).get("status")
+    if status in {"degraded", "failed", "running"}:
+        return None
+    if status == "complete" or board.discovered > 0 or board.shortlisted > 0:
+        return "今日没有达到正式入选标准的项目。空的入选名单是正常结果，不会用凑数项目填满。"
+    return None
+
+
 def present_board(
     board: BoardDocument,
     *,
     stances: dict[str, str] | None = None,
     missions: dict[str, dict[str, Any]] | None = None,
+    run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     stances = stances or {}
     missions = missions or {}
+    extra = board.extra if isinstance(board.extra, dict) else {}
+    if run is None:
+        extra_run = extra.get("run")
+        run = extra_run if isinstance(extra_run, dict) else None
     ranked = sorted(
         board.shortlist,
         key=lambda c: (
@@ -670,23 +886,34 @@ def present_board(
         for card in ranked
     ]
     preview = board.mode != "official"
+    run_view = _run_payload(run)
+    empty = _empty_payload(board, run)
     return {
         "date": board.date,
         "mode": "preview" if preview else "official",
         "mode_zh": "预览模式" if preview else "正式模式",
         "mode_reason": board.mode_reason,
-        "mode_reason_zh": (
-            "历史数据不足 v7"
-            if "v7" in board.mode_reason or "history" in board.mode_reason
-            else ("正式模式，v7 历史完整" if not preview else "预览模式｜不是正式预测")
-        ),
-        "not_official_note": "这不是正式预测" if preview else None,
+        "mode_reason_zh": _mode_reason_zh(board.mode_reason, preview),
+        "ribbon_zh": _ribbon_zh(board, preview),
+        "not_official_note": "这不是正式入选" if preview else None,
+        "run": run_view,
+        "empty": empty,
+        "official_empty_note": _official_empty_note(board, run),
         "counts": {
             "discovered": board.discovered,
             "shortlisted": board.shortlisted,
             "deep_reviewed": board.deep_reviewed,
             "official_top5": board.official_top5,
             "provisional": board.provisional_count,
+            "observing": sum(1 for card in candidates if card.get("observation_zh")),
+        },
+        "count_labels": {
+            "discovered": "发现项目",
+            "shortlisted": "候选项目",
+            "deep_reviewed": "深度评审",
+            "official_top5": "正式入选",
+            "provisional": "参考候选",
+            "observing": "持续观察",
         },
         "snapshot_days": board.snapshot_days,
         "sort_default": "final_score",
