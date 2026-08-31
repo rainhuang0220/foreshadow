@@ -452,7 +452,7 @@ def _run(
     health["observation_panel_size"] = len(watch_repo_ids | system_ids)
     health["fresh_discovery_count"] = sum(1 for origin in origins if origin == "search")
     health["retained_from_previous_day"] = retained
-    health["daily_overlap_rate"] = round(overlap, 4)
+    health["daily_overlap_rate"] = None if overlap is None else round(overlap, 4)
     health["v7_baseline_eligible_count"] = v7_base
     health["v7_available"] = v7_ok
     health["v7_coverage_rate"] = (

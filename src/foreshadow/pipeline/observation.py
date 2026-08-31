@@ -218,7 +218,9 @@ def v7_eligible_count(
     return int(row[0] or 0) if row else 0
 
 
-def yesterday_overlap(conn: Any, run_id: int, today: date) -> tuple[int, int, float]:
+def yesterday_overlap(
+    conn: Any, run_id: int, today: date
+) -> tuple[int, int, float | None]:
     """(retained, previous_count, overlap_rate) vs prior run_date candidates."""
     prev = conn.execute(
         """
@@ -229,7 +231,7 @@ def yesterday_overlap(conn: Any, run_id: int, today: date) -> tuple[int, int, fl
         (today.isoformat(), run_id),
     ).fetchone()
     if prev is None:
-        return 0, 0, 0.0
+        return 0, 0, None
     prev_ids = {
         int(r[0])
         for r in conn.execute(

@@ -94,6 +94,8 @@ def render_markdown(report: ReportJSON) -> str:
                 f"`{item.get('full_name')}`" for item in report.watchlist_appendix[:10]
             )
             lines.append(f"Watchlist (not Top 5): {names}")
+        lines.append("")
+        lines.extend(_source_health_lines(report))
         return _join(lines)
 
     lines.append(_run_line(report))
@@ -705,10 +707,9 @@ def _source_health_lines(report: ReportJSON) -> list[str]:
         lines.append(
             f"- fresh discovery: {int(health.get('fresh_discovery_count') or 0)}"
         )
-        lines.append(
-            f"- retained from previous day: {retained} "
-            f"(overlap {health.get('daily_overlap_rate') or 0})"
-        )
+        ov = health.get("daily_overlap_rate")
+        ov_s = f"{ov}" if ov is not None else "n/a"
+        lines.append(f"- retained from previous day: {retained} (overlap {ov_s})")
         lines.append(
             f"- v7 coverage: {v7_n}/{report.scored_count} ({cov_s}); "
             f"t-7 baseline eligible {base_n}"
