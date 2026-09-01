@@ -453,7 +453,7 @@ def load_scored_from_db(
         act = compute_activity(feat_map, settings.scoring)
         blob = FeaturesBlob.model_validate(feat_map) if feat_map else FeaturesBlob()
         acc = compute_access(blob)
-        now_d = clock.now().date()
+        now_d = clock.today()
         age_days = data.get("age_days")
         if age_days is None:
             created = parse_dt(data.get("created_at"))
