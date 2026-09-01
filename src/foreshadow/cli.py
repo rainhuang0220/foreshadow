@@ -304,12 +304,7 @@ def board(
             file=sys.stderr,
         )
         raise SystemExit(EXIT_USAGE)
-    clock = _clock(date)
-    day = date or clock.today().isoformat()
-    if not date:
-        resolved = _resolve_report_date(clock, None)
-        if resolved:
-            day = resolved
+    clock, day = _board_clock(date)
     if export_html:
         doc, before, after = build_board_from_db(date=day, preview=preview, clock=clock)
         if before != after:
@@ -572,6 +567,21 @@ def _print_recovery() -> None:
     last = last_successful_run()
     print(f"last successful run: {last or 'none'}", file=sys.stderr)
     print("next: foreshadow doctor", file=sys.stderr)
+
+
+def _board_clock(date_arg: str | None) -> tuple[Clock, str]:
+    """Bind scoring windows to the report's UTC date, not wall-clock now.
+
+    After UTC midnight, `foreshadow board` still opens the latest finished
+    report. Re-scoring that report with tomorrow's clock would drop v7.
+    """
+    clock = _clock(date_arg)
+    day = date_arg or clock.today().isoformat()
+    if not date_arg:
+        resolved = _resolve_report_date(clock, None)
+        if resolved:
+            day = resolved
+    return _clock(day), day
 
 
 def _clock(date_str: str | None) -> Clock:

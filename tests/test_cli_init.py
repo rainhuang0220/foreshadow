@@ -189,3 +189,36 @@ def test_board_without_data_points_at_init_run(tmp_home, monkeypatch):
     out = result.stdout + result.stderr
     assert "foreshadow init" in out
     assert "foreshadow run" in out
+
+
+def test_board_clock_stays_on_report_date_after_utc_midnight(tmp_home, monkeypatch):
+    """Opening the board after UTC midnight must not rescore yesterday with today."""
+    from datetime import UTC, datetime
+
+    from foreshadow.cli import _board_clock
+    from foreshadow.clock import Clock
+    from foreshadow.db import migrate
+
+    _isolate(monkeypatch, tmp_home)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    conn.execute(
+        """
+        INSERT INTO daily_runs(run_date, started_at, status, budget_cap, report_path)
+        VALUES ('2026-08-31', 't', 'complete', 800, ?)
+        """,
+        (str(tmp_home / "reports" / "2026-08-31.md"),),
+    )
+    conn.commit()
+    conn.close()
+    reports = tmp_home / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "2026-08-31.md").write_text("ok\n", encoding="utf-8")
+    later = datetime(2026, 9, 1, 0, 5, tzinfo=UTC)
+    monkeypatch.setattr(
+        "foreshadow.cli.Clock",
+        lambda now=None: Clock(now=now or later),
+    )
+    clock, day = _board_clock(None)
+    assert day == "2026-08-31"
+    assert clock.today().isoformat() == "2026-08-31"
