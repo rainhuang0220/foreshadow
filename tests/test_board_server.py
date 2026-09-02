@@ -4,6 +4,7 @@ import http.client
 import inspect
 import json
 import threading
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -734,12 +735,26 @@ def test_entry_and_sandbox_contribution_package(tmp_home, frozen_clock):
             },
         )
         assert job.status_code == 200, job.text
-        body = job.json()
+        posted = job.json()
+        assert posted["job"]["id"]
+        assert posted["remote"]["blocked"] is True
+        body = None
+        for _ in range(40):
+            got = client.get(
+                f"{base}/api/contribution", params={"id": posted["job"]["id"]}
+            )
+            assert got.status_code == 200, got.text
+            body = got.json()
+            if body["job"]["status"] in {"ready", "failed", "refused_remote"}:
+                break
+            time.sleep(0.25)
+        assert body is not None
         assert body["job"]["status"] == "ready"
-        assert body["artifact"]["tests_passed"] is True
-        assert body["artifact"]["qa_ok"] is True
-        assert "return a + b" in body["artifact"]["diff"]
-        assert body["remote"]["blocked"] is True
+        pkg = body.get("package") or {}
+        diff = pkg.get("diff") or ""
+        assert "return a + b" in diff
+        assert pkg.get("qa") == "PASS"
+        assert pkg.get("remote_writes") == 0
         blocked = client.post(
             f"{base}/api/contribution",
             json={"full_name": "acme/x", "action": "draft_pr"},

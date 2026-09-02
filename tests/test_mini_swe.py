@@ -9,7 +9,11 @@ from foreshadow.contribution.executor import (
     JobStatus,
     run_contribution,
 )
-from foreshadow.contribution.mini_swe import MiniSweExecutor, sandbox_env_for_container
+from foreshadow.contribution.mini_swe import (
+    DEFAULT_IMAGE,
+    MiniSweExecutor,
+    sandbox_env_for_container,
+)
 from foreshadow.contribution.package import build_package
 from foreshadow.contribution.task import StructuredTask
 from foreshadow.db import connect, migrate
@@ -108,3 +112,27 @@ def test_mini_swe_fake_agent_fixes_real_tree_without_tokens(
     assert pkg["qa"] == "PASS"
     assert any(step.get("step") == "baseline_tests" for step in job.log)
     assert any(step.get("step") == "selected_task" for step in job.log)
+    assert any(step.get("step") == "analyzing_repository" for step in job.log)
+    assert pkg["remote_status"] == "WAITING_USER_APPROVAL"
+
+
+def test_default_sandbox_image_is_published_tag():
+    assert "slim-bookworm" in DEFAULT_IMAGE
+    env = sandbox_env_for_container()
+    assert "GITHUB_TOKEN" not in env
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+
+
+def test_deepseek_anthropic_compat_rewrites_to_openai_tools(monkeypatch):
+    from foreshadow.contribution.mini_swe import _model_setup
+
+    monkeypatch.setenv("ANTHROPIC_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.deepseek.com/anthropic")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-test")
+    monkeypatch.delenv("MSWEA_MODEL_NAME", raising=False)
+    monkeypatch.delenv("FORESHADOW_MINISWE_MODEL", raising=False)
+    name, kwargs = _model_setup()
+    assert name == "openai/deepseek-v4-pro"
+    assert kwargs["api_base"] == "https://api.deepseek.com"
+    assert "anthropic" not in kwargs["api_base"]

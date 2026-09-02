@@ -24,6 +24,28 @@ def test_structured_task_prompt_contains_issue_and_forbids_push():
     assert "fix repo" not in prompt.lower() or "Task:" in prompt
 
 
+def test_from_entry_stringifies_issue_evidence_urls():
+    task = from_entry(
+        "acme/x",
+        {
+            "recommended": {
+                "title": "Follow issue 582",
+                "issue_number": 582,
+                "why": ["crash"],
+                "evidence": [
+                    {
+                        "kind": "issue",
+                        "id": 582,
+                        "url": "https://github.com/acme/x/issues/582",
+                    }
+                ],
+            }
+        },
+    )
+    assert task.issue_number == 582
+    assert task.evidence == ["https://github.com/acme/x/issues/582"]
+
+
 def test_from_entry_does_not_invent_issue_numbers():
     task = from_entry(
         "acme/x",
@@ -96,3 +118,4 @@ def test_package_records_zero_remote_writes():
     assert pkg["related_issue"] == "#1"
     assert pkg["qa"] == "PASS"
     assert pkg["files_changed_n"] == 1
+    assert pkg["remote_status"] == "WAITING_USER_APPROVAL"

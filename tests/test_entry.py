@@ -244,6 +244,55 @@ def test_good_first_issue_alive_uses_open_and_recency():
     assert stale.policy.good_first_issue_alive is False
 
 
+def test_open_pr_claiming_issue_is_skipped_for_plan_a():
+    feat = {
+        "language": "Python",
+        "full_name": "acme/toy",
+        "html_url": "https://github.com/acme/toy",
+        "help_n": 1,
+        "unassigned_help": 1,
+        "bug_n": 1,
+        "issue_sample_n": 2,
+        "tree_names": ["pyproject.toml", "src", "README.md"],
+        "pr_accept_rate": 0.5,
+        "pr_merged_sample_n": 6,
+        "pr_review_rate": 0.6,
+        "maint_touch": 0.5,
+        "issues": [
+            {
+                "number": 547,
+                "title": "Add Star badge to README top row",
+                "state": "OPEN",
+                "labels": ["help wanted", "good first issue"],
+                "assignees": [],
+                "updatedAt": "2026-08-20T00:00:00Z",
+                "url": "https://github.com/acme/toy/issues/547",
+            },
+            {
+                "number": 582,
+                "title": "stdio crash on non-object JSON",
+                "state": "OPEN",
+                "labels": ["bug", "security"],
+                "assignees": [],
+                "updatedAt": "2026-08-21T00:00:00Z",
+                "url": "https://github.com/acme/toy/issues/582",
+            },
+        ],
+        "prs": [
+            {
+                "number": 604,
+                "title": "docs: add GitHub Stars badge to README",
+                "body": "Fixes #547",
+                "url": "https://github.com/acme/toy/pull/604",
+            }
+        ],
+    }
+    strat = analyze_entry(feat, now=NOW, language="Python")
+    assert strat.recommended.issue_number == 582
+    assert 547 not in _cited_issue_ids(strat) or strat.recommended.issue_number != 547
+    assert 604 not in {strat.recommended.pr_number}
+
+
 def test_stale_after_is_three_days():
     strat = analyze_entry({}, now=NOW)
     assert strat.analyzed_at == NOW.isoformat()
