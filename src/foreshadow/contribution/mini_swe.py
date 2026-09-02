@@ -311,6 +311,10 @@ class MiniSweExecutor:
     def _ensure_env(self, job: ContributionJob) -> Any:
         if self._env is not None:
             return self._env
+        if self.agent_factory is not None:
+            # CI / fake agent: do not import minisweagent.
+            self._install_on_host(job)
+            return None
         sandbox = _require_sandbox(job)
         if self.use_docker:
             from minisweagent.environments.docker import DockerEnvironment
@@ -474,6 +478,11 @@ class MiniSweExecutor:
                 "label": label,
             }
         sandbox = _require_sandbox(job)
+        env = git_env_without_tokens()
+        bindir = str(Path(sys.executable).parent)
+        path = env.get("PATH", "")
+        if bindir not in path.split(os.pathsep):
+            env["PATH"] = os.pathsep.join([bindir, path])
         proc = subprocess.run(
             ["bash", "-lc", command],
             cwd=sandbox,
@@ -481,7 +490,7 @@ class MiniSweExecutor:
             text=True,
             timeout=TEST_TIMEOUT_S,
             check=False,
-            env=git_env_without_tokens(),
+            env=env,
         )
         log = (proc.stdout or "") + (proc.stderr or "")
         return {
