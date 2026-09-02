@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0] - 2026-09-03
+
+Opportunity → Contribution Agent. Not another radar patch.
+
+### Added
+
+- GitHub OAuth identity login, 30-day hashed server sessions, operator allowlist (`FORESHADOW_OPERATORS`). OAuth tokens are discarded after identifying the user.
+- HTTPS vhost for `foreshadow.plainlist.space` (`contrib/nginx/foreshadow-https.conf`).
+- Observation timeline, honest sparklines (no interpolated 7-day curves), clickable pool filters, fact / interpretation / decision layers.
+- Entry Strategy: Plan A + B/C with evidence-backed issue/PR ids, contribution policy, cached `entry_analyses`.
+- `ContributionExecutor` protocol, native Docker/local sandbox, quality gate. OpenHands and mini-SWE-agent are optional adapters, not hard deps.
+- Board: analyze entry, run sandbox golden path, show contribution package. Draft PR button is visible and disabled.
+- Bounded concurrent HydrateANode (default 6).
+
+### Unchanged
+
+- Remote GitHub writes remain refused until a later dogfood of Contribution Ready.
+- Official Top 5 still needs local v7. Empty Top 5 is success.
+
 ## [0.2.4] - 2026-09-02
 
 Public Board SPA: anonymous `/api/portfolio` 401 no longer wipes a loaded daily board (the page no longer stays on “正在打开今日机会榜…”). systemd units set `PYTHONUNBUFFERED=1` so daily-run stage lines reach the journal.
