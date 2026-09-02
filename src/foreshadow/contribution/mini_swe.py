@@ -6,6 +6,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -22,10 +23,10 @@ from foreshadow.contribution.task import StructuredTask
 
 _EXTRA_NAMES = ("minisweagent",)
 STEP_LIMIT = 24
-INSTALL_TIMEOUT_S = 240
+INSTALL_TIMEOUT_S = 300
 TEST_TIMEOUT_S = 180
 AGENT_TIMEOUT_S = 900
-DEFAULT_IMAGE = os.environ.get("FORESHADOW_SANDBOX_IMAGE", "python:3.12-bookworm-slim")
+DEFAULT_IMAGE = os.environ.get("FORESHADOW_SANDBOX_IMAGE", "python:3.12-slim-bookworm")
 
 
 def _extra_available() -> bool:
@@ -61,16 +62,24 @@ class MiniSweExecutor:
         *,
         agent_factory: Callable[..., Any] | None = None,
         docker: bool | None = None,
+        on_event: Callable[[ContributionJob], None] | None = None,
     ) -> None:
         if agent_factory is None:
             _require()
         self.agent_factory = agent_factory
         self.use_docker = bool(shutil.which("docker")) if docker is None else docker
+        self.on_event = on_event
         self.last_sandbox_env: dict[str, str] | None = None
         self.last_network_note: dict[str, str] | None = None
         self.last_cost: float | None = None
         self.last_steps: int | None = None
         self.container_id: str | None = None
+        self._env: Any = None
+
+    def _emit(self, job: ContributionJob, event: dict[str, Any]) -> None:
+        job.log.append(event)
+        if self.on_event is not None:
+            self.on_event(job)
 
     def prepare(self, job: ContributionJob) -> None:
         work = (
@@ -97,44 +106,54 @@ class MiniSweExecutor:
             clone_public_github(job.full_name, sandbox)
         job.sandbox_path = sandbox
         self.last_sandbox_env = sandbox_env_for_container()
-        job.log.append(
+        self._emit(
+            job,
             {
                 "step": "preparing_sandbox",
                 "sandbox": str(sandbox),
                 "docker": self.use_docker,
                 "remotes": _remotes(sandbox),
-            }
+            },
         )
 
     def analyze(self, job: ContributionJob) -> None:
         sandbox = _require_sandbox(job)
         structured = _structured(job)
-        job.log.append(
+        self._emit(
+            job,
+            {
+                "step": "analyzing_repository",
+                "repository": job.full_name,
+                "tree": sorted(p.name for p in sandbox.iterdir() if p.name != ".git")[
+                    :24
+                ],
+            },
+        )
+        self._emit(
+            job,
             {
                 "step": "selected_task",
                 "repository": job.full_name,
                 "issue": structured.issue_number if structured else None,
                 "task": structured.task if structured else job.why,
                 "files": list(structured.relevant_files) if structured else [],
-            }
+            },
         )
         commands = list(structured.test_commands) if structured else []
         if not commands:
             commands = ["python -m pytest -o addopts= -q"]
         job.task = dict(job.task or {})
         job.task["test_commands"] = commands
-        if self.use_docker and (sandbox / "pyproject.toml").exists():
-            self._start_container(sandbox)
-            self._install_in_container(job)
-        else:
-            self._install_on_host(job)
+        self._ensure_env(job)
         baseline = self._run_tests(job, label="baseline")
         job.task["baseline"] = baseline
-        job.log.append(
+        self._emit(
+            job,
             {
                 "step": "baseline_tests",
                 **{k: baseline.get(k) for k in ("ok", "returncode", "command")},
-            }
+                "note": "pre-existing failures are not counted as agent failures",
+            },
         )
 
     def implement(self, job: ContributionJob) -> None:
@@ -148,64 +167,58 @@ class MiniSweExecutor:
             raise ContributionError(
                 "mini_swe_agent needs a structured task, not 'fix repo'"
             )
-        job.log.append({"step": "implementing", "backend": self.name})
+        self._emit(job, {"step": "implementing", "backend": self.name})
         result = self._run_agent(job, prompt)
-        job.log.append(
+        self.last_cost = result.get("cost")
+        self.last_steps = result.get("steps")
+        self._emit(
+            job,
             {
                 "step": "agent_finished",
                 "exit_status": result.get("exit_status"),
                 "steps": result.get("steps"),
                 "cost": result.get("cost"),
-            }
+            },
         )
-        self.last_cost = result.get("cost")
-        self.last_steps = result.get("steps")
 
     def test(self, job: ContributionJob) -> None:
         result = self._run_tests(job, label="tests")
         job.test_result = result
-        job.log.append(
+        self._emit(
+            job,
             {
                 "step": "tests",
                 "ok": bool(result.get("ok")),
                 "returncode": result.get("returncode"),
                 "command": result.get("command"),
-            }
+            },
         )
 
     def iterate(self, job: ContributionJob) -> None:
         if job.test_result and job.test_result.get("ok"):
             return
-        log = str((job.test_result or {}).get("log") or "")[-2000:]
-        structured = _structured(job)
-        prompt = (
-            "The tests failed after the first attempt. Fix the remaining failures.\n"
-            f"{structured.to_prompt() if structured else ''}\n\nTEST OUTPUT:\n{log}"
-        )
-        job.log.append({"step": "iteration_1", "reason": "tests failed"})
-        self._run_agent(job, prompt, step_limit=12)
-        result = self._run_tests(job, label="tests_after_iteration")
-        job.test_result = result
-        job.log.append(
-            {
-                "step": "iteration_1_tests",
-                "ok": bool(result.get("ok")),
-                "returncode": result.get("returncode"),
-            }
-        )
+        self._retry(job, label="iteration_1", step_limit=12)
+        if job.test_result and job.test_result.get("ok"):
+            return
+        self._retry(job, label="iteration_2", step_limit=8)
 
     def produce_patch(self, job: ContributionJob) -> PatchArtifact:
         sandbox = _require_sandbox(job)
-        self._stop_container()
         diff = _git_diff(sandbox)
         files = _diff_files(diff)
         tests = job.test_result or {}
         structured = _structured(job)
         title = ""
-        if structured and structured.issue_number is not None:
-            title = f"Fix {structured.task} (#{structured.issue_number})"
-        elif structured:
-            title = structured.task[:72]
+        if structured:
+            task_text = structured.task
+            for sep in ("：", ": "):
+                if sep in task_text:
+                    task_text = task_text.split(sep, 1)[-1]
+                    break
+            if structured.issue_number is not None:
+                title = f"Fix {task_text} (#{structured.issue_number})"
+            else:
+                title = task_text[:72]
         artifact = PatchArtifact(
             diff=diff,
             why=job.why or (structured.why if structured else ""),
@@ -216,10 +229,33 @@ class MiniSweExecutor:
             tests_passed=bool(tests.get("ok")),
             risk="local sandbox only; remote GitHub writes are refused",
         )
-        job.log.append(
-            {"step": "produce_patch", "files": files, "diff_bytes": len(diff)}
+        self._emit(
+            job,
+            {"step": "produce_patch", "files": files, "diff_bytes": len(diff)},
         )
+        self._cleanup_env()
         return artifact
+
+    def _retry(self, job: ContributionJob, *, label: str, step_limit: int) -> None:
+        log = str((job.test_result or {}).get("log") or "")[-2000:]
+        structured = _structured(job)
+        prompt = (
+            "The tests failed after the previous attempt. Fix the remaining "
+            "failures without unrelated edits.\n"
+            f"{structured.to_prompt() if structured else ''}\n\nTEST OUTPUT:\n{log}"
+        )
+        self._emit(job, {"step": label, "reason": "tests failed"})
+        self._run_agent(job, prompt, step_limit=step_limit)
+        result = self._run_tests(job, label=f"tests_after_{label}")
+        job.test_result = result
+        self._emit(
+            job,
+            {
+                "step": f"{label}_tests",
+                "ok": bool(result.get("ok")),
+                "returncode": result.get("returncode"),
+            },
+        )
 
     def _run_agent(
         self, job: ContributionJob, prompt: str, *, step_limit: int = STEP_LIMIT
@@ -241,64 +277,28 @@ class MiniSweExecutor:
     ) -> dict[str, Any]:
         _require()
         from minisweagent.agents.default import DefaultAgent
-        from minisweagent.environments.docker import DockerEnvironment
-        from minisweagent.environments.local import LocalEnvironment
         from minisweagent.models.litellm_model import LitellmModel
 
-        sandbox = _require_sandbox(job)
-        model_name = (
-            os.environ.get("MSWEA_MODEL_NAME")
-            or os.environ.get("FORESHADOW_MINISWE_MODEL")
-            or os.environ.get("ANTHROPIC_MODEL")
-            or "anthropic/claude-sonnet-4-5"
-        )
-        model_kwargs: dict[str, Any] = {}
-        if os.environ.get("ANTHROPIC_BASE_URL"):
-            model_kwargs["api_base"] = os.environ["ANTHROPIC_BASE_URL"]
-        key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
-            "ANTHROPIC_AUTH_TOKEN"
-        )
-        if key and not os.environ.get("ANTHROPIC_API_KEY"):
-            os.environ["ANTHROPIC_API_KEY"] = key
-        if self.use_docker:
-            if not self.container_id:
-                self._start_container(sandbox)
-            env = DockerEnvironment(
-                image=DEFAULT_IMAGE,
-                cwd="/work",
-                env=sandbox_env_for_container(),
-                forward_env=[],
-                run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
-                timeout=60,
-            )
-            # DockerEnvironment starts its own container; stop ours if we started one
-            # and use the agent's, then exec install there if needed.
-            self._stop_container()
-            self.container_id = env.container_id
-            self._install_in_container(job)
-            self._disconnect_network()
-        else:
-            env = LocalEnvironment(
-                cwd=str(sandbox), env=sandbox_env_for_container(), timeout=60
-            )
+        env = self._ensure_env(job)
+        traced = _TracingEnv(env, job, self._emit)
+        model_name, model_kwargs = _model_setup()
+        work = Path(job.work_dir) if job.work_dir else Path(job.sandbox_path or ".")
         agent = DefaultAgent(
-            LitellmModel(model_name=model_name, model_kwargs=model_kwargs),
-            env,
+            LitellmModel(
+                model_name=model_name,
+                model_kwargs=model_kwargs,
+                cost_tracking="ignore_errors",
+                format_error_template=_FORMAT_ERROR,
+            ),
+            traced,
             system_template=_SYSTEM,
             instance_template=_INSTANCE,
             step_limit=step_limit,
             cost_limit=8.0,
+            wall_time_limit_seconds=AGENT_TIMEOUT_S,
+            output_path=work / "mini-swe-trace.json",
         )
-        try:
-            result = agent.run(prompt)
-        finally:
-            closer = getattr(env, "cleanup", None) or getattr(env, "close", None)
-            if callable(closer):
-                try:
-                    closer()
-                except (OSError, RuntimeError, TypeError):
-                    pass
-            self.container_id = None
+        result = agent.run(prompt)
         extra = result if isinstance(result, dict) else {}
         return {
             "exit_status": extra.get("exit_status")
@@ -308,39 +308,60 @@ class MiniSweExecutor:
             "raw": extra,
         }
 
-    def _start_container(self, sandbox: Path) -> None:
-        if not self.use_docker:
-            return
-        cmd = [
-            "docker",
-            "run",
-            "-d",
-            "--rm",
-            "-w",
-            "/work",
-            "-v",
-            f"{sandbox.resolve()}:/work",
-            "-e",
-            "PIP_DISABLE_PIP_VERSION_CHECK=1",
-            DEFAULT_IMAGE,
-            "sleep",
-            "2h",
-        ]
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, check=True, timeout=180
-        )
-        self.container_id = proc.stdout.strip()
-        self.last_network_note = {
-            "network_enabled": "during dependency install only",
-            "why": "pip install of the cloned repo's test extra",
-        }
+    def _ensure_env(self, job: ContributionJob) -> Any:
+        if self._env is not None:
+            return self._env
+        sandbox = _require_sandbox(job)
+        if self.use_docker:
+            from minisweagent.environments.docker import DockerEnvironment
+
+            self.last_network_note = {
+                "network_enabled": "during dependency install only",
+                "why": "pip install of the cloned repo plus pytest",
+            }
+            self._env = DockerEnvironment(
+                image=DEFAULT_IMAGE,
+                cwd="/work",
+                env=sandbox_env_for_container(),
+                forward_env=[],
+                run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
+                timeout=TEST_TIMEOUT_S,
+            )
+            self.container_id = self._env.container_id
+            self._install_in_container(job)
+            self._disconnect_network()
+        else:
+            from minisweagent.environments.local import LocalEnvironment
+
+            self.last_network_note = {
+                "network_enabled": "host pip install",
+                "why": "docker not used (tests or operator override)",
+            }
+            bindir = str(Path(sys.executable).parent)
+            host_path = os.environ.get("PATH", "/usr/bin:/bin")
+            path = (
+                host_path
+                if bindir in host_path.split(os.pathsep)
+                else os.pathsep.join([bindir, host_path])
+            )
+            self._env = LocalEnvironment(
+                cwd=str(sandbox),
+                env={
+                    **sandbox_env_for_container(),
+                    "PATH": path,
+                },
+                timeout=TEST_TIMEOUT_S,
+            )
+            self._install_on_host(job)
+        return self._env
 
     def _install_in_container(self, job: ContributionJob) -> None:
         if not self.container_id:
             return
+        extras = "pytest pytest-asyncio"
         cmd = (
-            "python -m pip install -q -e . pytest && "
-            "python -c 'import pathlib; print(pathlib.Path(\".\").resolve())'"
+            "python -m pip install -q --upgrade pip && "
+            f"python -m pip install -q -e . {extras}"
         )
         proc = subprocess.run(
             ["docker", "exec", "-w", "/work", self.container_id, "bash", "-lc", cmd],
@@ -349,20 +370,20 @@ class MiniSweExecutor:
             timeout=INSTALL_TIMEOUT_S,
             check=False,
         )
-        job.log.append(
+        self._emit(
+            job,
             {
                 "step": "install",
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,
                 "network": self.last_network_note,
                 "log": (proc.stdout + proc.stderr)[-1500:],
-            }
+            },
         )
         if proc.returncode != 0:
             raise ContributionError(
                 f"sandbox pip install failed: {(proc.stderr or proc.stdout)[-400:]}"
             )
-        self._disconnect_network()
 
     def _install_on_host(self, job: ContributionJob) -> None:
         sandbox = _require_sandbox(job)
@@ -370,7 +391,7 @@ class MiniSweExecutor:
             not (sandbox / "pyproject.toml").exists()
             and not (sandbox / "setup.py").exists()
         ):
-            job.log.append({"step": "install", "ok": True, "skipped": "no pyproject"})
+            self._emit(job, {"step": "install", "ok": True, "skipped": "no pyproject"})
             return
         venv = sandbox / ".venv"
         if not venv.exists():
@@ -395,16 +416,14 @@ class MiniSweExecutor:
                 "PATH": os.environ.get("PATH", ""),
             },
         )
-        job.log.append(
+        self._emit(
+            job,
             {
                 "step": "install",
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,
-                "network": {
-                    "network_enabled": "host pip install",
-                    "why": "docker not used",
-                },
-            }
+                "network": self.last_network_note,
+            },
         )
 
     def _disconnect_network(self) -> None:
@@ -416,47 +435,54 @@ class MiniSweExecutor:
             check=False,
         )
 
-    def _stop_container(self) -> None:
-        if not self.container_id:
-            return
-        subprocess.run(
-            ["docker", "rm", "-f", self.container_id], capture_output=True, check=False
-        )
+    def _cleanup_env(self) -> None:
+        env = self._env
+        self._env = None
         self.container_id = None
+        if env is None:
+            return
+        closer = getattr(env, "cleanup", None)
+        if callable(closer):
+            try:
+                closer()
+            except (OSError, RuntimeError, TypeError):
+                pass
 
     def _run_tests(self, job: ContributionJob, *, label: str) -> dict[str, Any]:
-        sandbox = _require_sandbox(job)
         commands = list(
             (job.task or {}).get("test_commands") or ["python -m pytest -o addopts= -q"]
         )
         command = commands[0]
-        if self.container_id:
-            proc = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    "-w",
-                    "/work",
-                    self.container_id,
-                    "bash",
-                    "-lc",
-                    command,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=TEST_TIMEOUT_S,
-                check=False,
-            )
-        else:
-            proc = subprocess.run(
-                ["bash", "-lc", command],
-                cwd=sandbox,
-                capture_output=True,
-                text=True,
-                timeout=TEST_TIMEOUT_S,
-                check=False,
-                env=git_env_without_tokens(),
-            )
+        if self._env is not None:
+            try:
+                out = self._env.execute({"command": command}, timeout=TEST_TIMEOUT_S)
+            except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as exc:
+                return {
+                    "ok": False,
+                    "returncode": -1,
+                    "command": command,
+                    "log": f"{type(exc).__name__}: {exc}",
+                    "label": label,
+                }
+            log = str(out.get("output") or "")
+            code = int(out.get("returncode") or 0)
+            return {
+                "ok": code == 0,
+                "returncode": code,
+                "command": command,
+                "log": log[-8000:],
+                "label": label,
+            }
+        sandbox = _require_sandbox(job)
+        proc = subprocess.run(
+            ["bash", "-lc", command],
+            cwd=sandbox,
+            capture_output=True,
+            text=True,
+            timeout=TEST_TIMEOUT_S,
+            check=False,
+            env=git_env_without_tokens(),
+        )
         log = (proc.stdout or "") + (proc.stderr or "")
         return {
             "ok": proc.returncode == 0,
@@ -465,6 +491,100 @@ class MiniSweExecutor:
             "log": log[-8000:],
             "label": label,
         }
+
+
+class _TracingEnv:
+    """Forward execute() to the real env and record command/result on the job."""
+
+    def __init__(
+        self,
+        inner: Any,
+        job: ContributionJob,
+        emit: Callable[[ContributionJob, dict[str, Any]], None],
+    ) -> None:
+        self._inner = inner
+        self._job = job
+        self._emit = emit
+        self._n = 0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def execute(self, action: dict, **kwargs: Any) -> dict[str, Any]:
+        self._n += 1
+        command = str(action.get("command") or "")
+        self._emit(
+            self._job,
+            {
+                "step": "agent_action",
+                "n": self._n,
+                "command": command[:800],
+            },
+        )
+        try:
+            out = self._inner.execute(action, **kwargs)
+        except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as exc:
+            self._emit(
+                self._job,
+                {
+                    "step": "agent_result",
+                    "n": self._n,
+                    "ok": False,
+                    "error": type(exc).__name__,
+                },
+            )
+            raise
+        except BaseException as exc:
+            self._emit(
+                self._job,
+                {
+                    "step": "agent_result",
+                    "n": self._n,
+                    "ok": type(exc).__name__ in {"Submitted", "InterruptAgentFlow"},
+                    "error": type(exc).__name__,
+                },
+            )
+            raise
+        log = str(out.get("output") or "")
+        self._emit(
+            self._job,
+            {
+                "step": "agent_result",
+                "n": self._n,
+                "returncode": out.get("returncode"),
+                "output": log[-800:],
+            },
+        )
+        return out
+
+
+def _model_setup() -> tuple[str, dict[str, Any]]:
+    name = (
+        os.environ.get("MSWEA_MODEL_NAME")
+        or os.environ.get("FORESHADOW_MINISWE_MODEL")
+        or os.environ.get("ANTHROPIC_MODEL")
+        or "anthropic/claude-sonnet-4-5"
+    )
+    kwargs: dict[str, Any] = {"drop_params": True}
+    base = os.environ.get("ANTHROPIC_BASE_URL") or os.environ.get(
+        "FORESHADOW_MINISWE_API_BASE"
+    )
+    key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if key and not os.environ.get("ANTHROPIC_API_KEY"):
+        os.environ["ANTHROPIC_API_KEY"] = key
+    if base and "deepseek.com" in base:
+        # DeepSeek's Anthropic-compat endpoint rejects custom tools (only
+        # web_search). mini-SWE needs a bash tool, so use OpenAI-compat.
+        core = name.split("/", 1)[-1]
+        name = f"openai/{core}"
+        kwargs["api_base"] = "https://api.deepseek.com"
+        if key:
+            kwargs["api_key"] = key
+    elif base:
+        kwargs["api_base"] = base
+        if "/" not in name:
+            name = f"anthropic/{name}"
+    return name, kwargs
 
 
 def _structured(job: ContributionJob) -> StructuredTask | None:
@@ -488,10 +608,13 @@ def _require_sandbox(job: ContributionJob) -> Path:
 def _git_reinit(dest: Path) -> None:
     env = git_env_without_tokens()
     ignore = dest / ".gitignore"
+    extra = "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n*.egg-info/\n"
     if not ignore.exists():
-        ignore.write_text(
-            "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n", encoding="utf-8"
-        )
+        ignore.write_text(extra, encoding="utf-8")
+    else:
+        text = ignore.read_text(encoding="utf-8")
+        if "*.egg-info/" not in text:
+            ignore.write_text(text.rstrip() + "\n" + extra, encoding="utf-8")
     subprocess.run(["git", "init"], cwd=dest, env=env, capture_output=True, check=False)
     subprocess.run(
         ["git", "config", "core.hooksPath", "/dev/null"],
@@ -531,8 +654,9 @@ def _remotes(dest: Path) -> list[str]:
 
 def _git_diff(dest: Path) -> str:
     ignore = dest / ".gitignore"
+    extra = "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n*.egg-info/\n"
     if not ignore.exists():
-        ignore.write_text("__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n", encoding="utf-8")
+        ignore.write_text(extra, encoding="utf-8")
     subprocess.run(
         ["git", "-C", str(dest), "add", "-A"],
         capture_output=True,
@@ -556,14 +680,33 @@ def _diff_files(diff: str) -> list[str]:
 
 
 _SYSTEM = """You are a software engineering agent working in an isolated clone.
-Respond with exactly ONE bash command in a ```mswea_bash_command block.
-Do not push, do not use gh, do not read host secrets.
-When the acceptance criteria are met, run: echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+Every response MUST include reasoning text and at least one bash tool call.
+Do not push. Do not use the gh CLI. Do not read host secrets or SSH keys.
+Do not print environment variables.
+When the acceptance criteria are met, run exactly:
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+Do not combine that command with any other command.
 """
 
 _INSTANCE = """Please solve this issue:
 
 {{task}}
 
-Work in the current directory. Edit source, add regression tests, run the listed test commands.
+Work in the current directory. Edit source, add a regression test if one is
+missing, and run the listed test commands.
+
+<system_information>
+{{system}} {{release}} {{version}} {{machine}}
+</system_information>
+"""
+
+_FORMAT_ERROR = """Tool call error:
+
+<error>
+{{error}}
+</error>
+
+Every response needs to use the bash tool at least once.
+Call bash with {"command": "your_command_here"}.
+To finish, run: echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 """

@@ -103,13 +103,14 @@ def from_entry(
     why = str(rec.get("why") or extra.get("why") or "")
     if isinstance(rec.get("why"), list):
         why = "; ".join(str(x) for x in rec["why"] if str(x).strip())
-    evidence = [str(x) for x in (rec.get("evidence") or extra.get("evidence") or [])]
-    if evidence and isinstance(evidence[0], dict):
-        evidence = [
-            str(item.get("url") or item.get("id") or item)
-            for item in rec.get("evidence") or []
-            if isinstance(item, dict)
-        ]
+    raw_evidence = rec.get("evidence") or extra.get("evidence") or []
+    evidence: list[str] = []
+    for item in raw_evidence:
+        if isinstance(item, dict):
+            evidence.append(str(item.get("url") or item.get("id") or ""))
+        else:
+            evidence.append(str(item))
+    evidence = [item for item in evidence if item]
     rules = []
     if policy.get("wants_issue_first"):
         rules.append("Repository prefers an issue before a PR. Link the issue.")

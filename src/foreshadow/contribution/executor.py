@@ -144,6 +144,15 @@ def run_contribution(
 
     worker = executor or get_executor(job.backend)
     job.backend = worker.name
+    if conn is not None and hasattr(worker, "on_event"):
+        previous = getattr(worker, "on_event", None)
+
+        def _hook(updated: ContributionJob) -> None:
+            if callable(previous):
+                previous(updated)
+            _save(conn, updated)
+
+        worker.on_event = _hook
     artifact: PatchArtifact | None = None
     try:
         job.status = JobStatus.queued
@@ -197,9 +206,7 @@ def run_contribution(
                     structured = StructuredTask.model_validate(raw)
                 except (TypeError, ValueError):
                     structured = None
-            pkg = build_package(
-                job, artifact, structured=structured, qa_ok=verdict.ok
-            )
+            pkg = build_package(job, artifact, structured=structured, qa_ok=verdict.ok)
             persist_artifact(
                 conn,
                 job.id,

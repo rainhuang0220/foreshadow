@@ -25,6 +25,9 @@ build-backend = "hatchling.build"
 # included once. Re-listing them under Hatch forced inclusion duplicates zip entries.
 packages = ["src/foreshadow"]
 
+[project.optional-dependencies]
+miniswe = ["mini-swe-agent>=2.0"]
+
 [dependency-groups]
 dev = ["pytest", "ruff", "respx"]
 

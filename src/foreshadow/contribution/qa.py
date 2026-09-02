@@ -24,6 +24,8 @@ _JUNK_PATH_PARTS = (
     "__pycache__",
     ".venv",
     ".pytest_cache",
+    ".egg-info",
+    "egg-info",
 )
 _LICENSE_NAMES = frozenset(
     {"license", "license.md", "license.txt", "copying", "copying.md"}
@@ -72,6 +74,8 @@ def gate(job: ContributionJob, artifact: PatchArtifact) -> GateResult:
     lock_hits = [f for f in files if _basename(f).lower() in _LOCK_NAMES]
     if lock_hits and "lock" not in prompt.lower():
         reasons.append("lockfile churn: " + ", ".join(lock_hits))
+    if files and not _touches_task(files, job):
+        reasons.append("diff does not touch relevant files")
 
     return GateResult(ok=not reasons, reasons=tuple(reasons))
 
@@ -102,7 +106,28 @@ def _task_text(job: ContributionJob) -> str:
         str(task.get("why") or ""),
         str(job.why or ""),
     ]
+    structured = task.get("structured")
+    if isinstance(structured, dict):
+        bits.append(str(structured.get("task") or ""))
+        bits.append(str(structured.get("why") or ""))
+        bits.extend(str(x) for x in (structured.get("relevant_files") or []))
     return " ".join(bits)
+
+
+def _touches_task(files: list[str], job: ContributionJob) -> bool:
+    structured = (job.task or {}).get("structured")
+    relevant: list[str] = []
+    if isinstance(structured, dict):
+        relevant = [str(x) for x in (structured.get("relevant_files") or []) if str(x)]
+    if not relevant:
+        return True
+    lowered = [f.replace("\\", "/").lower() for f in files]
+    for rel in relevant:
+        needle = rel.replace("\\", "/").lower()
+        base = needle.rsplit("/", 1)[-1]
+        if any(needle in f or f.endswith(base) for f in lowered):
+            return True
+    return any("/test" in f or f.startswith("test") or "/tests/" in f for f in lowered)
 
 
 def _is_spam_task(prompt: str) -> bool:
