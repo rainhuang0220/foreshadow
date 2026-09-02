@@ -61,8 +61,35 @@ Compared by actually running a third-party repo, not by architecture preference.
 
 **v0.3 default coding backend: `mini_swe_agent` when the extra is installed, else `native`.** OpenHands stays an optional stub.
 
+Recorded run (do not treat this as a GitHub write):
+
+```text
+repo:         Cyrax321/CONTINUUM
+issue:        #582
+backend:      mini-SWE-agent 2.4.6
+sandbox:      Docker python:3.12-slim-bookworm
+model:        DeepSeek deepseek-v4-pro via OpenAI-compat (https://api.deepseek.com)
+wall time:    178s
+baseline:     37 passed, 1 skipped
+implementation:
+              src/continuum/serve/server.py
+              tests/test_serve.py
+              tests/test_serve_http.py
+tests:        39 passed, 1 skipped  exit 0
+QA:           PASS
+status:       WAITING_USER_APPROVAL
+remote writes: 0
+```
+
+Limitations (keep for operators):
+
+- `python:3.12-bookworm-slim` does not exist; the working tag is `python:3.12-slim-bookworm`.
+- DeepSeek Anthropic-compat rejects mini-SWE's custom bash tool; the OpenAI-compatible endpoint works.
+- The slim image has no `git`; the package diff is taken with host git on the mounted tree.
+- LiteLLM cannot price DeepSeek (cost tracker 0).
+- OpenHands was not required for this PoC and was not run.
+
 Blockers found and kept:
 
 - Observation-24 Python repos were too heavy, license-unclear, or had overlapping PRs. CONTINUUM is outside the 24; screening is in `docs/real-contribution-poc.md`.
 - Raw Entry Strategy preferred a README star-badge GFI that already had open PR #604. Overlap filter + bug-weighting selected #582.
-- `git` is missing in `python:3.12-slim-bookworm`; the agent still edited with Python/sed. Host `git diff` produces the package.
