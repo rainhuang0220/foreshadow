@@ -11,15 +11,15 @@ Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发
 需要 Python 3.12+。要进入仓库还需要 `git`。
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0"
 # 或
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0"
 ```
 
 Git 安装不会靠 `uv tool upgrade` 跟到新 tag。换版本：
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4" --reinstall
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0" --reinstall
 ```
 
 ## Token
