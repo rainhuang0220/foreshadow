@@ -12,17 +12,17 @@ Python **3.12+**. `git` is needed if you will enter a repo.
 
 ```bash
 # uv (recommended) — pin a release tag
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0"
 
 # pip
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0"
 ```
 
 Update to a newer tag (git installs do **not** follow new tags via `uv tool upgrade`):
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4" --reinstall
-# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0" --reinstall
+# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.0"
 ```
 
 ## GitHub token
@@ -50,7 +50,7 @@ foreshadow board                # opens http://127.0.0.1:8765/
 
 **Local mode:** `foreshadow board` on this machine (localhost). Register a local Board account, then look at **今日候选榜**.
 
-**Cloud deployment:** run Official `foreshadow run` and the Board as a systemd service behind nginx. See [`docs/deploy.md`](docs/deploy.md). The Board process itself still binds loopback; the public URL is deployment config, not a package constant.
+**Cloud deployment:** run Official `foreshadow run` and the Board as a systemd service behind nginx. See [`docs/deploy.md`](docs/deploy.md). Current public origin is `https://foreshadow.plainlist.space/` (deployment config, not a package constant). Temporary HTTP alias: `http://175.24.134.228:666/`.
 
 Register a local Board account (username, email, password). It stays on this machine. Then look at **今日候选榜**.
 
