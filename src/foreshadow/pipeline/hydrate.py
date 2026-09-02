@@ -5,6 +5,7 @@ import re
 import sqlite3
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
@@ -524,6 +525,31 @@ def hydrate_a_node(
     return body, None
 
 
+def hydrate_a_many(
+    client: Any, node_ids: Sequence[str], *, force: bool = False
+) -> dict[str, tuple[dict | None, GitHubError | None]]:
+    """Bounded concurrent HydrateANode. Fake clients stay serial."""
+    ids = [str(n) for n in node_ids]
+    workers = 1
+    settings = getattr(client, "settings", None)
+    if (
+        type(client).__name__ == "GitHubClient"
+        and settings is not None
+        and len(ids) > 1
+    ):
+        workers = max(1, min(int(getattr(settings, "hydrate_concurrency", 1) or 1), 8))
+    if workers <= 1:
+        return {nid: hydrate_a_node(client, nid, force=force) for nid in ids}
+    out: dict[str, tuple[dict | None, GitHubError | None]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {
+            pool.submit(hydrate_a_node, client, nid, force=force): nid for nid in ids
+        }
+        for fut in as_completed(futs):
+            out[futs[fut]] = fut.result()
+    return out
+
+
 def hydrate_b_node(
     client: Any, node_id: str, *, force: bool = False
 ) -> tuple[dict | None, GitHubError | None]:
@@ -607,12 +633,13 @@ def apply_identity(
         if fn:
             hits_by_name.setdefault(str(fn), []).append(hit)
     out: dict[str, HydratedRepo] = {}
+    fetched = hydrate_a_many(client, list(identity_ids), force=force)
     for nid in identity_ids:
         row = conn.execute(
             "SELECT id, node_id, full_name, status FROM repos WHERE node_id=?",
             (nid,),
         ).fetchone()
-        body, err = hydrate_a_node(client, nid, force=force)
+        body, err = fetched.get(nid, (None, None))
         repo = extract_repo(body) if body is not None else None
         missing = err is not None and _is_not_found(err)
         if err is not None and not missing:

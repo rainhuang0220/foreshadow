@@ -65,6 +65,11 @@ def test_sql_packaged():
     )
     assert "CREATE TABLE observations" in v6
     assert "expires_on" in v6
+    v7 = importlib.resources.files("foreshadow").joinpath("sql/007_v03.sql").read_text()
+    assert "github_login" in v7
+    assert "CREATE TABLE observation_events" in v7
+    assert "CREATE TABLE entry_analyses" in v7
+    assert "CREATE TABLE contribution_jobs" in v7
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):

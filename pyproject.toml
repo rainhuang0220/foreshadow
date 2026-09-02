@@ -1,6 +1,6 @@
 [project]
 name = "foreshadow-radar"
-version = "0.2.4"
+version = "0.3.0"
 description = "Find what the future has already foreshadowed."
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,6 +24,9 @@ build-backend = "hatchling.build"
 # sql/, directions.toml, and board/assets/ live inside this package and are
 # included once. Re-listing them under Hatch forced inclusion duplicates zip entries.
 packages = ["src/foreshadow"]
+
+[project.optional-dependencies]
+miniswe = ["mini-swe-agent>=2.0"]
 
 [dependency-groups]
 dev = ["pytest", "ruff", "respx"]

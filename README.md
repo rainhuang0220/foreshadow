@@ -1,6 +1,6 @@
 # Foreshadow (伏笔)
 
-**Beta 0.2.4** — find what the future has already foreshadowed.
+**Beta 0.3.0** — find what the future has already foreshadowed. Then prepare a local contribution.
 
 Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. If you choose to enter, it prepares a local clone and a plan, then **stops**. It never opens Issues, comments, or PRs, and it never pushes to someone else’s GitHub.
 

@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -330,6 +331,7 @@ class GitHubClient:
         self.source_failures: list[SourceFailure] = []
         self._client: httpx.Client | None = None
         self._last_search_at: float | None = None
+        self._lock = threading.Lock()
 
     def __enter__(self) -> Self:
         return self
@@ -559,16 +561,17 @@ class GitHubClient:
             return resp
 
     def _http(self) -> httpx.Client:
-        if self._client is None:
-            kwargs: dict[str, Any] = {
-                "headers": self._headers(),
-                "timeout": self.settings.timeout_seconds,
-                "follow_redirects": True,
-            }
-            if self.transport is not None:
-                kwargs["transport"] = self.transport
-            self._client = httpx.Client(**kwargs)
-        return self._client
+        with self._lock:
+            if self._client is None:
+                kwargs: dict[str, Any] = {
+                    "headers": self._headers(),
+                    "timeout": self.settings.timeout_seconds,
+                    "follow_redirects": True,
+                }
+                if self.transport is not None:
+                    kwargs["transport"] = self.transport
+                self._client = httpx.Client(**kwargs)
+            return self._client
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -658,9 +661,10 @@ class GitHubClient:
                     remaining = int(hdr)
                 except ValueError:
                     remaining = None
-        self.graphql_used += cost
-        if remaining is not None:
-            self.graphql_remaining = remaining
+        with self._lock:
+            self.graphql_used += cost
+            if remaining is not None:
+                self.graphql_remaining = remaining
 
     def _is_rate_limited(self, resp: httpx.Response) -> bool:
         if resp.status_code == 429:

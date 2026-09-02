@@ -4,6 +4,7 @@ import http.client
 import inspect
 import json
 import threading
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -150,6 +151,13 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert "Clone done" not in html
     assert "pipelineLive" in html
     assert "LOCAL_SETUP" in html
+    assert "/api/auth/github" in html
+    assert "GitHub 登录" in html
+    assert "观察时间线" in html
+    assert "state.filter='observing'" in html
+    assert "最佳切入点" in html
+    assert "批准并创建 Draft PR（本版关闭）" in html
+    assert "startContribution" in html
     js = html[
         html.index("function renderPipelineStep") : html.index(
             "function progressChecklist"
@@ -693,6 +701,65 @@ def test_public_board_anonymous_read_blocks_mutations(
             in html.text
         )
         assert "if (state.user)" in html.text
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_entry_and_sandbox_contribution_package(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        client = httpx.Client()
+        reg = client.post(
+            f"{base}/api/register",
+            json={
+                "username": "alice",
+                "email": "alice@example.com",
+                "password": "password1",
+            },
+        )
+        assert reg.status_code == 200
+        entry = client.get(f"{base}/api/entry", params={"full_name": "acme/x"})
+        assert entry.status_code == 200
+        rec = entry.json()["entry"]["recommended"]
+        assert rec["route"]
+        assert rec.get("issue_number") is None or int(rec["issue_number"]) > 0
+        job = client.post(
+            f"{base}/api/contribution",
+            json={
+                "full_name": "acme/x",
+                "task": {
+                    "fixture": "demo_add",
+                    "why": "golden path sandbox; no GitHub write",
+                },
+            },
+        )
+        assert job.status_code == 200, job.text
+        posted = job.json()
+        assert posted["job"]["id"]
+        assert posted["remote"]["blocked"] is True
+        body = None
+        for _ in range(40):
+            got = client.get(
+                f"{base}/api/contribution", params={"id": posted["job"]["id"]}
+            )
+            assert got.status_code == 200, got.text
+            body = got.json()
+            if body["job"]["status"] in {"ready", "failed", "refused_remote"}:
+                break
+            time.sleep(0.25)
+        assert body is not None
+        assert body["job"]["status"] == "ready"
+        pkg = body.get("package") or {}
+        diff = pkg.get("diff") or ""
+        assert "return a + b" in diff
+        assert pkg.get("qa") == "PASS"
+        assert pkg.get("remote_writes") == 0
+        blocked = client.post(
+            f"{base}/api/contribution",
+            json={"full_name": "acme/x", "action": "draft_pr"},
+        )
+        assert blocked.json()["blocked"] is True
     finally:
         httpd.shutdown()
         httpd.server_close()

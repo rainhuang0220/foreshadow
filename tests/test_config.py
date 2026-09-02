@@ -26,6 +26,7 @@ def test_default_weights_sum_to_100(tmp_path, monkeypatch):
     assert w.early_entry_weight == 15
     assert w.direction_fit_weight == 10
     assert w.maintainer_weight == 5
+    assert s.github.hydrate_concurrency == 6
 
 
 def test_fractional_weights_exit_2(tmp_path, monkeypatch):

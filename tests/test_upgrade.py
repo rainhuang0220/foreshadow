@@ -1,4 +1,4 @@
-"""P0 DB upgrade to schema 6 and empty-HOME clean install."""
+"""P0 DB upgrade to schema 7 and empty-HOME clean install."""
 
 from __future__ import annotations
 
@@ -98,8 +98,8 @@ def test_p0_schema1_upgrade_to_6_preserves_reviews_and_watchlist(tmp_home):
     )
     conn.commit()
     migrate(conn)
-    assert SCHEMA_VERSION == 6
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6]
+    assert SCHEMA_VERSION == 7
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -140,7 +140,7 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     assert list(home.iterdir()) == []
     assert not data.exists()
-    assert SCHEMA_VERSION == 6
+    assert SCHEMA_VERSION == 7
     ver = CliRunner().invoke(app, ["version"])
     assert ver.exit_code == 0
     assert __version__ in ver.stdout
@@ -175,7 +175,7 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     assert mode == 0o600
     conn = connect(db_path)
     migrate(conn)
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6]
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -186,13 +186,13 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     assert (data / "reports" / "2026-08-24.md").is_file()
 
 
-def test_migrate_on_empty_db_is_schema_6(tmp_home):
+def test_migrate_on_empty_db_is_schema_7(tmp_home):
     db = tmp_home / "foreshadow.sqlite3"
     assert not db.exists()
     conn = connect(db)
     migrate(conn)
-    assert SCHEMA_VERSION == 6
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6]
+    assert SCHEMA_VERSION == 7
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
     assert os.stat(db).st_mode & 0o777 == 0o600
     row = conn.execute("SELECT username FROM users WHERE is_local=1").fetchone()
     assert row[0] == "local"
