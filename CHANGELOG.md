@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.4] - 2026-09-02
+
+Public Board SPA: anonymous `/api/portfolio` 401 no longer wipes a loaded daily board (the page no longer stays on “正在打开今日机会榜…”). systemd units set `PYTHONUNBUFFERED=1` so daily-run stage lines reach the journal.
+
 ## [0.2.3] - 2026-09-02
 
 Public Board: anonymous read of the daily list; clone / mission / review still require login. Remote GitHub writes stay refused. `foreshadow run` prints stage progress. Local `foreshadow board` is unchanged.

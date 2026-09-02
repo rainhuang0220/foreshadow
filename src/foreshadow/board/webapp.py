@@ -613,8 +613,12 @@ async function api(path, opts={}) {
     err.status = res.status;
     if (res.status === 401 && path !== "/api/login" && path !== "/api/register") {
       state.user = null;
-      state.board = null;
-      clearWorkState();
+      // Public anonymous /api/portfolio and /api/missions are 401 by design.
+      // Do not wipe a board that already loaded.
+      if (!state.public && (path === "/api/board" || path === "/api/me")) {
+        state.board = null;
+        clearWorkState();
+      }
     }
     throw err;
   }
@@ -1246,7 +1250,11 @@ async function loadBoard() {
     state.board = await api("/api/board");
     if (state.board && state.board.public != null) state.public = !!state.board.public;
     if (state.board && state.board.allow_register != null) state.allowRegister = !!state.board.allow_register;
-    try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+    if (state.user) {
+      try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+    } else {
+      state.portfolio = null;
+    }
     stampMissionOnCards(state.mission);
     for (const m of (state.missions || [])) stampMissionOnCards(m);
   } catch (e) {

@@ -4,7 +4,7 @@ Local daily radar. Not trending. You decide. It does not write to GitHub for you
 
 ## Path
 
-Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.3"`) → token → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **开始进入** → local prep → **等待你确认远程操作**.
+Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.4"`) → token → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **开始进入** → local prep → **等待你确认远程操作**.
 
 ## Empty Top 5
 

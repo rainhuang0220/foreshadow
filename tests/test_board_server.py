@@ -685,6 +685,14 @@ def test_public_board_anonymous_read_blocks_mutations(
         assert remote.json()["ok"] is False
         html = httpx.get(f"{base}/")
         assert "登录后进入" in html.text
+        pf = httpx.get(f"{base}/api/portfolio")
+        assert pf.status_code == 401
+        # SPA must not treat this 401 as "wipe the public board".
+        assert (
+            'if (!state.public && (path === "/api/board" || path === "/api/me"))'
+            in html.text
+        )
+        assert "if (state.user)" in html.text
     finally:
         httpd.shutdown()
         httpd.server_close()
