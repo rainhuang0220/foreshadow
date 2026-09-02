@@ -277,6 +277,12 @@ def enrich_board_payload(
         card["pool"] = _pool_name(card, observing=observing, official=official)
         rec = _recommended_action(card, layers)
         card["recommended_action"] = rec
+        if rid:
+            from foreshadow.entry import load_entry
+
+            stored = load_entry(conn, rid)
+            if stored is not None:
+                card["entry"] = stored.as_dict()
     counts = payload.setdefault("counts", {})
     counts["observing"] = sum(
         1 for c in payload.get("candidates") or [] if c.get("pool") == "observing"

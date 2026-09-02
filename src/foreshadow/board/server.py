@@ -176,6 +176,30 @@ def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
     return status, raw, "application/json; charset=utf-8"
 
 
+def _job_view(job: Any) -> dict[str, Any]:
+    status = job.status.value if hasattr(job.status, "value") else str(job.status)
+    return {
+        "id": job.id,
+        "full_name": job.full_name,
+        "status": status,
+        "status_zh": {
+            "queued": "排队",
+            "preparing": "正在准备贡献",
+            "implementing": "正在实现",
+            "testing": "测试",
+            "qa": "质量检查",
+            "ready": "贡献已就绪",
+            "waiting_approval": "等待你确认",
+            "failed": "失败",
+            "refused_remote": "远程写入已拒绝",
+        }.get(status, status),
+        "backend": job.backend,
+        "log": list(job.log or []),
+        "task": dict(job.task or {}),
+        "updated_at": job.updated_at,
+    }
+
+
 def _mission_id(data: dict[str, Any]) -> int:
     raw = data.get("id")
     try:
@@ -280,6 +304,33 @@ class BoardHandler(BaseHTTPRequestHandler):
 
         host = (self.headers.get("Host") or "").strip()
         return callback_url(self.state.public_url, host)
+
+    def _entry_for_name(self, name: str, *, force: bool) -> dict[str, Any] | None:
+        repo = (name or "").strip()
+        if not repo or "/" not in repo:
+            self._send(*_json_bytes({"error": "需要 owner/repo"}, 400))
+            return None
+        from foreshadow.entry import ensure_entry
+
+        conn = self.state.db()
+        try:
+            row = conn.execute(
+                "SELECT id, language FROM repos WHERE full_name=?",
+                (repo,),
+            ).fetchone()
+            if row is None:
+                self._send(*_json_bytes({"error": "未观察过这个仓库"}, 404))
+                return None
+            strategy = ensure_entry(
+                conn,
+                int(row[0]),
+                now=self.state.clock.now(),
+                language=str(row[1]) if row[1] else None,
+                force=force,
+            )
+            return {"full_name": repo, "entry": strategy.as_dict()}
+        finally:
+            conn.close()
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -448,6 +499,38 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self._send(*_json_bytes({"error": "未观察过这个仓库"}, 404))
                 return
             self._send(*_json_bytes(detail))
+            return
+        if path == "/api/entry":
+            qs = parse_qs(parsed.query)
+            name = (qs.get("full_name") or qs.get("name") or [""])[0]
+            payload = self._entry_for_name(name, force=False)
+            if payload is None:
+                return
+            self._send(*_json_bytes(payload))
+            return
+        if path == "/api/contribution":
+            qs = parse_qs(parsed.query)
+            raw_id = (qs.get("id") or [""])[0]
+            user = self._user()
+            if user is None:
+                self._send(*_json_bytes({"error": "需要登录"}, 401))
+                return
+            from foreshadow.contribution.jobs import list_artifacts, list_jobs, load_job
+
+            conn = self.state.db()
+            try:
+                if raw_id:
+                    job = load_job(conn, int(raw_id), user_id=int(user["id"]))
+                    if job is None:
+                        self._send(*_json_bytes({"error": "没有这个贡献任务"}, 404))
+                        return
+                    arts = list_artifacts(conn, int(job.id or 0))
+                    self._send(*_json_bytes({"job": _job_view(job), "artifacts": arts}))
+                    return
+                jobs = [_job_view(j) for j in list_jobs(conn, int(user["id"]))]
+            finally:
+                conn.close()
+            self._send(*_json_bytes({"jobs": jobs}))
             return
         self._send(*_json_bytes({"error": "not found"}, 404))
 
@@ -661,6 +744,78 @@ class BoardHandler(BaseHTTPRequestHandler):
             finally:
                 conn.close()
             self._send(*_json_bytes({"mission": plan, "event": event}))
+            return
+        if path == "/api/entry":
+            user = self._require_operator()
+            if user is None:
+                return
+            name = str(data.get("full_name") or data.get("repo") or "")
+            payload = self._entry_for_name(name, force=True)
+            if payload is None:
+                return
+            self._send(*_json_bytes(payload))
+            return
+        if path == "/api/contribution":
+            user = self._require_operator()
+            if user is None:
+                return
+            from foreshadow.contribution.executor import (
+                ContributionError,
+                ContributionJob,
+                refuse_remote,
+                run_contribution,
+            )
+            from foreshadow.contribution.jobs import list_artifacts
+
+            action = str(data.get("action") or "")
+            if action in {"push", "pr", "draft_pr", "create_pr"}:
+                self._send(*_json_bytes(refuse_remote(action)))
+                return
+            name = str(data.get("full_name") or data.get("repo") or "")
+            if "/" not in name:
+                self._send(*_json_bytes({"error": "需要 owner/repo"}, 400))
+                return
+            conn = self.state.db()
+            try:
+                row = conn.execute(
+                    "SELECT id FROM repos WHERE full_name=?", (name,)
+                ).fetchone()
+                job = ContributionJob(
+                    user_id=int(user["id"]),
+                    repo_id=int(row[0]) if row else None,
+                    full_name=name,
+                    backend=str(data.get("backend") or "native"),
+                    task=data.get("task")
+                    if isinstance(data.get("task"), dict)
+                    else {"fixture": "demo_add", "why": "golden path sandbox demo"},
+                )
+                artifact = run_contribution(job, conn=conn)
+                arts = list_artifacts(conn, int(job.id or 0))
+            except ContributionError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
+            finally:
+                conn.close()
+            self._send(
+                *_json_bytes(
+                    {
+                        "job": _job_view(job),
+                        "artifact": {
+                            "diff": artifact.diff,
+                            "why": artifact.why,
+                            "tests_passed": artifact.tests_passed,
+                            "qa_ok": artifact.qa_ok,
+                            "qa_reasons": artifact.qa_reasons,
+                            "title": artifact.title,
+                            "body": artifact.body,
+                            "risk": artifact.risk,
+                            "files": artifact.files,
+                        },
+                        "artifacts": arts,
+                        "remote": refuse_remote("draft_pr"),
+                    }
+                )
+            )
             return
         if path == "/api/mission/remote":
             from foreshadow.mission import record_remote_refused, refuse_remote_action

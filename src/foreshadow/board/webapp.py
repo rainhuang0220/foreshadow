@@ -660,6 +660,46 @@ function factLine(c) {
     : (d.delta != null ? ((d.delta >= 0 ? "+" : "") + d.delta + " stars") : "");
   return [stars, delta, c.observation_zh || ""].filter(Boolean).join(" · ");
 }
+function entryView(card) {
+  const e = card.entry;
+  if (!e || !e.recommended) {
+    return `<section class="entry-strat">
+      <h3>最佳切入点</h3>
+      <p class="meta">尚未分析贡献文化与 Issue。分析只用已有快照，不会编造编号。</p>
+      ${state.user ? `<button type="button" onclick="analyzeEntry('${esc(card.full_name)}')">分析切入点</button>` : ""}
+    </section>`;
+  }
+  const rec = e.recommended;
+  const conf = rec.confidence != null ? Math.round(Number(rec.confidence) * 100) + "%" : "—";
+  const alts = (e.alternatives || []).map(p => `<li>备选 ${esc(p.route)}：${esc(p.title)}</li>`).join("");
+  const why = (rec.why || []).map(x => `<li>${esc(x)}</li>`).join("");
+  const pol = e.policy || {};
+  return `<section class="entry-strat">
+    <h3>最佳切入点</h3>
+    <p><strong>${esc(rec.title || rec.summary_zh)}</strong></p>
+    <p class="meta">推荐 ${esc(rec.route)} · 信心 ${esc(conf)} · ${esc(rec.effort || "")} · 风险 ${esc(rec.risk || "")}</p>
+    ${why ? `<ul>${why}</ul>` : ""}
+    <p class="meta">贡献规范：${pol.wants_issue_first ? "先 Issue 后 PR" : "未强制先 Issue"} · CLA ${pol.cla == null ? "未知" : (pol.cla ? "需要" : "不需要")} · DCO ${pol.dco == null ? "未知" : (pol.dco ? "需要" : "不需要")}</p>
+    ${alts ? `<ul>${alts}</ul>` : ""}
+    ${state.user ? `<button type="button" class="primary" onclick="startContribution('${esc(card.full_name)}')">开始准备贡献（沙箱，不推送）</button>` : ""}
+  </section>`;
+}
+function contributionView(card) {
+  const pack = card.contribution;
+  if (!pack) return "";
+  const job = pack.job || {};
+  const art = pack.artifact || {};
+  const log = (job.log || []).map(x => `<li>${esc(x.step || "")}${x.ok === false ? " ✕" : " ✓"}</li>`).join("");
+  return `<section class="contrib-pack">
+    <h3>贡献准备</h3>
+    <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(art.why || "")}</p>
+    <p class="meta">测试 ${art.tests_passed ? "通过" : "未通过"} · 质量门 ${art.qa_ok ? "通过" : "未通过"} · 文件 ${n((art.files||[]).length)}</p>
+    ${log ? `<ul>${log}</ul>` : ""}
+    ${art.diff ? `<pre class="diff">${esc(art.diff.slice(0, 4000))}</pre>` : ""}
+    <p class="meta">${esc(art.risk || "远程 GitHub 写入仍关闭。")}</p>
+    <button type="button" disabled>批准并创建 Draft PR（本版关闭）</button>
+  </section>`;
+}
 function timelineView(events) {
   if (!events || !events.length) return "";
   const items = events.map(e => {
@@ -937,6 +977,8 @@ function drawerView(card) {
         <p><strong>判断：</strong>${esc(card.decision || "—")} · ${esc(card.recommended_action || "")}</p>
       </div>
       ${timelineView(card.timeline)}
+      ${entryView(card)}
+      ${contributionView(card)}
       <p><strong>匹配度：</strong>${esc(match)}</p>
       <p><strong>机会：</strong>${n(card.s1_window)}</p>
       <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
@@ -1381,6 +1423,27 @@ function alreadyLocal(m) {
   return !!(m && m.clone && m.clone.ok);
 }
 
+async function analyzeEntry(name) {
+  state.busy = true; state.actionError = ""; render();
+  try {
+    const data = await api("/api/entry", { method: "POST", body: JSON.stringify({ full_name: name }) });
+    const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
+    if (card) card.entry = data.entry;
+  } catch (e) { state.actionError = e.message || String(e); }
+  state.busy = false; render();
+}
+async function startContribution(name) {
+  state.busy = true; state.actionError = ""; render();
+  try {
+    const data = await api("/api/contribution", { method: "POST", body: JSON.stringify({
+      full_name: name,
+      task: { fixture: "demo_add", why: "沙箱黄金路径：修复加法，不推送 GitHub。" }
+    }) });
+    const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
+    if (card) card.contribution = data;
+  } catch (e) { state.actionError = e.message || String(e); }
+  state.busy = false; render();
+}
 async function startEnter(name) {
   if (state.busy) return;
   state.busy = true;

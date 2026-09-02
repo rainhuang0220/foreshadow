@@ -329,6 +329,50 @@ def load_entry(conn: sqlite3.Connection, repo_id: int) -> EntryStrategy | None:
     )
 
 
+def ensure_entry(
+    conn: sqlite3.Connection,
+    repo_id: int,
+    *,
+    now: datetime,
+    language: str | None = None,
+    force: bool = False,
+) -> EntryStrategy:
+    """Return cached analysis unless stale or force=True."""
+    now = _aware(now)
+    if not force:
+        cached = load_entry(conn, repo_id)
+        if cached:
+            try:
+                stale = _aware(datetime.fromisoformat(cached.stale_after))
+                if stale > now:
+                    return cached
+            except ValueError:
+                pass
+    feat = features_from_snapshot(conn, repo_id)
+    if language is None:
+        row = conn.execute(
+            "SELECT language FROM repos WHERE id=?", (int(repo_id),)
+        ).fetchone()
+        language = str(row[0]) if row and row[0] else None
+    strategy = analyze_entry(feat, now=now, language=language)
+    persist_entry(conn, int(repo_id), strategy)
+    return strategy
+
+
+def features_from_snapshot(conn: sqlite3.Connection, repo_id: int) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT features_json FROM snapshots
+        WHERE repo_id=? ORDER BY snapshot_date DESC LIMIT 1
+        """,
+        (int(repo_id),),
+    ).fetchone()
+    if not row or not row[0]:
+        return {}
+    data = _load_json(row[0], {})
+    return data if isinstance(data, dict) else {}
+
+
 def _raw_map(features: dict | FeaturesBlob) -> dict[str, Any]:
     if isinstance(features, FeaturesBlob):
         return features.model_dump(mode="json", exclude_none=True)
