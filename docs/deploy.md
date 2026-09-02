@@ -23,7 +23,7 @@ These require a logged-in Board user:
 - reviews
 - mission events
 
-`/api/mission/remote` always returns blocked. Public registration is off (`FORESHADOW_BOARD_ALLOW_REGISTER=0`).
+`/api/mission/remote` always returns blocked. Public registration is off (`FORESHADOW_BOARD_ALLOW_REGISTER=0`). Anonymous `/api/portfolio` is 401; the SPA must keep the public board visible anyway.
 
 Put the GitHub token only in a `0600` environment file. Classic PAT, **no scopes**.
 

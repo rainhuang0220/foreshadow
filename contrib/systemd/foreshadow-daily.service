@@ -8,6 +8,7 @@ Type=oneshot
 User=ubuntu
 Group=ubuntu
 EnvironmentFile=/etc/foreshadow/environment
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/var/lib/foreshadow
 ExecStart=/home/ubuntu/.local/bin/foreshadow run
 Nice=10
