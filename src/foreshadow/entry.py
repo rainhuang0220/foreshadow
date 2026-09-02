@@ -188,6 +188,7 @@ def analyze_entry(
     prs = _collect_prs(raw)
     known_issues = {int(i["number"]) for i in issues if i.get("number") is not None}
     known_prs = {int(p["number"]) for p in prs if p.get("number") is not None}
+    covered = _pr_referenced_issues(prs)
     text = _culture_text(raw)
     policy = _policy(text, issues, now)
     hard = _hard_language(lang)
@@ -200,6 +201,7 @@ def analyze_entry(
     cands = _rank_candidates(
         issues=issues,
         known_issues=known_issues,
+        covered=covered,
         raw=raw,
         policy=policy,
         hard=hard,
@@ -574,6 +576,7 @@ def _collect_prs(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "number": number,
                 "title": str(node.get("title") or ""),
                 "url": node.get("url") or node.get("html_url"),
+                "body": str(node.get("body") or node.get("bodyText") or ""),
             }
         )
     return out
@@ -722,6 +725,7 @@ def _rank_candidates(
     *,
     issues: list[dict[str, Any]],
     known_issues: set[int],
+    covered: set[int] | None = None,
     raw: dict[str, Any],
     policy: ContributionPolicy,
     hard: bool,
@@ -732,8 +736,9 @@ def _rank_candidates(
     fallback_route: str,
     fallback_why: list[str],
 ) -> dict[str, dict[str, Any]]:
-    small = _best_small_issue(issues)
-    bug = _best_bug_issue(issues) or small
+    blocked = covered or set()
+    small = _best_small_issue(issues, covered=blocked)
+    bug = _best_bug_issue(issues, covered=blocked) or small
     docs_issue = _best_docs_issue(issues)
     cands: dict[str, dict[str, Any]] = {}
 
@@ -926,10 +931,28 @@ def _issue_first_cand(
     }
 
 
-def _best_small_issue(issues: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _pr_referenced_issues(prs: list[dict[str, Any]]) -> set[int]:
+    """Issue numbers an open PR already claims. Used to avoid duplicate work."""
+    found: set[int] = set()
+    for pr in prs:
+        blob = " ".join(
+            str(pr.get(key) or "") for key in ("title", "body", "bodyText", "url")
+        )
+        for match in _HASH_ISSUE_RE.finditer(blob):
+            found.add(int(match.group(1)))
+    return found
+
+
+def _best_small_issue(
+    issues: list[dict[str, Any]], *, covered: set[int] | None = None
+) -> dict[str, Any] | None:
+    blocked = covered or set()
     ranked: list[tuple[int, dict[str, Any]]] = []
     for iss in issues:
-        if iss.get("number") is None or not _is_open(iss):
+        number = iss.get("number")
+        if number is None or not _is_open(iss):
+            continue
+        if int(number) in blocked:
             continue
         if _HARD_TITLE_RE.search(str(iss.get("title") or "")):
             continue
@@ -940,9 +963,9 @@ def _best_small_issue(issues: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not (helpish or bug or docs):
             continue
         score = 0
-        if helpish:
-            score += 3
         if bug:
+            score += 4
+        if helpish:
             score += 2
         if iss.get("assignees_n") in (None, 0):
             score += 1
@@ -955,9 +978,15 @@ def _best_small_issue(issues: list[dict[str, Any]]) -> dict[str, Any] | None:
     return ranked[0][1]
 
 
-def _best_bug_issue(issues: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _best_bug_issue(
+    issues: list[dict[str, Any]], *, covered: set[int] | None = None
+) -> dict[str, Any] | None:
+    blocked = covered or set()
     for iss in issues:
-        if iss.get("number") is None or not _is_open(iss):
+        number = iss.get("number")
+        if number is None or not _is_open(iss):
+            continue
+        if int(number) in blocked:
             continue
         labels = {str(x).lower() for x in (iss.get("labels") or [])}
         title = str(iss.get("title") or "")
