@@ -44,3 +44,25 @@ The SDK is the right long-term coding engine (MIT, Docker Agent Server, issue-to
 - New tables: `entry_analyses`, `contribution_jobs`, `contribution_artifacts` (schema 7).
 - Board shows job progress and the package. Approve & Draft PR is visible and disabled.
 - Golden path uses a real shortlisted repo, stops before `git push`.
+
+## REAL POC RESULT (2026-09-03)
+
+Compared by actually running a third-party repo, not by architecture preference.
+
+| | mini-SWE-agent 2.4.6 + Docker | OpenHands adapter |
+|---|---|---|
+| setup | `pip install mini-swe-agent`; image `python:3.12-slim-bookworm` (the `python:3.12-bookworm-slim` tag does not exist) | still unwired; SDK/monorepo too heavy for this PoC |
+| wall time | 178s clone → install → agent → tests → QA on Cyrax321/CONTINUUM #582 | not run |
+| token usage | 15 model calls; cost tracker 0 (DeepSeek not in LiteLLM registry) | n/a |
+| patch quality | 3 files: serve.py + 2 regression tests; QA PASS; 37→39 tests | n/a |
+| test reliability | targeted `test_serve.py` + `test_serve_http.py` stable in 4s | n/a |
+| sandbox | Docker volume mount, no GitHub token, network only for pip install then disconnected | n/a |
+| integration difficulty | v2 tool-calling; DeepSeek Anthropic-compat rejects custom tools, OpenAI-compat works | high |
+
+**v0.3 default coding backend: `mini_swe_agent` when the extra is installed, else `native`.** OpenHands stays an optional stub.
+
+Blockers found and kept:
+
+- Observation-24 Python repos were too heavy, license-unclear, or had overlapping PRs. CONTINUUM is outside the 24; screening is in `docs/real-contribution-poc.md`.
+- Raw Entry Strategy preferred a README star-badge GFI that already had open PR #604. Overlap filter + bug-weighting selected #582.
+- `git` is missing in `python:3.12-slim-bookworm`; the agent still edited with Python/sed. Host `git diff` produces the package.

@@ -11,7 +11,8 @@ Opportunity → Contribution Agent. Not another radar patch.
 - Observation timeline, honest sparklines (no interpolated 7-day curves), clickable pool filters, fact / interpretation / decision layers.
 - Entry Strategy: Plan A + B/C with evidence-backed issue/PR ids, contribution policy, cached `entry_analyses`.
 - `ContributionExecutor` protocol, native Docker/local sandbox, quality gate. OpenHands and mini-SWE-agent are optional adapters, not hard deps.
-- Board: analyze entry, run sandbox golden path, show contribution package. Draft PR button is visible and disabled.
+- Real third-party golden path: Entry Strategy Plan A/B/C → mini-SWE in Docker → tests + QA → contribution package. Stops at `WAITING_USER_APPROVAL`. No GitHub remote write.
+- Board: analyze entry, run sandbox job with live progress, show Files changed / Tests / QA / diff. Draft PR button is visible and disabled.
 - Bounded concurrent HydrateANode (default 6).
 
 ### Unchanged
