@@ -11,18 +11,21 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from foreshadow.auth import (
     AuthError,
     authenticate,
     clear_session_cookie,
     create_session,
+    is_operator,
     lookup_session,
+    operator_logins,
     parse_cookie,
     register_user,
     revoke_session,
     session_cookie,
+    upsert_github_user,
 )
 from foreshadow.board.pipeline import build_board_from_db
 from foreshadow.board.present import present_board
@@ -214,11 +217,66 @@ class BoardHandler(BaseHTTPRequestHandler):
         return origin_port == req_port
 
     def _access(self) -> dict[str, Any]:
+        from foreshadow.oauth_github import oauth_configured
+
         return {
             "public": self.state.public,
             "allow_register": self.state.allow_register,
             "board_url": self.state.public_url or None,
+            "github_oauth": oauth_configured(),
+            "operators_configured": bool(operator_logins()),
         }
+
+    def _secure_cookie(self) -> bool:
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0]
+        proto = proto.strip().lower()
+        peer = self.client_address[0]
+        if peer not in LOOPBACK:
+            return False
+        return proto == "https"
+
+    def _session_cookie(self, token: str) -> str:
+        return session_cookie(token, secure=self._secure_cookie())
+
+    def _clear_cookie(self) -> str:
+        return clear_session_cookie(secure=self._secure_cookie())
+
+    def _public_user_view(self, user: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: user.get(k)
+            for k in (
+                "id",
+                "username",
+                "email",
+                "github_login",
+                "github_id",
+                "operator",
+            )
+        }
+
+    def _require_operator(self) -> dict[str, Any] | None:
+        user = self._user()
+        if user is None:
+            self._send(*_json_bytes({"error": "需要登录"}, 401))
+            return None
+        if not is_operator(user):
+            self._send(*_json_bytes({"error": "需要操作者权限"}, 403))
+            return None
+        return user
+
+    def _redirect(
+        self, location: str, extra: list[tuple[str, str]] | None = None
+    ) -> None:
+        headers = [("Location", location)]
+        if extra:
+            headers.extend(extra)
+        self._send(302, b"", "text/plain", headers)
+
+    def _oauth_callback_url(self) -> str:
+        from foreshadow.oauth_github import callback_url
+
+        host = (self.headers.get("Host") or "").strip()
+        return callback_url(self.state.public_url, host)
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -296,14 +354,37 @@ class BoardHandler(BaseHTTPRequestHandler):
             if user is None:
                 self._send(*_json_bytes({"user": None, **access}, 200))
                 return
-            self._send(
-                *_json_bytes(
-                    {
-                        "user": {k: user[k] for k in ("id", "username", "email")},
-                        **access,
-                    }
+            self._send(*_json_bytes({"user": self._public_user_view(user), **access}))
+            return
+        if path == "/api/auth/github":
+            from foreshadow.oauth_github import oauth_configured, start_login
+
+            if not oauth_configured():
+                self._send(
+                    *_json_bytes(
+                        {
+                            "error": "未配置 GitHub OAuth（需要 FORESHADOW_GITHUB_OAUTH_CLIENT_ID）。"
+                        },
+                        503,
+                    )
                 )
-            )
+                return
+            conn = self.state.db()
+            try:
+                url = start_login(
+                    conn,
+                    redirect_uri=self._oauth_callback_url(),
+                    next_path="/",
+                )
+            except AuthError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 503))
+                return
+            finally:
+                conn.close()
+            self._redirect(url)
+            return
+        if path == "/api/auth/github/callback":
+            self._github_callback(parsed)
             return
         if path == "/api/portfolio":
             user = self._user()
@@ -349,6 +430,39 @@ class BoardHandler(BaseHTTPRequestHandler):
             return
         self._send(*_json_bytes({"error": "not found"}, 404))
 
+    def _github_callback(self, parsed) -> None:
+        from foreshadow.oauth_github import consume_state, fetch_github_identity
+
+        qs = parse_qs(parsed.query)
+        code = (qs.get("code") or [""])[0]
+        state = (qs.get("state") or [""])[0]
+        conn = self.state.db()
+        nxt = "/"
+        token = None
+        try:
+            consumed = consume_state(conn, state)
+            if consumed is None:
+                self._redirect("/?auth_error=state")
+                return
+            nxt = consumed
+            ident = fetch_github_identity(code, self._oauth_callback_url())
+            allowed = operator_logins()
+            login = str(ident["login"]).lower()
+            if allowed and login not in allowed:
+                self._redirect("/?auth_error=not_operator")
+                return
+            user = upsert_github_user(
+                conn, github_id=int(ident["id"]), login=str(ident["login"])
+            )
+            token = create_session(conn, int(user["id"]), auth_method="github")
+        except AuthError:
+            self._redirect("/?auth_error=github")
+            return
+        finally:
+            conn.close()
+        extra = [("Set-Cookie", self._session_cookie(token))] if token else []
+        self._redirect(nxt if nxt.startswith("/") else "/", extra=extra)
+
     def do_POST(self) -> None:
         if not self._origin_ok():
             self._send(*_json_bytes({"error": "origin"}, 403))
@@ -380,8 +494,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                 conn.close()
             self._send_cookie(
                 200,
-                {"user": {k: user[k] for k in ("id", "username", "email")}},
-                session_cookie(token),
+                {"user": self._public_user_view(user)},
+                self._session_cookie(token),
             )
             return
         if path == "/api/login":
@@ -392,6 +506,9 @@ class BoardHandler(BaseHTTPRequestHandler):
                     str(data.get("username") or data.get("identity") or ""),
                     str(data.get("password") or ""),
                 )
+                if not is_operator(user):
+                    self._send(*_json_bytes({"error": "需要操作者权限"}, 403))
+                    return
                 token = create_session(conn, int(user["id"]))
             except AuthError as exc:
                 self._send(*_json_bytes({"error": str(exc)}, 401))
@@ -400,8 +517,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                 conn.close()
             self._send_cookie(
                 200,
-                {"user": {k: user[k] for k in ("id", "username", "email")}},
-                session_cookie(token),
+                {"user": self._public_user_view(user)},
+                self._session_cookie(token),
             )
             return
         if path == "/api/logout":
@@ -411,12 +528,11 @@ class BoardHandler(BaseHTTPRequestHandler):
                 revoke_session(conn, token)
             finally:
                 conn.close()
-            self._send_cookie(200, {"ok": True}, clear_session_cookie())
+            self._send_cookie(200, {"ok": True}, self._clear_cookie())
             return
         if path == "/api/review":
-            user = self._user()
+            user = self._require_operator()
             if user is None:
-                self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
             repo = str(data.get("repo") or data.get("full_name") or "")
             action = str(data.get("action") or "")
@@ -450,9 +566,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             self._send(*_json_bytes({"ok": True, "repo": repo, "action": action}))
             return
         if path == "/api/mission":
-            user = self._user()
+            user = self._require_operator()
             if user is None:
-                self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
             from foreshadow.mission import create_for_user, parse_repo_name
             from foreshadow.paths import resolve_data_dir
@@ -479,9 +594,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             self._send(*_json_bytes({"mission": mission.as_dict()}))
             return
         if path == "/api/mission/setup":
-            user = self._user()
+            user = self._require_operator()
             if user is None:
-                self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
             from foreshadow.mission import setup_local_environment
             from foreshadow.paths import resolve_data_dir
@@ -504,9 +618,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             self._send(*_json_bytes({"mission": out["mission"], "clone": out["clone"]}))
             return
         if path == "/api/mission/event":
-            user = self._user()
+            user = self._require_operator()
             if user is None:
-                self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
             from foreshadow.mission import record_user_event
 

@@ -150,6 +150,8 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert "Clone done" not in html
     assert "pipelineLive" in html
     assert "LOCAL_SETUP" in html
+    assert "/api/auth/github" in html
+    assert "GitHub 登录" in html
     js = html[
         html.index("function renderPipelineStep") : html.index(
             "function progressChecklist"

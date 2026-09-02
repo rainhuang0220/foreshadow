@@ -589,6 +589,7 @@ const state = {
   filter: "all",
   open: null,
   auth: "login",
+  githubOAuth: false,
   error: "",
   actionError: "",
   busy: false,
@@ -664,20 +665,27 @@ function bar(val, max=20) {
 
 function authView() {
   const t = state.auth === "register";
+  const gh = state.githubOAuth
+    ? `<p><a class="primary" href="/api/auth/github" style="display:inline-flex;text-decoration:none;padding:.45rem .9rem">使用 GitHub 登录</a></p>
+       <p class="meta">登录一次即可，会话约 30 天。GitHub 只用来确认你是谁，不会因此获得写仓库权限。</p>`
+    : `<p class="meta">公网 GitHub 登录尚未配置。本地开发仍可用密码。</p>`;
   return `
   <header class="mast">
     <div class="brand">伏笔</div>
     <h1>FORESHADOW · 今日机会</h1>
-    <p class="kicker">先登录，再看今天新出现的仓库、近几日的观察，以及值不值得现在动手。</p>
+    <p class="kicker">匿名可看今日名单。操作者请用 GitHub 登录一次。</p>
   </header>
   <form class="auth" onsubmit="return submitAuth(event)">
-    <h2>${t ? "注册" : "登录"}</h2>
-    ${t ? `<label>用户名</label><input name="username" autocomplete="username" required>` : `<label>用户名或邮箱</label><input name="username" autocomplete="username" required>`}
+    <h2>${t ? "注册" : "操作者登录"}</h2>
+    ${gh}
+    ${t ? `<label>用户名</label><input name="username" autocomplete="username" required>` : `<details><summary class="meta">本地密码登录（备用）</summary>
+    <label>用户名或邮箱</label><input name="username" autocomplete="username">`}
     ${t ? `<label>邮箱</label><input name="email" type="email" autocomplete="email" required>` : ""}
-    <label>密码</label><input name="password" type="password" autocomplete="${t?"new-password":"current-password"}" required minlength="8">
+    <label>密码</label><input name="password" type="password" autocomplete="${t?"new-password":"current-password"}" ${t?"required minlength=8":"minlength=8"}>
+    ${t ? "" : `</details>`}
     <p class="err">${esc(state.error)}</p>
     <div class="rowbtns">
-      <button class="primary" type="submit">${t ? "注册并进入" : "登录"}</button>
+      ${t ? `<button class="primary" type="submit">注册并进入</button>` : `<button type="submit">密码登录</button>`}
       ${state.allowRegister ? `<button type="button" onclick="state.auth='${t?"login":"register"}';state.error='';render()">${t ? "已有账号" : "注册"}</button>` : ""}
     </div>
   </form>`;
@@ -691,10 +699,12 @@ function header(board) {
   return `
   <a class="skip" href="#board-list">跳到今日名单</a>
   <div class="who">
-    <span>${state.user ? esc(state.user.username) : "只读浏览"}</span>
+    <span>${state.user ? esc(state.user.github_login || state.user.username) : "只读浏览"}</span>
     ${state.user
       ? `<button type="button" onclick="logout()">退出</button>`
-      : `<button type="button" onclick="state.showAuth=true;render()">登录</button>`}
+      : (state.githubOAuth
+          ? `<a href="/api/auth/github">GitHub 登录</a>`
+          : `<button type="button" onclick="state.showAuth=true;render()">登录</button>`)}
   </div>
   <header class="mast">
     <div class="brand">伏笔</div>
@@ -1231,6 +1241,13 @@ async function boot() {
     state.user = me.user;
     state.public = !!me.public;
     state.allowRegister = me.allow_register !== false;
+    state.githubOAuth = !!me.github_oauth;
+    const authErr = new URLSearchParams(location.search).get("auth_error");
+    if (authErr === "not_operator") state.error = "这个 GitHub 账号不是授权操作者。";
+    else if (authErr === "state") state.error = "登录已过期，请再点一次 GitHub 登录。";
+    else if (authErr === "github") state.error = "GitHub 登录失败。";
+    if (authErr) history.replaceState({}, "", location.pathname);
+    if (state.user) state.showAuth = false;
   } catch (e) {
     state.user = null;
     state.error = e.message || String(e);
