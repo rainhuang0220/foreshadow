@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.2] - 2026-09-02
+
+Recommended version. Fixes clean installation of v0.2.1.
+
+### Fixed
+
+- Hatch wheel duplicate package-data inclusion (`foreshadow/sql/*.sql` and other resources listed twice), which made `uv tool install git+…@v0.2.1` fail to build.
+- Package metadata vs git tag mismatch (v0.2.1 was tagged while `pyproject.toml` still said 0.2.0).
+- Distribution CI: build wheel, inspect resources, clean-install smoke.
+
+### Unchanged
+
+- Official scoring, Observation policy, remote-write safety.
+
+## [0.2.1] - 2026-09-01
+
+**Superseded by v0.2.2.** Tagged from 0.2.0 metadata. Clean `uv tool install` fails: Hatch adds `foreshadow/sql/001_init.sql` to the wheel twice. Do not install this tag.
+
 ## [0.2.0] - 2026-09-01
 
 Foreshadow Beta. Local daily radar: discover → observe → Board → enter locally. No automatic GitHub writes.
