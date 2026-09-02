@@ -166,7 +166,20 @@ class BoardState:
                 payload = present_board(doc, stances=stances, missions=missions)
                 from foreshadow.observation_view import enrich_board_payload
 
-                return enrich_board_payload(payload, conn)
+                payload = enrich_board_payload(payload, conn)
+                if user_id:
+                    from foreshadow.contribution.jobs import list_jobs
+
+                    jobs = [_job_view(j) for j in list_jobs(conn, int(user_id))]
+                    payload["contribution_jobs"] = jobs
+                    latest: dict[str, dict[str, Any]] = {}
+                    for item in jobs:
+                        latest.setdefault(str(item["full_name"]), item)
+                    for card in payload.get("candidates") or []:
+                        name = str(card.get("full_name") or "")
+                        if name in latest:
+                            card["contribution_job"] = latest[name]
+                return payload
             finally:
                 conn.close()
 
@@ -197,7 +210,50 @@ def _job_view(job: Any) -> dict[str, Any]:
         "log": list(job.log or []),
         "task": dict(job.task or {}),
         "updated_at": job.updated_at,
+        "remote_status": "WAITING_USER_APPROVAL",
     }
+
+
+def _package_from_artifacts(arts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for item in arts:
+        if item.get("kind") != "package" or not item.get("body"):
+            continue
+        try:
+            payload = json.loads(item["body"])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _spawn_contribution(job_id: int) -> None:
+    def worker() -> None:
+        from foreshadow.contribution.executor import (
+            ContributionError,
+            run_contribution,
+        )
+        from foreshadow.contribution.jobs import load_job
+        from foreshadow.db import connect, migrate
+        from foreshadow.paths import resolve_data_dir
+
+        conn = connect(resolve_data_dir() / "foreshadow.sqlite3")
+        try:
+            migrate(conn)
+            job = load_job(conn, job_id)
+            if job is None:
+                return
+            run_contribution(job, conn=conn)
+        except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
+            return
+        except ContributionError:
+            return
+        finally:
+            conn.close()
+
+    threading.Thread(
+        target=worker, name=f"foreshadow-contrib-{job_id}", daemon=True
+    ).start()
 
 
 def _mission_id(data: dict[str, Any]) -> int:
@@ -525,7 +581,21 @@ class BoardHandler(BaseHTTPRequestHandler):
                         self._send(*_json_bytes({"error": "没有这个贡献任务"}, 404))
                         return
                     arts = list_artifacts(conn, int(job.id or 0))
-                    self._send(*_json_bytes({"job": _job_view(job), "artifacts": arts}))
+                    pkg = _package_from_artifacts(arts)
+                    self._send(
+                        *_json_bytes(
+                            {
+                                "job": _job_view(job),
+                                "artifacts": arts,
+                                "package": pkg,
+                                "remote": {
+                                    "blocked": True,
+                                    "status": "WAITING_USER_APPROVAL",
+                                    "action": "draft_pr",
+                                },
+                            }
+                        )
+                    )
                     return
                 jobs = [_job_view(j) for j in list_jobs(conn, int(user["id"]))]
             finally:
@@ -760,12 +830,11 @@ class BoardHandler(BaseHTTPRequestHandler):
             if user is None:
                 return
             from foreshadow.contribution.executor import (
-                ContributionError,
                 ContributionJob,
+                JobStatus,
                 refuse_remote,
-                run_contribution,
             )
-            from foreshadow.contribution.jobs import list_artifacts
+            from foreshadow.contribution.jobs import persist_job
 
             action = str(data.get("action") or "")
             if action in {"push", "pr", "draft_pr", "create_pr"}:
@@ -780,11 +849,7 @@ class BoardHandler(BaseHTTPRequestHandler):
                 row = conn.execute(
                     "SELECT id FROM repos WHERE full_name=?", (name,)
                 ).fetchone()
-                task = (
-                    data.get("task")
-                    if isinstance(data.get("task"), dict)
-                    else {}
-                )
+                task = data.get("task") if isinstance(data.get("task"), dict) else {}
                 if not task:
                     from foreshadow.contribution.task import from_entry
                     from foreshadow.entry import load_entry
@@ -811,38 +876,18 @@ class BoardHandler(BaseHTTPRequestHandler):
                     backend=backend,
                     task=task,
                     why=str(task.get("why") or ""),
+                    status=JobStatus.queued,
                 )
-                artifact = run_contribution(job, conn=conn)
-                arts = list_artifacts(conn, int(job.id or 0))
-            except ContributionError as exc:
-                self._send(*_json_bytes({"error": str(exc)}, 400))
-                return
+                persist_job(conn, job)
             finally:
                 conn.close()
+            if job.id is not None:
+                _spawn_contribution(int(job.id))
             self._send(
                 *_json_bytes(
                     {
                         "job": _job_view(job),
-                        "artifact": {
-                            "diff": artifact.diff,
-                            "why": artifact.why,
-                            "tests_passed": artifact.tests_passed,
-                            "qa_ok": artifact.qa_ok,
-                            "qa_reasons": artifact.qa_reasons,
-                            "title": artifact.title,
-                            "body": artifact.body,
-                            "risk": artifact.risk,
-                            "files": artifact.files,
-                        },
-                        "artifacts": arts,
-                        "package": next(
-                            (
-                                json.loads(a["body"])
-                                for a in arts
-                                if a.get("kind") == "package" and a.get("body")
-                            ),
-                            None,
-                        ),
+                        "accepted": True,
                         "remote": refuse_remote("draft_pr"),
                     }
                 )

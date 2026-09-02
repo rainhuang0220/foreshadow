@@ -66,6 +66,7 @@ def build_package(
         "status": job.status.value if hasattr(job.status, "value") else str(job.status),
         "log": list(job.log or []),
         "remote_writes": 0,
+        "remote_status": "WAITING_USER_APPROVAL",
     }
 
 

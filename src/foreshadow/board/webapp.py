@@ -551,6 +551,23 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
   margin: .55rem 0 .9rem;
 }
 .obs-panel h3 { margin: 0 0 .25rem; font-size: 1rem; }
+.contrib-pack, .entry-strat {
+  border: 1px solid var(--rule);
+  padding: .75rem .85rem;
+  margin: .55rem 0 .9rem;
+}
+.contrib-pack h3, .entry-strat h3 { margin: 0 0 .35rem; font-size: 1rem; }
+ol.job-log { margin: .4rem 0 .7rem; padding-left: 1.2rem; font-size: .86rem; }
+ol.job-log li { margin: .18rem 0; }
+pre.diff {
+  white-space: pre-wrap;
+  background: rgba(28, 25, 23, .04);
+  border: 1px solid var(--rule);
+  padding: .6rem .7rem;
+  max-height: 22rem;
+  overflow: auto;
+  font-size: .78rem;
+}
 @media (min-width: 1440px) {
   .wrap { width: min(1080px, 100%); padding: 2.5rem 2rem 5.5rem; }
 }
@@ -618,6 +635,8 @@ const state = {
   showMissions: false,
   portfolio: null,
   pausedIds: {},
+  contributionJobs: [],
+  openJob: null,
 };
 
 async function api(path, opts={}) {
@@ -684,23 +703,54 @@ function entryView(card) {
     ${state.user ? `<button type="button" class="primary" onclick="startContribution('${esc(card.full_name)}')">开始准备贡献（沙箱，不推送）</button>` : ""}
   </section>`;
 }
+function logLabel(step) {
+  const map = {
+    analyzing_repository: "Analyzing repository",
+    selected_task: "Selected task",
+    preparing_sandbox: "Preparing sandbox",
+    install: "Install",
+    baseline_tests: "Baseline tests",
+    implementing: "Implementing",
+    agent_action: "Agent action",
+    agent_result: "Agent result",
+    agent_finished: "Agent finished",
+    tests: "Tests",
+    iteration_1: "Iteration 1",
+    iteration_1_tests: "Iteration 1 tests",
+    iteration_2: "Iteration 2",
+    iteration_2_tests: "Iteration 2 tests",
+    produce_patch: "Patch",
+    qa: "QA",
+    ready: "Ready",
+    failed: "Failed",
+  };
+  return map[step] || step || "";
+}
 function contributionView(card) {
-  const pack = card.contribution;
-  if (!pack) return "";
-  const job = pack.job || {};
+  const pack = (card && card.contribution) || {};
+  const job = pack.job || (card && card.contribution_job) || {};
+  if (!job.id && !pack.package && !job.status) return "";
   const art = pack.artifact || {};
   const pkg = pack.package || {};
-  const log = (job.log || []).map(x => `<li>${esc(x.step || "")}${x.ok === false ? " ✕" : (x.ok === true ? " ✓" : "")}</li>`).join("");
+  const log = (job.log || []).map(x => {
+    const mark = x.ok === false ? " ✕" : (x.ok === true ? " ✓" : "");
+    const cmd = x.command ? ` <code>${esc(String(x.command).slice(0, 160))}</code>` : "";
+    const extra = x.returncode != null ? ` exit ${esc(x.returncode)}` : "";
+    const out = x.output ? ` <span class="meta">${esc(String(x.output).slice(0, 180))}</span>` : "";
+    return `<li>${esc(logLabel(x.step))}${mark}${cmd}${extra}${out}</li>`;
+  }).join("");
   const filesN = pkg.files_changed_n != null ? pkg.files_changed_n : (art.files||[]).length;
-  const qa = pkg.qa || (art.qa_ok ? "PASS" : "FAIL");
+  const testsOk = pkg.tests && pkg.tests.ok != null ? pkg.tests.ok : art.tests_passed;
+  const qa = pkg.qa || (art.qa_ok ? "PASS" : (job.status === "ready" ? "PASS" : (job.status === "failed" ? "FAIL" : "…")));
+  const diff = pkg.diff || art.diff || "";
   return `<section class="contrib-pack">
     <h3>贡献准备</h3>
-    <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(pkg.task || art.why || "")}</p>
-    <p class="meta">Files changed: ${esc(filesN)} · Tests: ${art.tests_passed ? "passed" : "failed"} · QA: ${esc(qa)}</p>
+    <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(pkg.task || art.why || job.full_name || "")}</p>
+    <p class="meta">Files changed: ${esc(filesN)} · Tests: ${testsOk ? "passed" : (testsOk === false ? "failed" : "…")} · QA: ${esc(qa)}</p>
     ${pkg.pr_title ? `<p><strong>PR title:</strong> ${esc(pkg.pr_title)}</p>` : ""}
     ${log ? `<ol class="job-log">${log}</ol>` : ""}
-    ${art.diff ? `<details open><summary>Diff</summary><pre class="diff">${esc(String(art.diff).slice(0, 12000))}</pre></details>` : ""}
-    <p class="meta">${esc(art.risk || "远程 GitHub 写入仍关闭。")} · remote writes: 0</p>
+    ${diff ? `<details open><summary>Diff</summary><pre class="diff">${esc(String(diff).slice(0, 12000))}</pre></details>` : ""}
+    <p class="meta">${esc(pkg.risk || art.risk || "远程 GitHub 写入仍关闭。")} · remote writes: 0 · ${esc(pkg.remote_status || job.remote_status || "WAITING_USER_APPROVAL")}</p>
     <button type="button" disabled>批准并创建 Draft PR（本版关闭）</button>
   </section>`;
 }
@@ -1066,13 +1116,83 @@ function boardView() {
     <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
   ${state.showMissions ? missionListView() : ""}
+  ${contributionJobsView()}
   <h2 id="board-list">今日候选榜</h2>
   <div class="list">${listView(b)}</div>
   ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
+  ${jobOnlyDrawer()}
   ${missionView(state.mission)}
   `;
 }
 
+function contributionJobsView() {
+  const rows = state.contributionJobs || [];
+  if (!state.user || !rows.length) return "";
+  return `<section class="contrib-pack">
+    <h3>贡献准备任务</h3>
+    ${rows.map(j => `
+      <div class="row">
+        <div>
+          <div class="nm">${esc(j.full_name)}</div>
+          <div class="sub">${esc(j.status_zh || j.status || "")} · ${esc(j.backend || "")}</div>
+        </div>
+        <div>
+          <button type="button" class="primary" onclick="openContributionJob(${Number(j.id)||0})">查看结果</button>
+        </div>
+      </div>`).join("")}
+  </section>`;
+}
+function jobOnlyDrawer() {
+  if (!state.openJob) return "";
+  const job = state.openJob;
+  const card = { full_name: job.full_name, contribution: job.payload || { job }, contribution_job: job };
+  return `<div class="drawer-bg on" onclick="state.openJob=null;render()"></div>
+  <aside class="drawer on" role="dialog" aria-modal="true" aria-label="贡献结果">
+    <button class="close" type="button" onclick="state.openJob=null;render()">关闭</button>
+    <h2>${esc(job.full_name || "")}</h2>
+    ${contributionView(card)}
+  </aside>`;
+}
+async function openContributionJob(id) {
+  try {
+    const data = await api("/api/contribution?id=" + id);
+    state.openJob = Object.assign({}, data.job || {}, { payload: data });
+    applyContribution(data);
+    render();
+  } catch (e) { state.actionError = e.message || String(e); render(); }
+}
+function applyContribution(data) {
+  if (!data || !data.job) return;
+  const jobs = state.contributionJobs || [];
+  const idx = jobs.findIndex(j => Number(j.id) === Number(data.job.id));
+  if (idx >= 0) jobs[idx] = data.job; else jobs.unshift(data.job);
+  state.contributionJobs = jobs;
+  const name = data.job.full_name;
+  const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
+  if (card) {
+    card.contribution = data;
+    card.contribution_job = data.job;
+  }
+  if (state.openJob && Number(state.openJob.id) === Number(data.job.id)) {
+    state.openJob = Object.assign({}, data.job, { payload: data });
+  }
+}
+let contribPoll = null;
+function stopContribPoll() {
+  if (contribPoll) { clearInterval(contribPoll); contribPoll = null; }
+}
+function startContribPoll(id) {
+  stopContribPoll();
+  contribPoll = setInterval(async () => {
+    try {
+      const data = await api("/api/contribution?id=" + id);
+      applyContribution(data);
+      const st = data.job && data.job.status;
+      if (st === "ready" || st === "failed" || st === "refused_remote") stopContribPoll();
+      render();
+    } catch {}
+  }, 1500);
+}
 function missionListView() {
   const rows = state.missions || [];
   if (!rows.length) return `<p class="empty">还没有进入任务。在榜上点「开始进入」。</p>`;
@@ -1363,6 +1483,15 @@ async function loadBoard() {
     if (state.board && state.board.allow_register != null) state.allowRegister = !!state.board.allow_register;
     if (state.user) {
       try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
+      try {
+        const jobs = await api("/api/contribution");
+        state.contributionJobs = jobs.jobs || [];
+        const latest = {};
+        for (const j of state.contributionJobs) latest[j.full_name] = j;
+        for (const c of (state.board.candidates || [])) {
+          if (latest[c.full_name]) c.contribution_job = latest[c.full_name];
+        }
+      } catch { state.contributionJobs = state.contributionJobs || []; }
     } else {
       state.portfolio = null;
     }
@@ -1442,13 +1571,14 @@ async function startContribution(name) {
     const card0 = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     const entry = card0 && card0.entry;
     const rec = entry && entry.recommended;
+    const evidence = (rec && rec.evidence || []).map(e => (e && (e.url || e.id)) || e).filter(Boolean);
     const task = rec ? {
       structured: {
         repository: name,
         task: rec.title || rec.summary_zh || "",
         issue_number: rec.issue_number,
         why: Array.isArray(rec.why) ? rec.why.join("; ") : (rec.why || ""),
-        evidence: rec.evidence || [],
+        evidence,
         relevant_files: rec.files || [],
         forbidden_actions: ["git push", "gh pr create"],
       },
@@ -1459,8 +1589,8 @@ async function startContribution(name) {
       backend: rec ? "mini_swe_agent" : "native",
       task,
     }) });
-    const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
-    if (card) card.contribution = data;
+    applyContribution(data);
+    if (data.job && data.job.id) startContribPoll(data.job.id);
   } catch (e) { state.actionError = e.message || String(e); }
   state.busy = false; render();
 }
