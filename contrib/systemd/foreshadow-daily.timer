@@ -1,0 +1,10 @@
+[Unit]
+Description=Foreshadow Official daily run (UTC)
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+Unit=foreshadow-daily.service
+
+[Install]
+WantedBy=timers.target

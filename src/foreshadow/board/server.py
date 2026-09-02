@@ -1,9 +1,10 @@
-"""Localhost Review Board. Binds loopback only. Never logs secrets."""
+"""Review Board HTTP server. Localhost by default. Never logs secrets."""
 
 from __future__ import annotations
 
 import errno
 import json
+import os
 import re
 import sys
 import threading
@@ -74,6 +75,42 @@ def _resolve_static(url_path: str) -> tuple[Path, str] | None:
     return target, ctype
 
 
+def _env_flag(name: str) -> bool | None:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return None
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def resolve_board_public(settings: Settings | None = None) -> bool:
+    flag = _env_flag("FORESHADOW_BOARD_PUBLIC")
+    if flag is not None:
+        return flag
+    if settings is not None:
+        return bool(settings.board.public)
+    return False
+
+
+def resolve_allow_register(settings: Settings | None = None) -> bool:
+    flag = _env_flag("FORESHADOW_BOARD_ALLOW_REGISTER")
+    if flag is not None:
+        return flag
+    if settings is not None:
+        return bool(settings.board.allow_register)
+    return True
+
+
+def resolve_public_url(settings: Settings | None = None) -> str:
+    env = (os.environ.get("FORESHADOW_BOARD_URL") or "").strip()
+    if env:
+        return env.rstrip("/") + "/"
+    if settings is not None:
+        url = (settings.board.public_url or "").strip()
+        if url:
+            return url.rstrip("/") + "/"
+    return ""
+
+
 class BoardState:
     def __init__(
         self,
@@ -82,11 +119,17 @@ class BoardState:
         preview: bool,
         clock: Clock,
         settings: Settings,
+        public: bool = False,
+        allow_register: bool = True,
+        public_url: str = "",
     ) -> None:
         self.date = date
         self.preview = preview
         self.clock = clock
         self.settings = settings
+        self.public = public
+        self.allow_register = allow_register
+        self.public_url = public_url
         self._lock = threading.Lock()
 
     def db(self):
@@ -152,20 +195,30 @@ class BoardHandler(BaseHTTPRequestHandler):
     def _origin_ok(self) -> bool:
         origin = (self.headers.get("Origin") or "").strip()
         if not origin:
-            return True
+            return not self.state.public
         try:
             parsed = urlparse(origin)
         except ValueError:
             return False
-        host = (parsed.hostname or "").lower()
-        if parsed.scheme != "http" or host not in LOOPBACK:
+        if parsed.scheme not in {"http", "https"}:
             return False
         if parsed.path not in {"", "/"} or parsed.username or parsed.password:
             return False
         req = urlparse("http://" + (self.headers.get("Host") or ""))
+        origin_host = (parsed.hostname or "").lower()
+        req_host = (req.hostname or "").lower()
+        if not origin_host or origin_host != req_host:
+            return False
+        origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
         req_port = req.port or 80
-        origin_port = parsed.port or 80
         return origin_port == req_port
+
+    def _access(self) -> dict[str, Any]:
+        return {
+            "public": self.state.public,
+            "allow_register": self.state.allow_register,
+            "board_url": self.state.public_url or None,
+        }
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -239,12 +292,16 @@ class BoardHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/me":
             user = self._user()
+            access = self._access()
             if user is None:
-                self._send(*_json_bytes({"user": None}, 200))
+                self._send(*_json_bytes({"user": None, **access}, 200))
                 return
             self._send(
                 *_json_bytes(
-                    {"user": {k: user[k] for k in ("id", "username", "email")}}
+                    {
+                        "user": {k: user[k] for k in ("id", "username", "email")},
+                        **access,
+                    }
                 )
             )
             return
@@ -282,10 +339,12 @@ class BoardHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/board":
             user = self._user()
-            if user is None:
+            if user is None and not self.state.public:
                 self._send(*_json_bytes({"error": "需要登录"}, 401))
                 return
-            payload = self.state.board_payload(int(user["id"]))
+            uid = int(user["id"]) if user is not None else None
+            payload = self.state.board_payload(uid)
+            payload.update(self._access())
             self._send(*_json_bytes(payload))
             return
         self._send(*_json_bytes({"error": "not found"}, 404))
@@ -302,6 +361,9 @@ class BoardHandler(BaseHTTPRequestHandler):
             self._send(*_json_bytes({"error": "无效请求"}, 400))
             return
         if path == "/api/register":
+            if self.state.public and not self.state.allow_register:
+                self._send(*_json_bytes({"error": "公网未开放注册"}, 403))
+                return
             conn = self.state.db()
             try:
                 user = register_user(
@@ -497,11 +559,13 @@ class BoardHandler(BaseHTTPRequestHandler):
         self._send(204, b"", "text/plain")
 
 
-def validate_host(host: str) -> str:
+def validate_host(host: str, *, public: bool = False) -> str:
     h = (host or "").strip() or "127.0.0.1"
-    if h not in LOOPBACK:
-        raise ValueError(f"board 只允许绑定本机回环地址，拒绝 {h}")
-    return h
+    if h in LOOPBACK:
+        return h
+    if public and h in {"0.0.0.0", "::"}:
+        return h
+    raise ValueError(f"board 只允许绑定本机回环地址，拒绝 {h}（公网请用 --public）")
 
 
 def _is_addr_in_use(exc: OSError) -> bool:
@@ -532,11 +596,21 @@ def make_server(
     preview: bool,
     clock: Clock | None = None,
     settings: Settings | None = None,
+    public: bool | None = None,
 ) -> ThreadingHTTPServer:
-    host = validate_host(host)
     clock = clock or Clock()
     settings = settings or load_config()
-    state = BoardState(date=date, preview=preview, clock=clock, settings=settings)
+    is_public = resolve_board_public(settings) if public is None else public
+    host = validate_host(host, public=is_public)
+    state = BoardState(
+        date=date,
+        preview=preview,
+        clock=clock,
+        settings=settings,
+        public=is_public,
+        allow_register=resolve_allow_register(settings),
+        public_url=resolve_public_url(settings),
+    )
 
     class BoundHandler(BoardHandler):
         pass
@@ -555,8 +629,11 @@ def serve_board(
     clock: Clock | None = None,
     settings: Settings | None = None,
     open_browser: bool = True,
+    public: bool | None = None,
 ) -> None:
-    host = validate_host(host)
+    settings = settings or load_config()
+    is_public = resolve_board_public(settings) if public is None else public
+    host = validate_host(host, public=is_public)
     try:
         httpd = make_server(
             host=host,
@@ -565,6 +642,7 @@ def serve_board(
             preview=preview,
             clock=clock,
             settings=settings,
+            public=is_public,
         )
     except OSError as exc:
         if _is_addr_in_use(exc):
@@ -573,13 +651,22 @@ def serve_board(
         print(f"无法启动看板：{exc}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
     actual_port = httpd.server_address[1]
-    url = f"http://{host}:{actual_port}/"
-    print(f"Foreshadow Board  {url}", flush=True)
-    print("仅监听本机。Ctrl+C 结束。", flush=True)
+    bind_url = f"http://{host}:{actual_port}/"
+    public_url = resolve_public_url(settings)
+    print(f"Foreshadow Board  {bind_url}", flush=True)
+    if public_url:
+        print(f"public  {public_url}", flush=True)
+    if is_public:
+        print(
+            "公网只读；开始进入 / clone 需要登录。远程 GitHub 写入仍需人工批准。",
+            flush=True,
+        )
+    else:
+        print("仅监听本机。Ctrl+C 结束。", flush=True)
     if open_browser:
         import webbrowser
 
-        webbrowser.open(url)
+        webbrowser.open(public_url or bind_url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

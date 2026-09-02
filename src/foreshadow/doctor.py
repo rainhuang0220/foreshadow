@@ -333,6 +333,11 @@ def format_product_status() -> str:
             "observation: "
             f"panel={obs['panel']} watch={obs['watch']} system={obs['system']}"
         )
+    from foreshadow.board.server import resolve_public_url
+
+    board_url = resolve_public_url()
+    if board_url:
+        lines.append(f"Board: {board_url}")
     return "\n".join(lines) + "\n"
 
 

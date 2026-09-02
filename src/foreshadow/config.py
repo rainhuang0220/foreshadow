@@ -215,6 +215,9 @@ class BoardSettings(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    public: bool = False
+    public_url: str = ""
+    allow_register: bool = True
     shortlist_n: int = 20
     deep_review_n: int = 10
     final_n: int = 5
