@@ -152,6 +152,8 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert "LOCAL_SETUP" in html
     assert "/api/auth/github" in html
     assert "GitHub 登录" in html
+    assert "观察时间线" in html
+    assert "state.filter='observing'" in html
     js = html[
         html.index("function renderPipelineStep") : html.index(
             "function progressChecklist"

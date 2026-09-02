@@ -163,9 +163,12 @@ class BoardState:
                         if not name or str(row.get("status") or "") == "ABANDONED":
                             continue
                         missions.setdefault(name, row)
+                payload = present_board(doc, stances=stances, missions=missions)
+                from foreshadow.observation_view import enrich_board_payload
+
+                return enrich_board_payload(payload, conn)
             finally:
                 conn.close()
-            return present_board(doc, stances=stances, missions=missions)
 
 
 def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
@@ -427,6 +430,24 @@ class BoardHandler(BaseHTTPRequestHandler):
             payload = self.state.board_payload(uid)
             payload.update(self._access())
             self._send(*_json_bytes(payload))
+            return
+        if path == "/api/repo":
+            qs = parse_qs(parsed.query)
+            name = (qs.get("full_name") or qs.get("name") or [""])[0]
+            if not name or "/" not in name:
+                self._send(*_json_bytes({"error": "需要 owner/repo"}, 400))
+                return
+            from foreshadow.observation_view import repo_detail
+
+            conn = self.state.db()
+            try:
+                detail = repo_detail(conn, name)
+            finally:
+                conn.close()
+            if detail is None:
+                self._send(*_json_bytes({"error": "未观察过这个仓库"}, 404))
+                return
+            self._send(*_json_bytes(detail))
             return
         self._send(*_json_bytes({"error": "not found"}, 404))
 

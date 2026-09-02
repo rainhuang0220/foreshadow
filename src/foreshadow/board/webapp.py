@@ -145,6 +145,26 @@ h1, h2, h3, h4 {
   letter-spacing: 0;
   margin-bottom: .08rem;
 }
+.counts button.count {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-dim);
+  font-size: .7rem;
+  letter-spacing: .04em;
+}
+.counts button.count.on b { color: var(--cinnabar); }
+.spark { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em; }
+.interp { color: var(--ink-dim); }
+.timeline ul { list-style: none; padding: 0; margin: .4rem 0 0; }
+.timeline li { display: flex; gap: .7rem; font-size: .86rem; padding: .2rem 0; border-bottom: 1px solid var(--rule); }
+.timeline time { color: var(--ink-dim); min-width: 6.5rem; font-variant-numeric: tabular-nums; }
+.layers { display: grid; gap: .55rem; margin: .8rem 0 1rem; }
+.layers p { margin: 0; font-size: .9rem; }
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -632,6 +652,22 @@ function esc(s) {
   }[c]));
 }
 function n(v) { return v == null ? "N/A" : String(v); }
+function factLine(c) {
+  const stars = c.stars != null ? "★ " + n(c.stars) : "";
+  const d = c.star_delta || {};
+  const delta = d.pending
+    ? ((d.observed_days || 0) + " 日观察 · 7日增长待确认")
+    : (d.delta != null ? ((d.delta >= 0 ? "+" : "") + d.delta + " stars") : "");
+  return [stars, delta, c.observation_zh || ""].filter(Boolean).join(" · ");
+}
+function timelineView(events) {
+  if (!events || !events.length) return "";
+  const items = events.map(e => {
+    const delta = e.payload && e.payload.delta != null ? e.payload.delta : "";
+    return `<li><time>${esc(e.date)}</time> ${esc(e.label_zh || e.kind)}${delta !== "" ? " " + (delta > 0 ? "+" : "") + delta : ""}</li>`;
+  }).join("");
+  return `<section class="timeline"><h3>观察时间线</h3><ul>${items}</ul></section>`;
+}
 function accessLine(card) {
   if (!card || card.access_unknown || card.access_score == null) return "未知";
   const zh = card.access_class_zh || "极低";
@@ -642,11 +678,17 @@ function accessLine(card) {
 function applySortFilter(cands) {
   let rows = cands.slice();
   const f = state.filter;
-  if (f === "top20") rows = rows.slice(0, 20);
-  if (f === "top10") rows = rows.filter(c => c.rank && c.rank <= 10);
-  if (f === "top5") rows = rows.filter(c => c.status === "official" || c.status === "preview_top");
-  if (f === "excluded") rows = rows.filter(c => c.status !== "official" && c.status !== "preview_top");
-  if (f === "high") rows = rows.filter(c => c.detail && c.detail.disagreement.level === "HIGH");
+  if (f === "observing") rows = rows.filter(c => c.pool === "observing" || c.observation_kind === "watching");
+  else if (f === "candidate") rows = rows.filter(c => c.pool === "candidate" || c.status === "preview_top" || c.status === "shortlist" || c.status === "deep");
+  else if (f === "official") rows = rows.filter(c => c.status === "official");
+  else if (f === "entered") rows = rows.filter(c => c.pool === "entered" || c.mission_id);
+  else if (f === "expired") rows = rows.filter(c => c.pool === "expired");
+  else if (f === "rising") rows = rows.filter(c => c.star_delta && c.star_delta.delta > 0 && !c.star_delta.pending);
+  else if (f === "top20") rows = rows.slice(0, 20);
+  else if (f === "top10") rows = rows.filter(c => c.rank && c.rank <= 10);
+  else if (f === "top5") rows = rows.filter(c => c.status === "official" || c.status === "preview_top");
+  else if (f === "excluded") rows = rows.filter(c => c.status !== "official" && c.status !== "preview_top");
+  else if (f === "high") rows = rows.filter(c => c.detail && c.detail.disagreement.level === "HIGH");
   const key = state.sort;
   rows.sort((a,b) => {
     const av = key === "rank" ? (a.rank||999) : -(a[key] ?? -1);
@@ -718,12 +760,11 @@ function header(board) {
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
     ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
     <div class="counts">
-      <div><b>${c.discovered ?? 0}</b>${esc(labels.discovered || "发现项目")}</div>
-      <div><b>${c.shortlisted ?? 0}</b>${esc(labels.shortlisted || "候选项目")}</div>
-      <div><b>${c.deep_reviewed ?? 0}</b>${esc(labels.deep_reviewed || "深度评审")}</div>
-      <div><b>${c.official_top5 ?? 0}</b>${esc(labels.official_top5 || "正式入选")}</div>
-      <div><b>${c.provisional ?? 0}</b>${esc(labels.provisional || "参考候选")}</div>
-      ${c.observing != null ? `<div><b>${c.observing}</b>${esc(labels.observing || "持续观察")}</div>` : ""}
+      <button type="button" class="count ${state.filter==="all"?"on":""}" onclick="state.filter='all';render()"><b>${c.discovered ?? 0}</b>${esc(labels.discovered || "发现项目")}</button>
+      <button type="button" class="count ${state.filter==="observing"?"on":""}" onclick="state.filter='observing';render()"><b>${c.observing ?? 0}</b>${esc(labels.observing || "持续观察")}</button>
+      <button type="button" class="count ${state.filter==="candidate"?"on":""}" onclick="state.filter='candidate';render()"><b>${c.shortlisted ?? 0}</b>${esc(labels.shortlisted || "候选项目")}</button>
+      <button type="button" class="count ${state.filter==="official"?"on":""}" onclick="state.filter='official';render()"><b>${c.official_top5 ?? 0}</b>${esc(labels.official_top5 || "正式入选")}</button>
+      <button type="button" class="count ${state.filter==="rising"?"on":""}" onclick="state.filter='rising';render()"><b>${c.provisional ?? 0}</b>${esc(labels.provisional || "参考候选")}</button>
     </div>
   </header>
   ${runBanner(board)}`;
@@ -825,9 +866,10 @@ function listView(board) {
         <div class="nm">${esc(c.full_name)}${obs}
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
+        ${desc ? `<div class="sub entry">${esc(desc)}</div>` : ""}
         ${why ? `<div class="why">为什么现在：${esc(why)}</div>` : ""}
-        <div class="sub entry">${esc(desc || "—")}</div>
-        <div class="sub scores"><span class="final">综合 ${n(c.final_score)}</span> · 阶段 ${esc(c.s1_stage_zh || c.s1_stage || "—")} · 通道 ${esc(accessLine(c))}${match}</div>
+        <div class="sub scores">${factLine(c)}${c.sparkline ? ` · <span class="spark" aria-hidden="true">${esc(c.sparkline)}</span>` : ""}</div>
+        <div class="sub">${c.interpretation ? `<span class="interp">${esc(c.interpretation)}</span>` : ""} ${c.decision ? ` · 判断：${esc(c.decision)}` : ""} ${c.recommended_action ? ` · ${esc(c.recommended_action)}` : ""}</div>
       </div>
       <div class="act">
         <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
@@ -889,6 +931,12 @@ function drawerView(card) {
       ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
       <p><strong>项目简介：</strong>${esc(intro)}</p>
       <p><strong>为什么现在进入：</strong>${esc(drawerWhyNow(card))}</p>
+      <div class="layers">
+        <p><strong>事实：</strong>${esc(factLine(card) || "—")}${card.sparkline ? " " + esc(card.sparkline) : ""}</p>
+        <p><strong>解读：</strong>${esc(card.interpretation || "—")}</p>
+        <p><strong>判断：</strong>${esc(card.decision || "—")} · ${esc(card.recommended_action || "")}</p>
+      </div>
+      ${timelineView(card.timeline)}
       <p><strong>匹配度：</strong>${esc(match)}</p>
       <p><strong>机会：</strong>${n(card.s1_window)}</p>
       <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
