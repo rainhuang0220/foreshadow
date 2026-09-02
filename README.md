@@ -1,6 +1,6 @@
 # Foreshadow (伏笔)
 
-**Beta 0.2.0** — find what the future has already foreshadowed.
+**Beta 0.2.2** — find what the future has already foreshadowed.
 
 Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. If you choose to enter, it prepares a local clone and a plan, then **stops**. It never opens Issues, comments, or PRs, and it never pushes to someone else’s GitHub.
 
@@ -11,19 +11,18 @@ Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a
 Python **3.12+**. `git` is needed if you will enter a repo.
 
 ```bash
-# uv (recommended)
-uv tool install git+https://github.com/rainhuang0220/foreshadow.git
+# uv (recommended) — pin a release tag
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.2"
 
 # pip
-pip install "git+https://github.com/rainhuang0220/foreshadow.git"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.2"
 ```
 
-Update:
+Update to a newer tag (git installs do **not** follow new tags via `uv tool upgrade`):
 
 ```bash
-uv tool upgrade foreshadow-radar
-# or
-pip install -U "git+https://github.com/rainhuang0220/foreshadow.git"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.2" --reinstall
+# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.2.2"
 ```
 
 ## GitHub token
