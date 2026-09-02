@@ -353,6 +353,7 @@ def _run(
     data_dir: Path,
     wrote_config: str | None,
 ) -> RunResult:
+    print("Discovering and hydrating…", flush=True)
     disc = discover_hydrate_snapshot(conn, client, settings, clock=clock, force=force)
     today = clock.today()
     today_s = today.isoformat()
@@ -385,6 +386,7 @@ def _run(
         (run_id,),
     ).fetchall()
     hydrated_n = sum(1 for row in cand_rows if row[1] in {"ok", "incomplete"})
+    print(f"Hydrated {hydrated_n}. Scoring…", flush=True)
 
     bags = None
     scored_rows: list[tuple[int, ScoredRepo, dict[str, Any]]] = []
@@ -468,6 +470,7 @@ def _run(
     selected_ids = {
         id_by_name[row.full_name] for row in selected if row.full_name in id_by_name
     }
+    print("Updating observations…", flush=True)
     admit_from_scores(
         conn,
         today=today,
@@ -516,6 +519,7 @@ def _run(
         conn, today, selected_names, settings.scoring, scored_rows
     )
     active_items = _active_items(conn)
+    print("Building report…", flush=True)
     report = build_report(
         date=today_s,
         status=status,

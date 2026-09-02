@@ -289,8 +289,13 @@ def board(
     export_html: bool = typer.Option(False, "--export-html"),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
+    public: bool = typer.Option(
+        False,
+        "--public",
+        help="Allow non-loopback bind and anonymous read of the board",
+    ),
 ) -> None:
-    """Open the Daily Board in your browser (localhost only)."""
+    """Open the Daily Board. Default is localhost. --public is for a reverse proxy."""
     from foreshadow.board.pipeline import build_board_from_db, write_board
     from foreshadow.board.server import port_in_use_message, serve_board, validate_host
 
@@ -324,7 +329,7 @@ def board(
             webbrowser.open(html_path.resolve().as_uri())
         return
     try:
-        validate_host(host)
+        validate_host(host, public=public)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from exc
@@ -336,6 +341,7 @@ def board(
             preview=preview,
             clock=clock,
             open_browser=not no_open,
+            public=public,
         )
     except OSError:
         print(port_in_use_message(host, port), file=sys.stderr)

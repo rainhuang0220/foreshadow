@@ -582,6 +582,9 @@ const $ = (sel, el=document) => el.querySelector(sel);
 const state = {
   user: null,
   board: null,
+  public: false,
+  allowRegister: true,
+  showAuth: false,
   sort: "final_score",
   filter: "all",
   open: null,
@@ -671,7 +674,7 @@ function authView() {
     <p class="err">${esc(state.error)}</p>
     <div class="rowbtns">
       <button class="primary" type="submit">${t ? "注册并进入" : "登录"}</button>
-      <button type="button" onclick="state.auth='${t?"login":"register"}';state.error='';render()">${t ? "已有账号" : "注册"}</button>
+      ${state.allowRegister ? `<button type="button" onclick="state.auth='${t?"login":"register"}';state.error='';render()">${t ? "已有账号" : "注册"}</button>` : ""}
     </div>
   </form>`;
 }
@@ -684,8 +687,10 @@ function header(board) {
   return `
   <a class="skip" href="#board-list">跳到今日名单</a>
   <div class="who">
-    <span>${esc(state.user.username)}</span>
-    <button type="button" onclick="logout()">退出</button>
+    <span>${state.user ? esc(state.user.username) : "只读浏览"}</span>
+    ${state.user
+      ? `<button type="button" onclick="logout()">退出</button>`
+      : `<button type="button" onclick="state.showAuth=true;render()">登录</button>`}
   </div>
   <header class="mast">
     <div class="brand">伏笔</div>
@@ -695,7 +700,7 @@ function header(board) {
       <div class="ribbon ${preview ? "" : "official"}">${esc(ribbon)}</div>
     </div>
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
-    <p class="meta">扫描由每日命令或调度运行，本页不会在后台写 GitHub。不要把「停止」当成「进入」。</p>
+    <p class="meta">最近扫描 ${esc((board.run && (board.run.finished_at || board.run.status_zh || board.run.status)) || board.date)} · 本页不会在后台写 GitHub。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}
     ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
     <div class="counts">
@@ -767,6 +772,9 @@ function missionIsOpen(c) {
   return st !== "ABANDONED" && st !== "MERGED";
 }
 function enterOrMissionBtn(c) {
+  if (!state.user) {
+    return `<button type="button" class="ghost" onclick="event.stopPropagation(); state.showAuth=true;render()">登录后进入</button>`;
+  }
   const id = Number(c.mission_id) || 0;
   if (id && (cloneOkFor(c) || missionIsOpen(c))) {
     return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})" aria-label="查看任务 ${esc(c.full_name)}">查看任务</button>`;
@@ -1188,9 +1196,10 @@ function missionView(m) {
 let lastModal = null;
 function render() {
   const root = document.getElementById("app");
-  if (!state.user) root.innerHTML = authView();
-  else if (!state.board && state.error) root.innerHTML = `<p class="empty">今日机会榜打不开。<br/>${esc(state.error)}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> <button type="button" onclick="logout()">退出</button></p>`;
+  if (!state.user && !state.board && !state.public) root.innerHTML = authView();
+  else if (!state.board && state.error) root.innerHTML = `<p class="empty">今日机会榜打不开。<br/>${esc(state.error)}<br/><button type="button" class="primary" onclick="retryBoard()">重试</button> ${state.user ? `<button type="button" onclick="logout()">退出</button>` : `<button type="button" onclick="state.showAuth=true;render()">登录</button>`}</p>`;
   else if (!state.board) root.innerHTML = `<p class="empty">正在打开今日机会榜…</p>`;
+  else if (!state.user && state.showAuth) root.innerHTML = authView() + `<p class="empty"><button type="button" onclick="state.showAuth=false;render()">返回榜单</button></p>`;
   else root.innerHTML = boardView();
   const modal = document.querySelector("aside.drawer.on");
   const key = modal ? ((state.mission && state.mission.id) || state.open || "drawer") : null;
@@ -1216,15 +1225,18 @@ async function boot() {
   try {
     const me = await api("/api/me");
     state.user = me.user;
+    state.public = !!me.public;
+    state.allowRegister = me.allow_register !== false;
   } catch (e) {
     state.user = null;
     state.error = e.message || String(e);
     render();
     return;
   }
-  if (state.user) {
-    try { await loadBoard(); }
-    catch (e) { state.error = e.message || String(e); }
+  try { await loadBoard(); }
+  catch (e) {
+    state.error = e.message || String(e);
+    if (!state.user && !state.public) state.board = null;
   }
   render();
 }
@@ -1232,6 +1244,8 @@ async function boot() {
 async function loadBoard() {
   try {
     state.board = await api("/api/board");
+    if (state.board && state.board.public != null) state.public = !!state.board.public;
+    if (state.board && state.board.allow_register != null) state.allowRegister = !!state.board.allow_register;
     try { state.portfolio = await api("/api/portfolio"); } catch { state.portfolio = null; }
     stampMissionOnCards(state.mission);
     for (const m of (state.missions || [])) stampMissionOnCards(m);

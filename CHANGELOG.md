@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.3] - 2026-09-02
+
+Public Board: anonymous read of the daily list; clone / mission / review still require login. Remote GitHub writes stay refused. `foreshadow run` prints stage progress. Local `foreshadow board` is unchanged.
+
 ## [0.2.2] - 2026-09-02
 
 Recommended version. Fixes clean installation of v0.2.1.

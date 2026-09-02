@@ -1,0 +1,13 @@
+[Unit]
+Description=Foreshadow Official daily run
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/etc/foreshadow/environment
+WorkingDirectory=/var/lib/foreshadow
+ExecStart=/home/ubuntu/.local/bin/foreshadow run
+Nice=10

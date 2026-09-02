@@ -1,0 +1,17 @@
+[Unit]
+Description=Foreshadow Board (loopback; put nginx in front)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/etc/foreshadow/environment
+WorkingDirectory=/var/lib/foreshadow
+ExecStart=/home/ubuntu/.local/bin/foreshadow board --host 127.0.0.1 --port 8765 --no-open --public
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

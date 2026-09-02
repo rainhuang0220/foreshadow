@@ -622,3 +622,69 @@ def test_serve_board_port_occupied(tmp_home, frozen_clock, capsys, monkeypatch):
     assert "8765" in err
     assert "foreshadow board --port" in err
     assert "lsof" in err
+
+
+def test_validate_host_public_allows_wildcard():
+    assert validate_host("0.0.0.0", public=True) == "0.0.0.0"
+    with pytest.raises(ValueError, match="回环"):
+        validate_host("0.0.0.0")
+
+
+def test_public_board_anonymous_read_blocks_mutations(
+    tmp_home, frozen_clock, monkeypatch
+):
+    monkeypatch.setenv("FORESHADOW_BOARD_PUBLIC", "1")
+    monkeypatch.setenv("FORESHADOW_BOARD_ALLOW_REGISTER", "0")
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        me = httpx.get(f"{base}/api/me")
+        assert me.status_code == 200
+        assert me.json()["user"] is None
+        assert me.json()["public"] is True
+        assert me.json()["allow_register"] is False
+        board = httpx.get(f"{base}/api/board")
+        assert board.status_code == 200
+        payload = board.json()
+        assert "candidates" in payload
+        assert payload["public"] is True
+        denied = httpx.post(
+            f"{base}/api/register",
+            json={
+                "username": "mallory",
+                "email": "mallory@example.com",
+                "password": "password1",
+            },
+            headers={"Origin": base},
+        )
+        assert denied.status_code == 403
+        mission = httpx.post(
+            f"{base}/api/mission",
+            json={"full_name": "acme/x"},
+            headers={"Origin": base},
+        )
+        assert mission.status_code == 401
+        setup = httpx.post(
+            f"{base}/api/mission/setup",
+            json={"id": 1},
+            headers={"Origin": base},
+        )
+        assert setup.status_code == 401
+        review = httpx.post(
+            f"{base}/api/review",
+            json={"repo": "acme/x", "action": "watch"},
+            headers={"Origin": base},
+        )
+        assert review.status_code == 401
+        remote = httpx.post(
+            f"{base}/api/mission/remote",
+            json={"action": "create_pr"},
+            headers={"Origin": base},
+        )
+        assert remote.status_code == 200
+        assert remote.json()["blocked"] is True
+        assert remote.json()["ok"] is False
+        html = httpx.get(f"{base}/")
+        assert "登录后进入" in html.text
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
