@@ -177,6 +177,7 @@ class GitHubSettings(BaseModel):
     budget_rest: int = 400
     max_retries: int = 3
     search_spacing_ms: int = 2000
+    hydrate_concurrency: int = 6
 
 
 class LLMSettings(BaseModel):

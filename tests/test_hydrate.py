@@ -8,7 +8,11 @@ from foreshadow.github.rest import fetch_contributors
 from foreshadow.pipeline.discover import discover_hydrate_snapshot
 from foreshadow.pipeline.features import SnapshotPoint, star_velocity
 from foreshadow.pipeline.h_rules import evaluate_h
-from foreshadow.pipeline.hydrate import build_features_blob, unique_committers_30d
+from foreshadow.pipeline.hydrate import (
+    build_features_blob,
+    hydrate_a_many,
+    unique_committers_30d,
+)
 from foreshadow.pipeline.score import score_repo
 from foreshadow.pipeline.snapshot import payload_from_graphql, upsert_snapshot
 
@@ -397,3 +401,14 @@ def test_open_issue_titles_include_number():
     }
     blob = build_features_blob(repo, {"contents": [], "workflows": {}, "community": {}})
     assert blob.open_issue_titles == ["#12 crash on eviction"]
+
+
+def test_hydrate_a_many_keeps_fake_github_serial():
+    memkit = repo_node("R_memkit", "acme/memkit")
+    other = repo_node("R_other", "acme/other")
+    gh = FakeGitHub(nodes={"R_memkit": memkit, "R_other": other})
+    out = hydrate_a_many(gh, ["R_memkit", "R_other"], force=True)
+    assert set(out) == {"R_memkit", "R_other"}
+    body, err = out["R_memkit"]
+    assert err is None
+    assert body is not None
