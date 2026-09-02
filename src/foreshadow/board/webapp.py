@@ -689,14 +689,18 @@ function contributionView(card) {
   if (!pack) return "";
   const job = pack.job || {};
   const art = pack.artifact || {};
-  const log = (job.log || []).map(x => `<li>${esc(x.step || "")}${x.ok === false ? " ✕" : " ✓"}</li>`).join("");
+  const pkg = pack.package || {};
+  const log = (job.log || []).map(x => `<li>${esc(x.step || "")}${x.ok === false ? " ✕" : (x.ok === true ? " ✓" : "")}</li>`).join("");
+  const filesN = pkg.files_changed_n != null ? pkg.files_changed_n : (art.files||[]).length;
+  const qa = pkg.qa || (art.qa_ok ? "PASS" : "FAIL");
   return `<section class="contrib-pack">
     <h3>贡献准备</h3>
-    <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(art.why || "")}</p>
-    <p class="meta">测试 ${art.tests_passed ? "通过" : "未通过"} · 质量门 ${art.qa_ok ? "通过" : "未通过"} · 文件 ${n((art.files||[]).length)}</p>
-    ${log ? `<ul>${log}</ul>` : ""}
-    ${art.diff ? `<pre class="diff">${esc(art.diff.slice(0, 4000))}</pre>` : ""}
-    <p class="meta">${esc(art.risk || "远程 GitHub 写入仍关闭。")}</p>
+    <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(pkg.task || art.why || "")}</p>
+    <p class="meta">Files changed: ${esc(filesN)} · Tests: ${art.tests_passed ? "passed" : "failed"} · QA: ${esc(qa)}</p>
+    ${pkg.pr_title ? `<p><strong>PR title:</strong> ${esc(pkg.pr_title)}</p>` : ""}
+    ${log ? `<ol class="job-log">${log}</ol>` : ""}
+    ${art.diff ? `<details open><summary>Diff</summary><pre class="diff">${esc(String(art.diff).slice(0, 12000))}</pre></details>` : ""}
+    <p class="meta">${esc(art.risk || "远程 GitHub 写入仍关闭。")} · remote writes: 0</p>
     <button type="button" disabled>批准并创建 Draft PR（本版关闭）</button>
   </section>`;
 }
@@ -1435,9 +1439,25 @@ async function analyzeEntry(name) {
 async function startContribution(name) {
   state.busy = true; state.actionError = ""; render();
   try {
+    const card0 = (state.board && state.board.candidates || []).find(c => c.full_name === name);
+    const entry = card0 && card0.entry;
+    const rec = entry && entry.recommended;
+    const task = rec ? {
+      structured: {
+        repository: name,
+        task: rec.title || rec.summary_zh || "",
+        issue_number: rec.issue_number,
+        why: Array.isArray(rec.why) ? rec.why.join("; ") : (rec.why || ""),
+        evidence: rec.evidence || [],
+        relevant_files: rec.files || [],
+        forbidden_actions: ["git push", "gh pr create"],
+      },
+      why: rec.summary_zh || rec.title || "",
+    } : { fixture: "demo_add", why: "no entry analysis; native demo only" };
     const data = await api("/api/contribution", { method: "POST", body: JSON.stringify({
       full_name: name,
-      task: { fixture: "demo_add", why: "沙箱黄金路径：修复加法，不推送 GitHub。" }
+      backend: rec ? "mini_swe_agent" : "native",
+      task,
     }) });
     const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     if (card) card.contribution = data;

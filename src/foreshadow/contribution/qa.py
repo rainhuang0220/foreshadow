@@ -18,15 +18,24 @@ _SPAM_TASK = re.compile(
     re.IGNORECASE,
 )
 _JUNK_PATH_PARTS = (
-    ".github",
     "node_modules",
     "dist",
     "vendor",
     "__pycache__",
     ".venv",
+    ".pytest_cache",
 )
 _LICENSE_NAMES = frozenset(
     {"license", "license.md", "license.txt", "copying", "copying.md"}
+)
+_LOCK_NAMES = frozenset(
+    {"uv.lock", "poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
+)
+_SECRET_RE = re.compile(
+    (r"gh" + r"p_[A-Za-z0-9]{20,}")
+    + "|"
+    + (r"gh" + r"o_[A-Za-z0-9]{20,}")
+    + r"|sk-ant-|AKIA[0-9A-Z]{16}"
 )
 
 
@@ -58,6 +67,11 @@ def gate(job: ContributionJob, artifact: PatchArtifact) -> GateResult:
     junk = _unrelated_junk(files, prompt)
     if junk:
         reasons.append("unrelated junk: " + ", ".join(junk))
+    if _SECRET_RE.search(diff):
+        reasons.append("diff looks like it contains a secret")
+    lock_hits = [f for f in files if _basename(f).lower() in _LOCK_NAMES]
+    if lock_hits and "lock" not in prompt.lower():
+        reasons.append("lockfile churn: " + ", ".join(lock_hits))
 
     return GateResult(ok=not reasons, reasons=tuple(reasons))
 

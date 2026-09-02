@@ -780,14 +780,37 @@ class BoardHandler(BaseHTTPRequestHandler):
                 row = conn.execute(
                     "SELECT id FROM repos WHERE full_name=?", (name,)
                 ).fetchone()
+                task = (
+                    data.get("task")
+                    if isinstance(data.get("task"), dict)
+                    else {}
+                )
+                if not task:
+                    from foreshadow.contribution.task import from_entry
+                    from foreshadow.entry import load_entry
+
+                    entry = None
+                    if row:
+                        stored = load_entry(conn, int(row[0]))
+                        entry = stored.as_dict() if stored else None
+                    structured = from_entry(name, entry)
+                    task = {
+                        "structured": structured.as_dict(),
+                        "why": structured.why,
+                    }
+                backend = str(data.get("backend") or "")
+                if not backend:
+                    if str(task.get("fixture") or "") == "demo_add":
+                        backend = "native"
+                    else:
+                        backend = "mini_swe_agent"
                 job = ContributionJob(
                     user_id=int(user["id"]),
                     repo_id=int(row[0]) if row else None,
                     full_name=name,
-                    backend=str(data.get("backend") or "native"),
-                    task=data.get("task")
-                    if isinstance(data.get("task"), dict)
-                    else {"fixture": "demo_add", "why": "golden path sandbox demo"},
+                    backend=backend,
+                    task=task,
+                    why=str(task.get("why") or ""),
                 )
                 artifact = run_contribution(job, conn=conn)
                 arts = list_artifacts(conn, int(job.id or 0))
@@ -812,6 +835,14 @@ class BoardHandler(BaseHTTPRequestHandler):
                             "files": artifact.files,
                         },
                         "artifacts": arts,
+                        "package": next(
+                            (
+                                json.loads(a["body"])
+                                for a in arts
+                                if a.get("kind") == "package" and a.get("body")
+                            ),
+                            None,
+                        ),
                         "remote": refuse_remote("draft_pr"),
                     }
                 )

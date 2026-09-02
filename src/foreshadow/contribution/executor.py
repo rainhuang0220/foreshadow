@@ -7,6 +7,7 @@ mutations. Remote writes stay blocked.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -185,6 +186,26 @@ def run_contribution(
                 kind="qa",
                 body="\n".join(verdict.reasons) if verdict.reasons else "ok",
                 meta={"ok": verdict.ok, "reasons": list(verdict.reasons)},
+            )
+            from foreshadow.contribution.package import build_package
+            from foreshadow.contribution.task import StructuredTask
+
+            structured = None
+            raw = (job.task or {}).get("structured")
+            if isinstance(raw, dict):
+                try:
+                    structured = StructuredTask.model_validate(raw)
+                except (TypeError, ValueError):
+                    structured = None
+            pkg = build_package(
+                job, artifact, structured=structured, qa_ok=verdict.ok
+            )
+            persist_artifact(
+                conn,
+                job.id,
+                kind="package",
+                body=json.dumps(pkg, ensure_ascii=False, indent=2),
+                meta={"qa": pkg.get("qa"), "files": pkg.get("files_changed")},
             )
         if not verdict.ok:
             job.status = JobStatus.failed
