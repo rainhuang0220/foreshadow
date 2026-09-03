@@ -169,6 +169,11 @@ def test_disabled_draft_pr_string_still_in_app_html():
     assert "批准并创建 Draft PR（本版关闭）" in APP_HTML
 
 
+def test_board_does_not_claim_full_history_pr_acceptance():
+    assert "外部 PR 接受率" not in APP_HTML
+    assert "近期已合并 PR 样本" in APP_HTML
+
+
 def test_project_summary_fallback_when_description_missing():
     _require_intel("project_summary")
     board = _assemble([_row("bare")])

@@ -121,7 +121,7 @@ def compute_openness(feat: FeaturesBlob | Mapping[str, Any] | None) -> OpennessR
         merge_hours=_float(get("pr_ext_merge_hours")),
         ignored_ext_n=None,
         sampled=_int(get("pr_closed_sample_n")) or closed_ext,
-        truncated=True,
+        truncated=_bool(get("pr_sample_truncated"), default=True),
         sample_start=_str(get("pr_sample_start")),
         sample_end=_str(get("pr_sample_end")),
     )
@@ -224,6 +224,19 @@ def _str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _bool(value: Any, default: bool | None = None) -> bool | None:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return default
 
 
 def _bot_login(login: str | None, type_: str | None) -> bool:

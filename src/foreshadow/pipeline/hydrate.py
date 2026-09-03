@@ -1413,7 +1413,10 @@ def build_features_blob(
         pr_newcomer_merged_n=pr_intel["pr_newcomer_merged_n"],
         pr_ext_first_response_hours=pr_intel["pr_ext_first_response_hours"],
         pr_ext_merge_hours=pr_intel["pr_ext_merge_hours"],
-        pr_ignored_ext_n=pr_intel["pr_ignored_ext_n"],
+        pr_ignored_ext_n=None,
+        pr_sample_start=pr_intel["pr_sample_start"],
+        pr_sample_end=pr_intel["pr_sample_end"],
+        pr_sample_truncated=pr_intel["pr_sample_truncated"],
         summary=summary_intel["summary"],
         summary_at=summary_intel["summary_at"],
         summary_source_sha=summary_intel["summary_source_sha"],
@@ -1504,6 +1507,9 @@ def _empty_pr_openness() -> dict[str, Any]:
         "pr_ext_first_response_hours": None,
         "pr_ext_merge_hours": None,
         "pr_ignored_ext_n": None,
+        "pr_sample_start": None,
+        "pr_sample_end": None,
+        "pr_sample_truncated": None,
     }
 
 
@@ -1648,10 +1654,13 @@ def _pr_openness(repo: Mapping[str, Any]) -> dict[str, Any]:
     ext_merged = 0
     newcomer_closed = 0
     newcomer_merged = 0
-    ignored = 0
     resp_hours: list[float] = []
     merge_hours: list[float] = []
+    created_days: list[str] = []
     for merged, pr in combined:
+        created = pr.get("createdAt") or pr.get("created_at")
+        if created:
+            created_days.append(str(created)[:10])
         if _pr_is_bot(pr):
             continue
         assoc = str(pr.get("authorAssociation") or "")
@@ -1664,8 +1673,6 @@ def _pr_openness(repo: Mapping[str, Any]) -> dict[str, Any]:
             hours = _first_maint_response_hours(pr)
             if hours is not None:
                 resp_hours.append(hours)
-            if not merged and _is_ignored_ext_pr(pr):
-                ignored += 1
             if merged:
                 mh = _pr_merge_hours(pr)
                 if mh is not None:
@@ -1682,7 +1689,10 @@ def _pr_openness(repo: Mapping[str, Any]) -> dict[str, Any]:
         "pr_newcomer_merged_n": newcomer_merged,
         "pr_ext_first_response_hours": _median(resp_hours),
         "pr_ext_merge_hours": _median(merge_hours),
-        "pr_ignored_ext_n": ignored,
+        "pr_ignored_ext_n": None,
+        "pr_sample_start": min(created_days) if created_days else None,
+        "pr_sample_end": max(created_days) if created_days else None,
+        "pr_sample_truncated": len(merged_nodes) >= 20 or len(closed_nodes) >= 30,
     }
 
 

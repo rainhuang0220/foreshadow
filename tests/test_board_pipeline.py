@@ -508,6 +508,7 @@ def test_load_scored_from_db_prefers_stored_intel_scores(tmp_path, monkeypatch):
     assert card.entry_fit == pytest.approx(49.6276)
     assert card.openness == pytest.approx(78.4683)
     assert card.eev != pytest.approx(79, abs=1)
+    assert card.eev_confidence == "low"
 
 
 def test_to_dim20_and_lightweight_na_drop():

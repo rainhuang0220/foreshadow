@@ -915,6 +915,8 @@ def _attach_intel_scores(
             intel["eev"] = score
         if intel.get("openness_sample_n") is None and intel.get("sample") is not None:
             intel["openness_sample_n"] = intel.get("sample")
+        if intel.get("eev_confidence") is None:
+            intel["eev_confidence"] = "high" if intel.get("high_confidence") else "low"
         extra["intel"] = intel
 
 

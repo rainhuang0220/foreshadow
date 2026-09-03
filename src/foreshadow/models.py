@@ -94,6 +94,9 @@ class FeaturesBlob(BaseModel):
     pr_ext_first_response_hours: float | None = None
     pr_ext_merge_hours: float | None = None
     pr_ignored_ext_n: int | None = None
+    pr_sample_start: str | None = None
+    pr_sample_end: str | None = None
+    pr_sample_truncated: bool | None = None
     summary: str | None = None
     summary_at: str | None = None
     summary_source_sha: str | None = None

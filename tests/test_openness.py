@@ -103,3 +103,47 @@ def test_feat_n_ext_10_matches_wilson():
     assert result.na is False
     assert result.score is not None
     assert result.score < 100
+
+
+def test_hydrate_pr_sample_window_and_no_ignored_ratio():
+    from foreshadow.pipeline.hydrate import _pr_openness
+
+    def node(n: int, created: str) -> dict:
+        return {
+            "author": {"login": f"u{n}", "type": "User"},
+            "authorAssociation": "NONE",
+            "createdAt": created,
+            "mergedAt": created,
+            "reviews": {"totalCount": 0},
+            "comments": {"nodes": []},
+        }
+
+    merged = [node(i, f"2026-01-{i + 1:02d}T00:00:00Z") for i in range(20)]
+    repo = {"prsMerged": {"nodes": merged}, "prsClosed": {"nodes": []}}
+    out = _pr_openness(repo)
+    assert out["pr_sample_start"] == "2026-01-01"
+    assert out["pr_sample_end"] == "2026-01-20"
+    assert out["pr_sample_truncated"] is True
+    assert out["pr_ignored_ext_n"] is None
+    short = {
+        "prsMerged": {"nodes": merged[:3]},
+        "prsClosed": {"nodes": []},
+    }
+    small = _pr_openness(short)
+    assert small["pr_sample_truncated"] is False
+    assert small["pr_ignored_ext_n"] is None
+
+
+def test_feat_sample_window_passes_into_openness_stats():
+    feat = FeaturesBlob(
+        pr_external_closed_n=10,
+        pr_external_merged_closed_n=8,
+        pr_sample_start="2026-01-01",
+        pr_sample_end="2026-02-01",
+        pr_sample_truncated=True,
+    )
+    result = compute_openness(feat)
+    assert result.stats["sample_start"] == "2026-01-01"
+    assert result.stats["sample_end"] == "2026-02-01"
+    assert result.stats["truncated"] is True
+    assert result.ignored_ext_n is None
