@@ -788,7 +788,9 @@ def present_card(
         ),
         "p0_confidence": card.p0_confidence,
         "p0_confidence_zh": conf_zh,
-        "confidence_zh": _intel_conf_zh(card.eev_confidence) if card.eev is not None else conf_zh,
+        "confidence_zh": _intel_conf_zh(card.eev_confidence)
+        if card.eev is not None
+        else conf_zh,
         "decision": _intel_decision_zh(card.intel_decision) or card.intel_decision,
         "activity_momentum": card.activity_momentum,
         "activity_class": card.activity_class,
