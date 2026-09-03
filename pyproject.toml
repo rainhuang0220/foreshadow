@@ -1,6 +1,6 @@
 [project]
 name = "foreshadow-radar"
-version = "0.3.0"
+version = "0.3.1"
 description = "Find what the future has already foreshadowed."
 readme = "README.md"
 license = { text = "MIT" }
