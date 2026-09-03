@@ -469,7 +469,8 @@ def test_load_scored_from_db_prefers_stored_intel_scores(tmp_path, monkeypatch):
         "completeness, topics_json, features_json) "
         "VALUES (1,'2026-08-24','t',100,1,'[\"rag\"]',"
         '\'{"commits_30d":30,"recent_contributors_7d":4,"releases_30d":1,'
-        '"pr_external_closed_n":14,"pr_external_merged_closed_n":12}\')'
+        '"pr_external_closed_n":14,"pr_external_merged_closed_n":12,'
+        '"creator_repo_n":6,"creator_success_n":4,"owner_login":"acme"}\')'
     )
     conn.execute(
         "INSERT INTO daily_runs(run_date, started_at, status, budget_cap) "
@@ -509,6 +510,9 @@ def test_load_scored_from_db_prefers_stored_intel_scores(tmp_path, monkeypatch):
     assert card.openness == pytest.approx(78.4683)
     assert card.eev != pytest.approx(79, abs=1)
     assert card.eev_confidence == "low"
+    assert card.creator_stats is not None
+    assert card.creator_stats.get("maintained_repos") == 4
+    assert card.creator_stats.get("successful_repos") == 4
 
 
 def test_to_dim20_and_lightweight_na_drop():

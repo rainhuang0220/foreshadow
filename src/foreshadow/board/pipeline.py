@@ -96,6 +96,22 @@ def _creator_blob(feat_map: dict[str, Any] | None) -> dict[str, Any] | None:
     return None
 
 
+def _creator_stats_from_features(feat_map: dict[str, Any]) -> dict[str, Any] | None:
+    past = feat_map.get("creator_repo_n")
+    maintained = feat_map.get("creator_success_n")
+    longest = feat_map.get("creator_longest_maintained_days")
+    if past is None and maintained is None and longest is None:
+        return None
+    return {
+        "login": feat_map.get("owner_login") or feat_map.get("owner"),
+        "past_public_repos": past,
+        "successful_repos": maintained,
+        "maintained_repos": maintained,
+        "longest_maintained_days": longest,
+        "maintained_label_zh": "持续维护项目",
+    }
+
+
 def _features_summary(feat_map: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key in _FEATURE_SUMMARY_KEYS:
@@ -190,7 +206,7 @@ def _intel_payload(extra: dict[str, Any]) -> dict[str, Any]:
         if isinstance(creator, dict):
             payload["creator_stats"] = creator
         elif has_features:
-            blob = _creator_blob(features)
+            blob = _creator_blob(features) or _creator_stats_from_features(features)
             if blob:
                 payload["creator_stats"] = blob
     if not isinstance(payload.get("openness_stats"), dict):
