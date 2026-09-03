@@ -24,7 +24,7 @@ def test_version_and_init_doctor_status(tmp_home, monkeypatch):
     runner = CliRunner()
     ver = runner.invoke(app, ["version"])
     assert ver.exit_code == 0
-    assert "0.3.1" in ver.stdout
+    assert "0.4.0" in ver.stdout
     first = runner.invoke(app, ["init"])
     assert first.exit_code == 0
     assert "Foreshadow is ready" in first.stdout
@@ -70,13 +70,21 @@ def test_schedule_install_writes_plist_without_launchctl(tmp_home, monkeypatch):
     )
     assert Path(spec.home) == tmp_home.resolve() or Path(spec.home) == tmp_home
     plist = Path.home() / "Library" / "LaunchAgents" / "ai.foreshadow.daily.plist"
+    train_plist = Path.home() / "Library" / "LaunchAgents" / "ai.foreshadow.train.plist"
     assert plist.is_file()
+    assert train_plist.is_file()
     body = plist.read_text(encoding="utf-8")
     assert "ai.foreshadow.daily" in body
     assert str(fake_py.resolve()) in body
     assert ".worktrees" not in body
+    train_body = train_plist.read_text(encoding="utf-8")
+    assert "ai.foreshadow.train" in train_body
+    assert "train" in train_body
+    assert "<key>Weekday</key>" in train_body
     status = scheduler_status()
     assert status["installed"] is True
+    assert all("ai.foreshadow.train" not in s for s in status.get("stray") or [])
     notes2 = uninstall(apply=False, backend="launchd")
     assert notes or notes2
     assert not plist.is_file()
+    assert not train_plist.is_file()

@@ -30,7 +30,10 @@ class ScoreBreakdown(BaseModel):
 
 
 class FeaturesBlob(BaseModel):
-    """Frozen in PR 2. Omitted key = missing (NA), never implicit 0."""
+    """Frozen in PR 2. Omitted key = missing (NA), never implicit 0.
+
+    Intel fields (owner/creator/PR-openness/summary/star_trust) are additive optional.
+    """
 
     u_issue: int | None = None
     u_issue_ext: int | None = None
@@ -74,6 +77,30 @@ class FeaturesBlob(BaseModel):
     prs_created_7d: int | None = None
     prs_created_30d: int | None = None
     data_completeness: Literal["high", "medium", "low"] | None = None
+    owner_type: Literal["User", "Organization"] | None = None
+    owner_login: str | None = None
+    owner_created_at: str | None = None
+    creator_repo_n: int | None = None
+    creator_success_n: int | None = None
+    creator_abandoned_n: int | None = None
+    creator_longest_maintained_days: int | None = None
+    creator_recent_push_n: int | None = None
+    creator_release_n: int | None = None
+    pr_closed_sample_n: int | None = None
+    pr_external_closed_n: int | None = None
+    pr_external_merged_closed_n: int | None = None
+    pr_newcomer_closed_n: int | None = None
+    pr_newcomer_merged_n: int | None = None
+    pr_ext_first_response_hours: float | None = None
+    pr_ext_merge_hours: float | None = None
+    pr_ignored_ext_n: int | None = None
+    pr_sample_start: str | None = None
+    pr_sample_end: str | None = None
+    pr_sample_truncated: bool | None = None
+    summary: str | None = None
+    summary_at: str | None = None
+    summary_source_sha: str | None = None
+    star_trust: float | None = None
 
 
 class ReportJSON(BaseModel):

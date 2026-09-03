@@ -47,6 +47,8 @@ CONNECTION_FIELDS = (
     "labels",
     "comments",
     "assignees",
+    "repositories",
+    "releases",
 )
 
 

@@ -58,6 +58,323 @@ def _why_now_text(row: ScoredRepo, extra_meta: dict[str, Any]) -> str | None:
     return None
 
 
+_SUMMARY_MISSING = "信息不足，无法写简介。"
+_FEATURE_SUMMARY_KEYS = (
+    "u_issue",
+    "u_issue_ext",
+    "issue_sample_n",
+    "i_open",
+    "bug_n",
+    "talk_n",
+    "help_n",
+    "unassigned_help",
+    "pr_merged_sample_n",
+    "pr_external_merged_n",
+    "pr_accept_rate",
+    "pr_review_rate",
+    "pr_reviewed_n",
+    "maint_touch",
+    "maint_first_response_hours",
+    "data_completeness",
+    "phase",
+    "commits_7d",
+    "commits_30d",
+    "recent_contributors_7d",
+    "releases_30d",
+    "openness",
+    "openness_sample_n",
+)
+
+
+def _creator_blob(feat_map: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(feat_map, dict):
+        return None
+    for key in ("creator", "owner"):
+        raw = feat_map.get(key)
+        if isinstance(raw, dict) and raw:
+            return raw
+    return None
+
+
+def _creator_stats_from_features(feat_map: dict[str, Any]) -> dict[str, Any] | None:
+    past = feat_map.get("creator_repo_n")
+    maintained = feat_map.get("creator_success_n")
+    longest = feat_map.get("creator_longest_maintained_days")
+    if past is None and maintained is None and longest is None:
+        return None
+    return {
+        "login": feat_map.get("owner_login") or feat_map.get("owner"),
+        "past_public_repos": past,
+        "successful_repos": maintained,
+        "maintained_repos": maintained,
+        "longest_maintained_days": longest,
+        "maintained_label_zh": "持续维护项目",
+    }
+
+
+def _features_summary(feat_map: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in _FEATURE_SUMMARY_KEYS:
+        if key in feat_map:
+            out[key] = feat_map[key]
+    for key in ("owner", "creator", "openness_stats", "creator_stats"):
+        raw = feat_map.get(key)
+        if isinstance(raw, dict) and raw:
+            out[key] = raw
+    return out
+
+
+def _clip_summary(text: str) -> str:
+    lines = [ln.strip() for ln in text.replace("\r\n", "\n").split("\n") if ln.strip()]
+    if not lines:
+        return text.strip()
+    return "\n".join(lines[:4])
+
+
+def _intel_as_dict(result: Any) -> dict[str, Any]:
+    if result is None:
+        return {}
+    if isinstance(result, dict):
+        return result
+    dump = getattr(result, "model_dump", None)
+    if callable(dump):
+        data = dump()
+        return data if isinstance(data, dict) else {}
+    raw = getattr(result, "__dict__", None)
+    if isinstance(raw, dict):
+        return {k: v for k, v in raw.items() if not str(k).startswith("_")}
+    return {}
+
+
+def _try_score_intel(extra: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from foreshadow.pipeline.intel import score_intel
+    except ImportError:
+        return {}
+    snapshot_count = extra.get("snapshot_count")
+    features = extra.get("features")
+    attempts = (
+        lambda: score_intel(extra, snapshot_count=snapshot_count),
+        lambda: score_intel(features or extra, snapshot_count=snapshot_count),
+        lambda: score_intel(extra),
+        lambda: score_intel(features or extra),
+    )
+    for attempt in attempts:
+        try:
+            return _intel_as_dict(attempt())
+        except TypeError:
+            continue
+        except (ValueError, AttributeError, KeyError, RuntimeError):
+            return {}
+    return {}
+
+
+def _dict_or_none(raw: Any) -> dict[str, Any] | None:
+    if isinstance(raw, dict) and raw:
+        return raw
+    return None
+
+
+def _thesis_of(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict) or not raw:
+        return None
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if value is None:
+            continue
+        out[str(key)] = str(value)
+    return out or None
+
+
+def _intel_payload(extra: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    features = extra.get("features")
+    has_features = isinstance(features, dict) and bool(features)
+    stored = extra.get("intel")
+    has_stored = isinstance(stored, dict) and (
+        stored.get("eev") is not None
+        or stored.get("potential") is not None
+        or stored.get("entry_fit") is not None
+    )
+    if not has_stored and (has_features or extra.get("snapshot_count") is not None):
+        payload.update(_try_score_intel(extra))
+    raw = stored
+    if isinstance(raw, dict):
+        payload.update(raw)
+    if not isinstance(payload.get("creator_stats"), dict):
+        creator = extra.get("creator_stats") or extra.get("creator")
+        if isinstance(creator, dict):
+            payload["creator_stats"] = creator
+        elif has_features:
+            blob = _creator_blob(features) or _creator_stats_from_features(features)
+            if blob:
+                payload["creator_stats"] = blob
+    if not isinstance(payload.get("openness_stats"), dict):
+        stats = extra.get("openness_stats")
+        if isinstance(stats, dict):
+            payload["openness_stats"] = stats
+        elif has_features:
+            feat_stats = features.get("openness_stats")
+            if isinstance(feat_stats, dict):
+                payload["openness_stats"] = feat_stats
+    if not isinstance(payload.get("thesis"), dict):
+        thesis = extra.get("thesis")
+        if isinstance(thesis, dict):
+            payload["thesis"] = thesis
+    if payload.get("openness_sample_n") is None:
+        stats = payload.get("openness_stats")
+        if isinstance(stats, dict):
+            payload["openness_sample_n"] = stats.get("sample_n") or stats.get("n")
+        elif has_features:
+            payload["openness_sample_n"] = features.get("openness_sample_n")
+    return payload
+
+
+def _extractive_summary(
+    extra: dict[str, Any],
+    *,
+    description: Any,
+    intro_zh: str | None,
+) -> tuple[str, str | None] | None:
+    try:
+        from foreshadow.pipeline.summary import summarize_project
+    except ImportError:
+        return None
+    try:
+        result = summarize_project(
+            description=_nonempty(description) or _nonempty(intro_zh),
+            readme=_nonempty(extra.get("readme_excerpt")),
+            topics=_topics_of(extra) or None,
+            source_sha=None,
+        )
+    except TypeError:
+        return None
+    text = getattr(result, "text", None)
+    if not _nonempty(text):
+        return None
+    source = getattr(result, "source", None)
+    if text == _SUMMARY_MISSING:
+        return text, None
+    return text, str(source) if source else "description"
+
+
+def _project_summary_fields(
+    extra: dict[str, Any],
+    *,
+    description: Any,
+    intro_zh: str | None,
+    intel_summary: Any = None,
+    intel_source: Any = None,
+) -> tuple[str, str | None]:
+    feat = extra.get("features") if isinstance(extra.get("features"), dict) else {}
+    candidates = (
+        (_nonempty(intel_summary), _nonempty(intel_source) or "intel"),
+        (
+            _nonempty(extra.get("project_summary")),
+            _nonempty(extra.get("summary_source")) or "extra",
+        ),
+        (
+            _nonempty(extra.get("summary")),
+            _nonempty(extra.get("summary_source")) or "extra",
+        ),
+        (_nonempty(feat.get("summary")) if feat else None, "features"),
+    )
+    for text, source in candidates:
+        if text:
+            return _clip_summary(text), source
+    extracted = _extractive_summary(extra, description=description, intro_zh=intro_zh)
+    if extracted is not None:
+        return extracted
+    desc = _nonempty(description) or _nonempty(intro_zh)
+    if desc:
+        return _clip_summary(desc), "description"
+    return _SUMMARY_MISSING, None
+
+
+def _intel_card_kwargs(extra: dict[str, Any]) -> dict[str, Any]:
+    payload = _intel_payload(extra)
+    high = payload.get("intel_high_confidence")
+    if high is None:
+        high = payload.get("high_confidence")
+    decision = payload.get("intel_decision")
+    if decision is None:
+        decision = payload.get("decision")
+    sample = payload.get("openness_sample_n")
+    return {
+        "potential": _float_or_none(payload.get("potential")),
+        "creator_prior": _float_or_none(payload.get("creator_prior")),
+        "openness": _float_or_none(payload.get("openness")),
+        "entry_fit": _float_or_none(payload.get("entry_fit")),
+        "eev": _float_or_none(payload.get("eev")),
+        "potential_confidence": _conf_or_none(payload.get("potential_confidence")),
+        "creator_confidence": _conf_or_none(
+            payload.get("creator_confidence") or payload.get("creator_prior_confidence")
+        ),
+        "openness_confidence": _conf_or_none(payload.get("openness_confidence")),
+        "entry_fit_confidence": _conf_or_none(payload.get("entry_fit_confidence")),
+        "eev_confidence": _conf_or_none(payload.get("eev_confidence")),
+        "openness_sample_n": _int_or_none(sample),
+        "intel_decision": _nonempty(decision),
+        "intel_high_confidence": bool(high),
+        "project_summary": _nonempty(payload.get("project_summary")),
+        "summary_source": _nonempty(payload.get("summary_source")),
+        "creator_stats": _dict_or_none(payload.get("creator_stats")),
+        "openness_stats": _dict_or_none(payload.get("openness_stats")),
+        "thesis": _thesis_of(payload.get("thesis")),
+    }
+
+
+def _eev_rank_key(card: BoardCard) -> tuple:
+    """Homepage order: EEV present first, then value, then chair score."""
+    return (
+        card.eev is None,
+        -(card.eev if card.eev is not None else 0.0),
+        -(card.final_score or -1.0),
+        -(card.trend.score or -1.0),
+        -(card.contributor.score or -1.0),
+        card.full_name,
+    )
+
+
+def _load_observation_events(
+    conn: sqlite3.Connection, repo_ids: list[int]
+) -> dict[int, list[dict[str, Any]]]:
+    if not repo_ids:
+        return {}
+    unique = list(dict.fromkeys(int(rid) for rid in repo_ids))
+    placeholders = ",".join("?" * len(unique))
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT repo_id, occurred_on, kind, payload_json
+            FROM observation_events
+            WHERE repo_id IN ({placeholders})
+            ORDER BY occurred_on ASC, kind ASC
+            """,
+            unique,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[int, list[dict[str, Any]]] = {}
+    for repo_id, occurred_on, kind, payload_json in rows:
+        payload: Any = {}
+        if payload_json:
+            try:
+                parsed = json.loads(payload_json)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = {}
+            if isinstance(parsed, dict):
+                payload = parsed
+        out.setdefault(int(repo_id), []).append(
+            {
+                "occurred_on": occurred_on,
+                "kind": kind,
+                "payload": payload,
+            }
+        )
+    return out
+
+
 def _card(
     row: ScoredRepo,
     *,
@@ -99,6 +416,16 @@ def _card(
         language=extra_meta.get("language"),
         topics=_topics_of(extra_meta),
     )
+    intel_kw = _intel_card_kwargs(extra_meta)
+    summary, summary_source = _project_summary_fields(
+        extra_meta,
+        description=description,
+        intro_zh=intro_zh,
+        intel_summary=intel_kw.get("project_summary"),
+        intel_source=intel_kw.get("summary_source"),
+    )
+    intel_kw["project_summary"] = summary
+    intel_kw["summary_source"] = summary_source
     return BoardCard(
         full_name=row.full_name,
         owner=row.owner,
@@ -177,6 +504,7 @@ def _card(
         vetoed=row.breakdown.vetoed,
         veto_reason=row.breakdown.veto_reason,
         review_commands=_review_commands(row.full_name),
+        **intel_kw,
     )
 
 
@@ -235,14 +563,7 @@ def assemble_board(
         by_name[r.full_name] for r in shortlist_src if r.full_name in by_name
     ]
 
-    ranked = sorted(
-        short_cards,
-        key=lambda c: (
-            -(c.final_score or -1.0),
-            -(c.trend.score or -1.0),
-            -(c.contributor.score or -1.0),
-        ),
-    )
+    ranked = sorted(short_cards, key=_eev_rank_key)
     for i, card in enumerate(ranked, start=1):
         card.list_rank = i
     deep = ranked[: settings.deep_review_n]
@@ -264,15 +585,26 @@ def assemble_board(
     official: list[BoardCard] = []
     by_full = {r.full_name: r for r in scored}
     owners: dict[str, int] = {}
-    for card in deep:
-        src = by_full.get(card.full_name)
-        if src is None:
-            continue
-        if not is_official_eligible(
-            src,
+    card_by_name = {c.full_name: c for c in ranked}
+    v1_pool = [
+        row
+        for row in scored
+        if is_official_eligible(
+            row,
             min_opportunity=scoring.min_opportunity,
             min_explosion=scoring.min_explosion,
-        ):
+        )
+    ]
+    v1_pool.sort(
+        key=lambda row: (
+            -(row.breakdown.opportunity.value or 0.0),
+            -(row.breakdown.explosion.value or 0.0),
+            -(row.breakdown.contribution.value or 0.0),
+        )
+    )
+    for src in v1_pool:
+        card = card_by_name.get(src.full_name)
+        if card is None:
             continue
         if owners.get(card.owner, 0) >= scoring.max_per_owner:
             continue
@@ -430,6 +762,7 @@ def load_scored_from_db(
     bags = load_direction_bags()
     scored: list[ScoredRepo] = []
     extras: dict[str, dict[str, Any]] = {}
+    extras_by_id: dict[int, str] = {}
     snap_days = 1
     for (
         repo_id,
@@ -530,7 +863,13 @@ def load_scored_from_db(
             "strategy_effort": strat.effort,
             "strategy_long_term": strat.long_term,
             "strategy_why": list(strat.why),
+            "features": feat_map,
+            "features_summary": _features_summary(feat_map),
+            "snapshot_count": len(data.get("snapshots") or []),
+            "owner_login": data.get("owner"),
+            "creator": _creator_blob(feat_map),
         }
+        extras_by_id[int(repo_id)] = full_name
         snap_days = max(snap_days, len(data.get("snapshots") or []))
     try:
         day = date_cls.fromisoformat(date)
@@ -544,7 +883,57 @@ def load_scored_from_db(
             day - date_cls.fromisoformat(entry.added_on)
         ).days + 1
         extra["observation_reason"] = entry.reason
+    events_by_repo = _load_observation_events(conn, list(extras_by_id))
+    for repo_id, events in events_by_repo.items():
+        name = extras_by_id.get(repo_id)
+        extra = extras.get(name) if name else None
+        if extra is None:
+            continue
+        extra["observation_events"] = events
+    _attach_intel_scores(conn, date, extras, extras_by_id)
     return scored, extras, snap_days
+
+
+def _attach_intel_scores(
+    conn: sqlite3.Connection,
+    date: str,
+    extras: dict[str, dict[str, Any]],
+    extras_by_id: dict[int, str],
+) -> None:
+    """Homepage chips and EEV sort must match the daily formula row."""
+    if not extras_by_id:
+        return
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.repo_id, s.score, s.components_json
+            FROM intel_scores s
+            JOIN model_runs m ON m.id = s.model_run_id
+            WHERE s.as_of_date=? AND m.name='formula-v1'
+            """,
+            (date,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    for repo_id, score, components_json in rows:
+        name = extras_by_id.get(int(repo_id))
+        extra = extras.get(name) if name else None
+        if extra is None:
+            continue
+        try:
+            data = json.loads(components_json) if components_json else {}
+        except (TypeError, json.JSONDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        intel = dict(data)
+        if intel.get("eev") is None and score is not None:
+            intel["eev"] = score
+        if intel.get("openness_sample_n") is None and intel.get("sample") is not None:
+            intel["openness_sample_n"] = intel.get("sample")
+        if intel.get("eev_confidence") is None:
+            intel["eev_confidence"] = "high" if intel.get("high_confidence") else "low"
+        extra["intel"] = intel
 
 
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]+\)")

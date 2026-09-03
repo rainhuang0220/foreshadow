@@ -557,6 +557,68 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
   margin: .55rem 0 .9rem;
 }
 .contrib-pack h3, .entry-strat h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .4rem .55rem;
+  margin: .42rem 0 .28rem;
+}
+.chip {
+  border: 1px solid var(--rule);
+  padding: .28rem .45rem;
+  font-size: .8rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  background: transparent;
+}
+.chip .k {
+  display: block;
+  color: var(--ink-dim);
+  font-size: .68rem;
+  letter-spacing: .04em;
+  margin-bottom: .04rem;
+}
+.chip b { font-weight: 600; }
+.chip.na, .na { opacity: .7; }
+.footnote {
+  color: var(--ink-faint);
+  font-size: .72rem;
+  margin: .32rem 0 0;
+  letter-spacing: .02em;
+}
+.eev {
+  margin-top: .22rem;
+  font-size: .86rem;
+  font-variant-numeric: tabular-nums;
+}
+.drawer .intro {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: .3rem 0 .5rem;
+  font-size: .92rem;
+  line-height: 1.5;
+}
+.score-block { margin: .55rem 0 .85rem; }
+.fact-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: .2rem 0 .4rem;
+}
+.fact-cells .chip { flex: 0 1 auto; }
+details.audit {
+  margin: 1.1rem 0 0;
+  border-top: 1px solid var(--rule);
+  padding-top: .7rem;
+}
+details.audit > summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin-bottom: .45rem;
+}
 ol.job-log { margin: .4rem 0 .7rem; padding-left: 1.2rem; font-size: .86rem; }
 ol.job-log li { margin: .18rem 0; }
 pre.diff {
@@ -596,6 +658,20 @@ pre.diff {
   .counts { gap: .85rem 1.2rem; }
   .mast-meta { flex-direction: column; align-items: flex-start; }
 }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 2.1rem minmax(0,1fr); padding-right: 0; }
+  .row .act {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    text-align: left;
+    align-items: stretch;
+    align-self: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+  .row .act button { width: 100%; }
+  .chips { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 390px) {
   .wrap { padding: .95rem .8rem 4.5rem; }
   .mast h1 { font-size: 1.22rem; }
@@ -605,7 +681,7 @@ pre.diff {
   .toolbar label, .toolbar button { width: 100%; }
   .who { font-size: .78rem; }
   .row .act { gap: .35rem; }
-  .row .act button { flex: 1 1 auto; }
+  .row .act button { flex: 1 1 auto; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .drawer, .drawer-bg { transition: none; }
@@ -622,7 +698,8 @@ const state = {
   public: false,
   allowRegister: true,
   showAuth: false,
-  sort: "final_score",
+  sort: "eev",
+  _sortInited: false,
   filter: "all",
   open: null,
   auth: "login",
@@ -671,13 +748,127 @@ function esc(s) {
   }[c]));
 }
 function n(v) { return v == null ? "N/A" : String(v); }
-function factLine(c) {
-  const stars = c.stars != null ? "★ " + n(c.stars) : "";
+function intelOf(c) {
+  return (c && c.intel && typeof c.intel === "object") ? c.intel : {};
+}
+function intelScore(c, key) {
+  const intel = intelOf(c);
+  let v = (intel[key] != null && intel[key] !== "") ? intel[key]
+    : (c && c[key] != null && c[key] !== "" ? c[key] : null);
+  if (v != null && typeof v === "object") {
+    if (v.score != null && v.score !== "") return v.score;
+    if (v.value != null && v.value !== "") return v.value;
+    return null;
+  }
+  return v;
+}
+function naText(v) {
+  return v == null || v === "" ? `<span class="na">N/A</span>` : esc(String(v));
+}
+function chipsView(c) {
+  const items = [
+    ["潜力", intelScore(c, "potential")],
+    ["创作者先验", intelScore(c, "creator_prior")],
+    ["开放度", intelScore(c, "openness")],
+    ["进入匹配", intelScore(c, "entry_fit")],
+  ];
+  return `<div class="chips">${items.map(([k, v]) => {
+    const na = v == null || v === "";
+    return `<div class="chip${na ? " na" : ""}"><span class="k">${k}</span><b>${na ? "N/A" : esc(String(v))}</b></div>`;
+  }).join("")}</div>`;
+}
+function eevLine(c) {
+  const eev = intelScore(c, "eev");
+  const dec = c && c.decision ? String(c.decision) : "";
+  const intel = intelOf(c);
+  const openMissing = intelScore(c, "openness") == null;
+  const note = openMissing && eev != null
+    ? " · 开放度未知，排序按保守估计，不是把缺失当高分"
+    : "";
+  return `<div class="eev">预期进入 ${naText(eev)}${dec ? " · " + esc(dec) : ""}${note}</div>`;
+}
+function rankFootnote(c) {
+  const official = c && c.status === "official";
+  return `<p class="footnote">序 ≠ 质量 · ${official ? "正式入选" : "参考排名"}</p>`;
+}
+function sortLabel(key) {
+  return ({
+    eev: "预期进入价值",
+    potential: "潜力",
+    openness: "开放度",
+    entry_fit: "进入匹配",
+    rank: "排名",
+    final_score: "综合评分",
+  })[key] || "所选指标";
+}
+function sortOptions() {
+  const opts = [
+    ["eev", "预期进入价值"],
+    ["potential", "潜力"],
+    ["openness", "开放度"],
+    ["entry_fit", "进入匹配"],
+    ["rank", "排名"],
+    ["final_score", "综合评分"],
+  ];
+  return opts.map(([v, lab]) =>
+    `<option value="${v}" ${state.sort===v?"selected":""}>${lab}</option>`
+  ).join("");
+}
+function opennessSample(c) {
+  const intel = intelOf(c);
+  const stats = (c && c.community_stats)
+    || (intel.community && typeof intel.community === "object" ? intel.community : null)
+    || intel.openness_stats
+    || {};
+  const keys = ["openness_sample_n", "openness_sample", "closed_ext", "sample_n"];
+  let found = null;
+  for (const k of keys) {
+    if (intel[k] != null && intel[k] !== "") { found = intel[k]; break; }
+    if (c && c[k] != null && c[k] !== "") { found = c[k]; break; }
+    if (stats && stats[k] != null && stats[k] !== "") { found = stats[k]; break; }
+  }
+  if (found == null && intel.openness && typeof intel.openness === "object" && intel.openness.sample != null) {
+    found = intel.openness.sample;
+  }
+  const nFound = Number(found);
+  const openScore = (intel.openness != null && typeof intel.openness !== "object") ? intel.openness : (c && c.openness);
+  if ((found == null || nFound === 0) && (openScore == null || openScore === "")) return null;
+  return found;
+}
+function fmtList(v) {
+  if (v == null || v === "") return "";
+  if (Array.isArray(v)) {
+    return v.map(x => {
+      if (x == null) return "";
+      if (typeof x === "string" || typeof x === "number") return String(x);
+      return x.full_name || x.login || x.name || x.title || "";
+    }).filter(Boolean).join("、");
+  }
+  return String(v);
+}
+function factCells(c) {
+  if (!c) return "";
   const d = c.star_delta || {};
-  const delta = d.pending
-    ? ((d.observed_days || 0) + " 日观察 · 7日增长待确认")
-    : (d.delta != null ? ((d.delta >= 0 ? "+" : "") + d.delta + " stars") : "");
-  return [stars, delta, c.observation_zh || ""].filter(Boolean).join(" · ");
+  const cells = [];
+  if (c.stars != null) {
+    cells.push(`<div class="chip"><span class="k">Stars</span><b>${esc(n(c.stars))}</b></div>`);
+  }
+  if (d.pending) {
+    cells.push(`<div class="chip"><span class="k">7日增长</span>${esc((d.observed_days || 0) + " 日观察 · 待确认")}</div>`);
+  } else if (d.delta != null) {
+    cells.push(`<div class="chip"><span class="k">7日增长</span><b>${esc((d.delta >= 0 ? "+" : "") + d.delta)}</b></div>`);
+  }
+  return cells.length ? `<div class="fact-cells">${cells.join("")}</div>` : "";
+}
+function factLine(c) {
+  if (!c) return "";
+  const bits = [];
+  if (c.fact_zh) bits.push(c.fact_zh);
+  else if (c.observation_zh) bits.push(c.observation_zh);
+  const f = c.fact || {};
+  if (f.open_issues != null) bits.push("Issues " + f.open_issues);
+  if (f.open_prs != null) bits.push("PRs " + f.open_prs);
+  return bits.join(" · ");
 }
 function entryView(card) {
   const e = card.entry;
@@ -784,10 +975,18 @@ function applySortFilter(cands) {
   else if (f === "excluded") rows = rows.filter(c => c.status !== "official" && c.status !== "preview_top");
   else if (f === "high") rows = rows.filter(c => c.detail && c.detail.disagreement.level === "HIGH");
   const key = state.sort;
+  const intelKeys = { potential: 1, openness: 1, entry_fit: 1, eev: 1 };
   rows.sort((a,b) => {
-    const av = key === "rank" ? (a.rank||999) : -(a[key] ?? -1);
-    const bv = key === "rank" ? (b.rank||999) : -(b[key] ?? -1);
-    if (av !== bv) return av - bv;
+    if (key === "rank") return (a.rank||999) - (b.rank||999);
+    const av = intelKeys[key] ? intelScore(a, key) : a[key];
+    const bv = intelKeys[key] ? intelScore(b, key) : b[key];
+    const aN = av == null || av === "" || Number.isNaN(Number(av));
+    const bN = bv == null || bv === "" || Number.isNaN(Number(bv));
+    if (aN && bN) return (a.rank||0) - (b.rank||0);
+    if (aN) return 1;
+    if (bN) return -1;
+    const d = Number(bv) - Number(av);
+    if (d) return d;
     return (a.rank||0) - (b.rank||0);
   });
   return rows;
@@ -845,6 +1044,7 @@ function header(board) {
   <header class="mast">
     <div class="brand">伏笔</div>
     <h1>FORESHADOW · 今日机会</h1>
+    ${intelBanner(board)}
     <div class="mast-meta">
       <p class="date">${esc(board.date)}</p>
       <div class="ribbon ${preview ? "" : "official"}">${esc(ribbon)}</div>
@@ -893,6 +1093,13 @@ function runBanner(board) {
   return "";
 }
 
+function intelBanner(board) {
+  const note = board && board.no_high_confidence_note;
+  if (!note) return "";
+  const text = note === true ? "今天没有高置信机会。以下为参考排名。" : String(note);
+  return `<div class="banner" role="status"><p>${esc(text)}</p></div>`;
+}
+
 function emptyState(board) {
   const e = board.empty || {};
   const title = e.title || "今日没有可展示的项目";
@@ -907,7 +1114,7 @@ function emptyState(board) {
 }
 
 function cardIntro(c) {
-  return (c && (c.description || c.intro_zh)) || "";
+  return (c && (c.project_summary || c.description)) || "";
 }
 function cardWhy(c) {
   if (c && c.why_now) return Array.isArray(c.why_now) ? c.why_now.filter(Boolean).join("；") : String(c.why_now);
@@ -947,9 +1154,7 @@ function listView(board) {
     return `<p class="empty">当前筛选下没有项目。把筛选改回「全部」即可看到今日名单。</p>`;
   }
   return rows.map(c => {
-    const why = cardWhy(c);
     const desc = cardIntro(c);
-    const match = (c.match_score != null && c.match_score !== "") ? ` · 匹配度 ${n(c.match_score)}` : "";
     const obs = c.observation_zh
       ? `<span class="obs ${c.observation_kind==="yours"?"yours":"watching"}">${esc(c.observation_zh)}</span>`
       : "";
@@ -961,9 +1166,11 @@ function listView(board) {
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
         ${desc ? `<div class="sub entry">${esc(desc)}</div>` : ""}
-        ${why ? `<div class="why">为什么现在：${esc(why)}</div>` : ""}
-        <div class="sub scores">${factLine(c)}${c.sparkline ? ` · <span class="spark" aria-hidden="true">${esc(c.sparkline)}</span>` : ""}</div>
-        <div class="sub">${c.interpretation ? `<span class="interp">${esc(c.interpretation)}</span>` : ""} ${c.decision ? ` · 判断：${esc(c.decision)}` : ""} ${c.recommended_action ? ` · ${esc(c.recommended_action)}` : ""}</div>
+        ${cardWhy(c) ? `<div class="why">为什么现在：${esc(cardWhy(c))}</div>` : ""}
+        ${chipsView(c)}
+        ${eevLine(c)}
+        <p class="meta">置信度：${esc((c.intel && c.intel.eev_confidence_zh) || c.confidence_zh || "低")}</p>
+        ${rankFootnote(c)}
       </div>
       <div class="act">
         <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
@@ -991,99 +1198,204 @@ function drawerWhyNow(card) {
   return card.headline || "—";
 }
 
+function momentumView(card) {
+  return `<section>
+    <h3>动能</h3>
+    <p class="meta">活跃度：${esc(card.activity_class_zh || "未知")}${card.activity_momentum != null ? "　" + n(card.activity_momentum) + " / 100" : ""}</p>
+    <p class="meta">近 7 天提交：${n(card.commits_7d)} · 近 30 天提交：${n(card.commits_30d)} · 近 30 天 Release：${n(card.releases_30d)} · 近 7 天贡献者：${n(card.recent_contributors_7d)}${card.activity_concentration != null ? " · 活动集中度：" + n(card.activity_concentration) : ""}</p>
+    <p class="meta">${esc(card.activity_note || "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
+  </section>`;
+}
+
+function creatorView(card) {
+  const cr = (card && card.creator) || intelOf(card).creator;
+  if (!cr || typeof cr !== "object") return "";
+  const login = cr.login || cr.name || "";
+  const past = fmtList(cr.past_repos != null ? cr.past_repos : cr.repos);
+  const ok = fmtList(cr.successful != null ? cr.successful : cr.successes);
+  const longest = cr.longest_maintained != null ? cr.longest_maintained
+    : (cr.longest_maintained_days != null ? cr.longest_maintained_days : cr.longest);
+  const lines = [];
+  if (login) lines.push(`<p><strong>登录：</strong>${esc(login)}</p>`);
+  if (past) lines.push(`<p><strong>过往仓库：</strong>${esc(past)}</p>`);
+  const maintained = fmtList(cr.maintained_repos != null ? cr.maintained_repos : (cr.successful_repos != null ? cr.successful_repos : ok));
+  if (maintained) lines.push(`<p><strong>持续维护项目：</strong>${esc(maintained)}</p>`);
+  if (longest != null && longest !== "") lines.push(`<p><strong>最长维护：</strong>${esc(String(longest))}</p>`);
+  if (!lines.length) return "";
+  return `<section><h3>创作者</h3>${lines.join("")}</section>`;
+}
+
+function communityView(card) {
+  const intel = intelOf(card);
+  const stats = (card && card.community_stats)
+    || (intel.community && typeof intel.community === "object" ? intel.community : null)
+    || intel.openness_stats
+    || {};
+  const extra = [];
+  if (stats && typeof stats === "object") {
+    if (stats.maintainers != null) extra.push(`维护者 ${esc(n(stats.maintainers))}`);
+    if (stats.contributors != null) extra.push(`贡献者 ${esc(n(stats.contributors))}`);
+    if (stats.external_pr_n != null) extra.push(`外部 PR ${esc(n(stats.external_pr_n))}`);
+    if (stats.merge_rate != null) extra.push(`合并率 ${esc(n(stats.merge_rate))}`);
+  }
+  const openKnown = intel.openness != null && intel.openness !== "";
+  const openScore = openKnown ? `${n(intel.openness)} / 100` : "N/A";
+  const sample = opennessSample(card);
+  return `<section>
+    <h3>贡献者开放度</h3>
+    <p><strong>开放度：</strong>${openKnown ? esc(openScore) : '<span class="na">N/A</span>'}${openKnown ? "" : ' <span class="na">数据不足，不是 0</span>'}</p>
+    <p class="meta">${esc(stats.window_zh || intel.window_zh || "最近已关闭外部 PR 样本（非全历史）")}：${sample == null ? `<span class="na">N/A</span>` : esc(sample)}</p>
+    <p class="meta">${esc(stats.ttfr_zh || "近期样本首次维护者回复中位数")}：${stats.first_response_hours == null ? `<span class="na">N/A</span>` : esc(stats.first_response_hours)}</p>
+    ${extra.length ? `<p class="meta">${extra.join(" · ")}</p>` : ""}
+    <h3>进入通道</h3>
+    <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
+    <p class="meta">近期已合并 PR 样本外部占比：${n(card.access_merge_rate)} · 近期已合并 PR 样本评审占比：${n(card.access_review_rate)}</p>
+  </section>`;
+}
+
+function thesisView(card) {
+  const t = (card && card.thesis) || intelOf(card).thesis;
+  if (!t || typeof t !== "object") return "";
+  const fields = [
+    ["what", "是什么"],
+    ["why", "为什么"],
+    ["differentiation", "差异化"],
+    ["maturity", "成熟度"],
+    ["competitors", "竞品"],
+    ["risks", "风险"],
+  ];
+  const parts = [];
+  for (const [k, lab] of fields) {
+    let v = t[k];
+    if (v == null || v === "") continue;
+    if (Array.isArray(v)) v = v.filter(Boolean).join("；");
+    if (!String(v).trim()) continue;
+    parts.push(`<p><strong>${lab}：</strong>${esc(String(v))}</p>`);
+  }
+  if (!parts.length) return "";
+  return `<section><h3>项目论点</h3>${parts.join("")}</section>`;
+}
+
 function drawerView(card) {
   if (!card) return "";
-  const d = card.detail;
-  const preview = card.not_official;
+  const d = card.detail || {};
+  const officialCard = card.status === "official";
+  const preview = !officialCard;
   const whyTitle = d.why_selected ? "为什么推荐" : "为什么没有进入 Top 5";
   const why = (d.why_selected || d.why_excluded || []).map(x => `<li>${esc(x)}</li>`).join("");
-  const revs = d.reviewers.map(r => `
+  const revs = (d.reviewers || []).map(r => `
     <section class="rev">
       <h3>${esc(r.label)}：${n(r.score)} / 100</h3>
-      <p class="focus">关注：${r.focus.map(esc).join(" · ")}</p>
-      ${r.dimensions.map(x => `<div class="lab"><span>${esc(x.label)}</span><span>${x.na?"N/A":x.value+"/20"}</span></div>${bar(x.na?null:x.value)}`).join("")}
+      <p class="focus">关注：${(r.focus||[]).map(esc).join(" · ")}</p>
+      ${(r.dimensions||[]).map(x => `<div class="lab"><span>${esc(x.label)}</span><span>${x.na?"N/A":x.value+"/20"}</span></div>${bar(x.na?null:x.value)}`).join("")}
     </section>`).join("");
-  const dg = d.disagreement;
-  const ch = d.chair;
-  const actions = d.review_actions.map(a => `
+  const dg = d.disagreement || {};
+  const ch = d.chair || {};
+  const actions = (d.review_actions || []).map(a => `
     <label><input type="radio" name="decision" value="${esc(a.id)}"
       ${card.my_action===a.id?"checked":""}
       onchange="saveReview('${esc(card.full_name)}','${esc(a.id)}')"> ${esc(a.label)}</label>`).join("");
-  const intro = cardIntro(card) || "—";
-  const match = card.match_score != null && card.match_score !== "" ? n(card.match_score) : "N/A";
+  const intro = cardIntro(card);
+  const kindLine = officialCard
+    ? (card.rank_footnote_zh || "序 ≠ 质量 · 正式入选")
+    : (card.rank_footnote_zh || "参考排名 · 不是正式入选");
+  const intel = intelOf(card);
+  const conf = card.confidence_zh || intel.confidence_zh || intel.confidence || card.p0_confidence_zh || "";
+  const sample = opennessSample(card);
+  const spark = card.sparkline
+    ? ` <span class="spark" aria-hidden="true">${esc(card.sparkline)}</span>`
+    : "";
   return `
   <div class="drawer-bg ${state.open?"on":""}" onclick="closeCard()"></div>
   <aside class="drawer ${state.open?"on":""}" role="dialog" aria-modal="true" aria-label="项目详情">
     <button class="close" type="button" onclick="closeCard()">关闭</button>
-    <p class="meta">${esc(card.rank_kind_zh)} · ${preview ? "不是正式入选" : "正式排名"}</p>
+    <p class="meta">${esc(kindLine)}</p>
     <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
     ${card.observation_zh ? `<section class="obs-panel">
       <h3>${esc(card.observation_zh)}</h3>
       <p class="meta">${esc(card.observation_hint || (card.observation_kind==="yours" ? "这是你标记关注的仓库。" : "伏笔正在连续看这个仓库近几日的变化。"))}</p>
     </section>` : ""}
-    <section class="enter-plan">
-      ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
-      <p><strong>项目简介：</strong>${esc(intro)}</p>
-      <p><strong>为什么现在进入：</strong>${esc(drawerWhyNow(card))}</p>
-      <div class="layers">
-        <p><strong>事实：</strong>${esc(factLine(card) || "—")}${card.sparkline ? " " + esc(card.sparkline) : ""}</p>
-        <p><strong>解读：</strong>${esc(card.interpretation || "—")}</p>
-        <p><strong>判断：</strong>${esc(card.decision || "—")} · ${esc(card.recommended_action || "")}</p>
-      </div>
-      ${timelineView(card.timeline)}
-      ${entryView(card)}
-      ${contributionView(card)}
-      <p><strong>匹配度：</strong>${esc(match)}</p>
-      <p><strong>机会：</strong>${n(card.s1_window)}</p>
-      <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
-      <p><strong>推荐入口：</strong>${esc(card.strategy_summary_zh || "先阅读再决定")}
+    ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
+    <section>
+      <h3>项目简介</h3>
+      <p class="intro">${esc(intro || "信息不足，无法写简介。")}</p>
+      <a class="gh-mini" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">打开 GitHub ↗</a>
+    </section>
+    <section class="score-block">
+      <h3>评分</h3>
+      ${chipsView(card)}
+      ${eevLine(card)}
+      ${card.decision ? `<p>判断：${esc(card.decision)}</p>` : ""}
+      ${conf ? `<p class="meta">置信度：${esc(conf)}</p>` : `<p class="meta">置信度：<span class="na">N/A</span></p>`}
+      <p class="meta">最近已关闭外部 PR 样本：${sample == null ? `<span class="na">N/A</span>` : esc(sample)}</p>
+    </section>
+    <section>
+      <h3>为什么现在：</h3>
+      <p class="now">${esc(drawerWhyNow(card))}</p>
+    </section>
+    <div class="layers">
+      ${factCells(card)}
+      <p><strong>事实：</strong>${esc(factLine(card) || "—")}${spark}</p>
+      <p><strong>解读：</strong>${esc(card.interpretation || "—")}</p>
+      <p><strong>判断：</strong>${esc(card.decision || "—")} · ${esc(card.recommended_action || "")}</p>
+    </div>
+    ${momentumView(card)}
+    ${creatorView(card)}
+    ${communityView(card)}
+    ${thesisView(card)}
+    ${timelineView(card.timeline)}
+    <section>
+      <h3>推荐入口</h3>
+      <p><strong>${esc(card.strategy_summary_zh || "先阅读再决定")}</strong>
         （${esc(card.strategy_path || "")}） · 预计 ${esc(card.strategy_effort || "—")} · 难度 ${esc(card.strategy_difficulty || "—")}</p>
       <ol class="plan">${(card.strategy_steps_zh||[]).map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("")}</ol>
-      <p>
-        ${enterOrMissionBtn(card)}
-        <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
-      </p>
-      <p class="meta">「开始进入」只在本机准备项目，不会向 GitHub 发内容。「记入观察清单」不会创建任务，只记个人立场。</p>
     </section>
-    <p><strong>最终综合评分：</strong>${n(card.final_score)}
-      <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh)}</span></p>
-    <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.confidence_zh || "低")}（完整度低不是低分）</p>
-    <p class="meta">活跃度：${esc(card.activity_class_zh || "未知")}${card.activity_momentum != null ? "　" + n(card.activity_momentum) + " / 100" : ""}</p>
-    <p class="meta">近 7 天提交：${n(card.commits_7d)} · 近 30 天提交：${n(card.commits_30d)} · 近 30 天 Release：${n(card.releases_30d)} · 近 7 天贡献者：${n(card.recent_contributors_7d)}${card.activity_concentration != null ? " · 活动集中度：" + n(card.activity_concentration) : ""}</p>
-    <p class="meta">${esc(card.activity_note || "活跃度反映开发与社区活动，不代表 Star 增长。")}</p>
-    <p class="meta">阶段：${esc(card.s1_stage_zh || card.s1_stage || "—")} · ${esc(card.s1_pool_zh || "")}</p>
-    <p class="meta">早期程度：${n(card.s1_earlyness)} · 证据强度：${n(card.s1_evidence)} · 机会窗口：${n(card.s1_window)}</p>
-    <p class="meta">早期加分：${esc((card.s1_earlyness_plus || []).join("；") || "—")}</p>
-    <p class="meta">早期扣分：${esc((card.s1_earlyness_minus || []).join("；") || "—")}</p>
-    <p class="meta">证据加分：${esc((card.s1_evidence_plus || []).join("；") || "—")}</p>
-    <p class="meta">证据不足：${esc((card.s1_evidence_minus || []).join("；") || "—")}</p>
-    <p class="meta">Star 只是规模观察，不是区间门槛，也不是否决。</p>
-    <p class="meta">进入通道：${esc(accessLine(card))}（不是贡献者缺口）</p>
-    <p class="meta">外部 PR 接受率：${n(card.access_merge_rate)} · 外部 PR 评审率：${n(card.access_review_rate)}</p>
-    <p class="meta">
-      Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
-      · Open Issues ${n(card.open_issues)}<br/>
-      最近活动 ${n(card.last_pushed_at)} · 最近 Release ${n(card.last_release)}
-      · 首次发现 ${n(card.first_seen_at)}
+    ${entryView(card)}
+    ${contributionView(card)}
+    <p>
+      ${enterOrMissionBtn(card)}
+      <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
     </p>
-    <p class="meta">长期参与潜力：${card.strategy_long_term && card.strategy_long_term.score != null ? n(card.strategy_long_term.score) + " / 100" : "N/A"}（不是承诺）</p>
-    <h3>五维评分</h3>
-    ${d.dimensions.map(dimBlock).join("")}
-    <h3>三个独立评审视角</h3>
-    ${revs}
-    <h3>评审分歧：${esc(dg.level_zh)}</h3>
-    <p>趋势 ${n(dg.trend)} · 社区 ${n(dg.community)} · 贡献 ${n(dg.contributor)}</p>
-    <p>${esc(dg.explain)}</p>
-    <h3>最终综合评分：${n(card.final_score)}</h3>
-    <p>趋势评审 ${n(card.trend)} · 社区评审 ${n(card.community)} · 贡献评审 ${n(card.contributor)} · 主审 ${n(card.chair)}</p>
-    <p class="meta">${esc(ch.weight_note)}</p>
-    <p><strong>综合判断：</strong>${esc(ch.judgment)}</p>
-    <h3>${esc(whyTitle)}</h3>
-    <ul>${why}</ul>
-    <p><strong>风险：</strong>${esc(ch.main_risk)}</p>
+    <p class="meta">「开始进入」只在本机准备项目，不会向 GitHub 发内容。「记入观察清单」不会创建任务，只记个人立场。</p>
     <h3>我的决定</h3>
     <p class="meta">下面只记个人立场。「记入观察清单」不会创建任务。要进入请点「开始进入」。</p>
     <div class="decide">${actions}</div>
+    <details class="audit">
+      <summary>评分依据</summary>
+      <p><strong>最终综合评分：</strong>${n(card.final_score)}
+        <span class="pill ${preview?"":"ok"}">${esc(card.rank_kind_zh || kindLine)}</span></p>
+      <p class="meta">数据完整度：${esc(card.data_completeness_zh || "低")} · 置信度：${esc(card.confidence_zh || "低")}（完整度低不是低分）</p>
+      <p class="meta">阶段：${esc(card.s1_stage_zh || card.s1_stage || "—")} · ${esc(card.s1_pool_zh || "")}</p>
+      <p class="meta">早期程度：${n(card.s1_earlyness)} · 证据强度：${n(card.s1_evidence)} · 机会窗口：${n(card.s1_window)}</p>
+      <p class="meta">早期加分：${esc((card.s1_earlyness_plus || []).join("；") || "—")}</p>
+      <p class="meta">早期扣分：${esc((card.s1_earlyness_minus || []).join("；") || "—")}</p>
+      <p class="meta">证据加分：${esc((card.s1_evidence_plus || []).join("；") || "—")}</p>
+      <p class="meta">证据不足：${esc((card.s1_evidence_minus || []).join("；") || "—")}</p>
+      <p class="meta">Star 只是规模观察，不是区间门槛，也不是否决。</p>
+      <p class="meta">进入通道：${esc(accessLine(card))}（不是贡献者缺口）</p>
+      <p class="meta">近期已合并 PR 样本外部占比：${n(card.access_merge_rate)} · 近期已合并 PR 样本评审占比：${n(card.access_review_rate)}</p>
+      <p class="meta">
+        Stars ${n(card.stars)} · Forks ${n(card.forks)} · 贡献者 ${n(card.contributors)}
+        · Open Issues ${n(card.open_issues)}<br/>
+        最近活动 ${n(card.last_pushed_at)} · 最近 Release ${n(card.last_release)}
+        · 首次发现 ${n(card.first_seen_at)}
+      </p>
+      <p class="meta">长期参与潜力：${card.strategy_long_term && card.strategy_long_term.score != null ? n(card.strategy_long_term.score) + " / 100" : "N/A"}（不是承诺）</p>
+      <h3>五维评分</h3>
+      ${(d.dimensions || []).map(dimBlock).join("")}
+      <h3>三个独立评审视角</h3>
+      ${revs}
+      <h3>评审分歧：${esc(dg.level_zh || "—")}</h3>
+      <p>趋势 ${n(dg.trend)} · 社区 ${n(dg.community)} · 贡献 ${n(dg.contributor)}</p>
+      <p>${esc(dg.explain || "")}</p>
+      <h3>最终综合评分：${n(card.final_score)}</h3>
+      <p>趋势评审 ${n(card.trend)} · 社区评审 ${n(card.community)} · 贡献评审 ${n(card.contributor)} · 主审 ${n(card.chair)}</p>
+      <p class="meta">${esc(ch.weight_note || "")}</p>
+      <p><strong>综合判断：</strong>${esc(ch.judgment || "")}</p>
+      <h3>${esc(whyTitle)}</h3>
+      <ul>${why}</ul>
+      <p><strong>风险：</strong>${esc(ch.main_risk || "")}</p>
+    </details>
   </aside>`;
 }
 
@@ -1094,11 +1406,7 @@ function boardView() {
   <div class="toolbar">
     <label>排序
       <select onchange="state.sort=this.value;render()">
-        <option value="final_score" ${state.sort==="final_score"?"selected":""}>综合评分</option>
-        <option value="trend" ${state.sort==="trend"?"selected":""}>趋势评分</option>
-        <option value="community" ${state.sort==="community"?"selected":""}>社区评分</option>
-        <option value="contributor" ${state.sort==="contributor"?"selected":""}>贡献评分</option>
-        <option value="rank" ${state.sort==="rank"?"selected":""}>排名</option>
+        ${sortOptions()}
       </select>
     </label>
     <label>筛选
@@ -1111,7 +1419,7 @@ function boardView() {
         <option value="high" ${state.filter==="high"?"selected":""}>高分歧</option>
       </select>
     </label>
-    <span class="date">当前按${state.sort==="final_score"?"综合评分":"所选指标"}排序</span>
+    <span class="date">当前按${sortLabel(state.sort)}排序</span>
     <button type="button" disabled title="扫描由每日 foreshadow run 或调度执行，本页不在后台扫 GitHub">暂停扫描</button>
     <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
@@ -1224,10 +1532,6 @@ function missionPaused(m) {
   if (m.paused || m.status === "PAUSED") return true;
   const id = Number(m.id);
   return !!(state.pausedIds && (state.pausedIds[m.id] || (Number.isFinite(id) && state.pausedIds[id])));
-}
-
-function factLine(ok, label, detail) {
-  return `${ok ? "✓" : "○"} ${label}：${esc(detail)}`;
 }
 
 const PIPELINE_LABELS_ZH = {
@@ -1479,6 +1783,10 @@ async function boot() {
 async function loadBoard() {
   try {
     state.board = await api("/api/board");
+    if (!state._sortInited) {
+      state.sort = (state.board && state.board.sort_default) || "eev";
+      state._sortInited = true;
+    }
     if (state.board && state.board.public != null) state.public = !!state.board.public;
     if (state.board && state.board.allow_register != null) state.allowRegister = !!state.board.allow_register;
     if (state.user) {

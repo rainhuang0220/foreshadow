@@ -1,0 +1,10 @@
+[Unit]
+Description=Foreshadow weekly train (UTC, after the daily run)
+
+[Timer]
+OnCalendar=Sun *-*-* 01:00:00 UTC
+Persistent=true
+Unit=foreshadow-train.service
+
+[Install]
+WantedBy=timers.target

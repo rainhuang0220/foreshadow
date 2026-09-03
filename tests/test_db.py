@@ -70,6 +70,18 @@ def test_sql_packaged():
     assert "CREATE TABLE observation_events" in v7
     assert "CREATE TABLE entry_analyses" in v7
     assert "CREATE TABLE contribution_jobs" in v7
+    v8 = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/008_project_intelligence.sql")
+        .read_text()
+    )
+    assert "CREATE TABLE model_runs" in v8
+    assert "CREATE TABLE intel_scores" in v8
+    assert "CREATE TABLE outcome_labels" in v8
+    assert "formula-v1" in v8
+    assert "DROP TABLE" not in v8
+    assert "ALTER TABLE" not in v8
+    assert "CREATE VIEW" not in v8
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):
@@ -89,6 +101,22 @@ def test_migrate_adds_users_and_backfills_reviews(tmp_home):
     }
     assert "score_compare" in tables
     assert "observations" in tables
+    assert "model_runs" in tables
+    assert "intel_scores" in tables
+    assert "outcome_labels" in tables
+    intel_cols = [r[1] for r in conn.execute("PRAGMA table_info(intel_scores)")]
+    assert not any("outcome" in c.lower() or "label" in c.lower() for c in intel_cols)
+    join_views = conn.execute(
+        """
+        SELECT name FROM sqlite_master
+        WHERE type='view'
+          AND sql LIKE '%intel_scores%'
+          AND sql LIKE '%outcome_labels%'
+        """
+    ).fetchall()
+    assert join_views == []
+    formula = conn.execute("SELECT name, status FROM model_runs WHERE id=1").fetchone()
+    assert formula == ("formula-v1", "active")
 
 
 def test_migrate_copies_existing_scores_as_v1(tmp_home):

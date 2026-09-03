@@ -40,6 +40,42 @@ fragment RepoA on Repository {
 REPO_B_FIELDS = """
 fragment RepoB on Repository {
   ...RepoA
+  owner {
+    __typename
+    login
+    ... on User {
+      createdAt
+      repositories(first: 20, ownerAffiliations: OWNER, privacy: PUBLIC, isFork: false, orderBy: {field: UPDATED_AT, direction: DESC}) {
+        totalCount
+        nodes {
+          nameWithOwner
+          createdAt
+          pushedAt
+          isArchived
+          isFork
+          forkCount
+          issuesOpen: issues(states: OPEN, first: 1) { totalCount }
+          releases(first: 1) { totalCount }
+        }
+      }
+    }
+    ... on Organization {
+      createdAt
+      repositories(first: 20, privacy: PUBLIC, isFork: false, orderBy: {field: UPDATED_AT, direction: DESC}) {
+        totalCount
+        nodes {
+          nameWithOwner
+          createdAt
+          pushedAt
+          isArchived
+          isFork
+          forkCount
+          issuesOpen: issues(states: OPEN, first: 1) { totalCount }
+          releases(first: 1) { totalCount }
+        }
+      }
+    }
+  }
   readme: object(expression: "HEAD:README.md") {
     ... on Blob { text byteSize }
   }
@@ -67,6 +103,23 @@ fragment RepoB on Repository {
       author { login }
       authorAssociation
       reviews(first: 1) { totalCount }
+      comments(first: 3) {
+        nodes { createdAt authorAssociation author { login } }
+      }
+    }
+  }
+  prsClosed: pullRequests(states: CLOSED, first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    nodes {
+      number
+      createdAt
+      closedAt
+      mergedAt
+      author { login }
+      authorAssociation
+      reviews(first: 1) { totalCount }
+      comments(first: 3) {
+        nodes { createdAt authorAssociation author { login } }
+      }
     }
   }
   issuesClosedSample: issues(states: CLOSED, first: 30) {

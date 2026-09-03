@@ -466,6 +466,87 @@ def sample_access() -> None:
     )
 
 
+@app.command(rich_help_panel="Advanced")
+def train() -> None:
+    """Train a local challenger from stored labels. Never talks to GitHub."""
+    try:
+        from foreshadow.pipeline.trainer import train_challenger
+    except ImportError:
+        sys.stdout.write("train skipped: trainer unavailable\n")
+        raise SystemExit(EXIT_OK) from None
+
+    data_dir = resolve_data_dir()
+    db_path = data_dir / "foreshadow.sqlite3"
+    if not db_path.is_file():
+        print(
+            "No daily data yet. Start here:\n  foreshadow init\n  foreshadow run",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_USAGE)
+    conn = connect(db_path)
+    try:
+        migrate(conn)
+    finally:
+        conn.close()
+    artifact_dir = data_dir / "models"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        result = train_challenger(db_path, artifact_dir=artifact_dir)
+    except ImportError as exc:
+        sys.stdout.write(f"train skipped: {exc}\n")
+        raise SystemExit(EXIT_OK) from exc
+    except Exception as exc:
+        print(f"train failed: {exc}", file=sys.stderr)
+        raise SystemExit(EXIT_FAIL) from exc
+    line, code = _format_train_result(result)
+    sys.stdout.write(line if line.endswith("\n") else line + "\n")
+    raise SystemExit(code)
+
+
+def _format_train_result(result: object) -> tuple[str, int]:
+    if not isinstance(result, dict):
+        return f"train failed: unexpected result {result!r}", EXIT_FAIL
+    status = str(result.get("status") or "").lower()
+    reason = str(result.get("reason") or "")
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+    n = result.get("n", result.get("n_samples"))
+    if n is None:
+        n = metrics.get("n")
+    if status == "skipped" or reason in {"sklearn", "few_samples"}:
+        if reason == "sklearn" or "sklearn" in reason.lower():
+            line = "train skipped: sklearn not installed (install extra: learn)"
+        elif reason == "few_samples":
+            extra = "" if n is None else f" n={n}"
+            line = f"train skipped: SKIPPED_INSUFFICIENT_DATA{extra}"
+        else:
+            extra = f" {reason}" if reason else ""
+            line = f"train skipped:{extra}" if extra else "train skipped"
+        return line, EXIT_OK
+    if status in {"trained", "ok", "complete"}:
+        parts = ["train trained"]
+        if n is not None:
+            parts.append(f"n={n}")
+        auc = result.get("auc", metrics.get("auc"))
+        acc = result.get("accuracy", metrics.get("accuracy"))
+        mae = result.get("mae", metrics.get("mae"))
+        if auc is not None:
+            parts.append(f"auc={auc}")
+        if acc is not None:
+            parts.append(f"accuracy={acc}")
+        if mae is not None:
+            parts.append(f"mae={mae}")
+        path = (
+            result.get("artifact_path")
+            or result.get("path")
+            or metrics.get("artifact_path")
+        )
+        if path:
+            parts.append(str(path))
+        return " ".join(parts), EXIT_OK
+    detail = reason or status or "error"
+    return f"train failed: {detail}", EXIT_FAIL
+
+
 @app.command("missions", rich_help_panel="Enter")
 def missions_cmd() -> None:
     """List local Entry Missions. Never talks to GitHub."""

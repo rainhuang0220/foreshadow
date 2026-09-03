@@ -190,3 +190,77 @@ def test_never_run_and_degraded_are_not_success():
     assert degraded["run"]["status_zh"] == "扫描不完整"
     assert any("截断" in x for x in degraded["run"]["reasons_zh"])
     assert degraded["official_empty_note"] is None
+
+
+def test_present_intel_na_empty_official_and_rank_is_not_quality():
+    row = _row("mem", explosion=_cs(80))
+    board = assemble_board(
+        [row],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras={"acme/mem": {"description": None}},
+    )
+    assert board.official_top5 == 0
+    assert board.shortlist[0].eev is None
+    assert board.shortlist[0].potential is None
+    assert board.shortlist[0].project_summary == "信息不足，无法写简介。"
+    view = present_board(
+        board,
+        run={"any_run": True, "status": "complete", "health": {}},
+    )
+    assert view["official_empty_note"]
+    assert "正式入选" in view["official_empty_note"]
+    assert view["sort_default"] == "eev"
+    assert view["sort_default_zh"] == "按预期进入价值"
+    assert view["no_high_confidence_note"] == "今天没有高置信机会。以下为参考排名。"
+    scores = [c["final_score"] for c in view["candidates"]]
+    assert scores == sorted(scores, reverse=True)
+    card = view["candidates"][0]
+    intel = card["intel"]
+    assert intel["eev"] is None
+    assert intel["potential"] is None
+    assert intel["creator_prior"] is None
+    assert intel["openness"] is None
+    assert intel["entry_fit"] is None
+    assert intel["eev_zh"] == "N/A"
+    assert intel["potential_zh"] == "N/A"
+    assert intel["na_note"] == "数据不足，不是 0"
+    assert intel["creator_prior_na_note"] == "尚未建模，不是 0"
+    assert intel["eev"] != 0
+    assert 0 not in (
+        intel["eev"],
+        intel["potential"],
+        intel["creator_prior"],
+        intel["openness"],
+        intel["entry_fit"],
+    )
+    assert "explosion" not in intel
+    assert card["detail"]["p0"]["explosion"] == 80
+    assert card["project_summary"] == "信息不足，无法写简介。"
+    assert card["rank_is_not_quality"] is True
+    assert "参考排名" in card["rank_footnote_zh"]
+    assert "质量" in card["rank_footnote_zh"]
+    assert card["eev"] is None
+    assert card["creator"] is None
+    mixed = assemble_board(
+        [
+            _row("low", real_user=_cs(90), contribution_opp=_cs(90)),
+            _row("high", owner="other", real_user=_cs(40), contribution_opp=_cs(40)),
+        ],
+        date="2026-08-25",
+        preview=True,
+        snapshot_days=1,
+        extras={
+            "acme/low": {"intel": {"eev": 10}},
+            "other/high": {"intel": {"eev": 80}},
+        },
+    )
+    ordered = present_board(mixed)["candidates"]
+    assert [c["full_name"] for c in ordered] == ["other/high", "acme/low"]
+    assert ordered[0]["intel"]["eev"] == 80
+    assert ordered[1]["intel"]["eev"] == 10
+    assert mixed.shortlist[0].list_rank != mixed.shortlist[1].list_rank
+    by_name = {c.full_name: c.list_rank for c in mixed.shortlist}
+    assert by_name["other/high"] == 1
+    assert by_name["acme/low"] == 2

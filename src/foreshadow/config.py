@@ -42,7 +42,7 @@ observation_admit_max = 24    # new system promotions per day (not Official pins
 observation_admit_min = 25    # min v1 opportunity to promote; not Official 55
 max_deep_hydrate = 30
 max_watchlist_deep = 20       # Phase B reserved for rankable watchlist only (watch/interested/investigate); enter does not consume
-max_medium_hydrate = 30       # cheaper REST (C/commits/releases); not issue/PR sample
+max_medium_hydrate = 15       # cheaper REST (C/commits/releases); not issue/PR sample
 phase_b_pool_a = 15           # deep seats by pool; scaled if watchlist took some of 30
 phase_b_pool_b = 10
 phase_b_pool_c = 5
@@ -125,7 +125,7 @@ class DiscoverySettings(BaseModel):
     observation_admit_min: int = 25
     max_deep_hydrate: int = 30
     max_watchlist_deep: int = 20
-    max_medium_hydrate: int = 30
+    max_medium_hydrate: int = 15
     phase_b_pool_a: int = 15
     phase_b_pool_b: int = 10
     phase_b_pool_c: int = 5

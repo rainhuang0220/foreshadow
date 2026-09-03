@@ -151,6 +151,25 @@ class BoardCard(BaseModel):
     vetoed: bool = False
     veto_reason: str | None = None
     review_commands: dict[str, str] = Field(default_factory=dict)
+    # v0.4 intel overlay. Missing scores stay None (NA ≠ 0).
+    potential: float | None = None
+    creator_prior: float | None = None
+    openness: float | None = None
+    entry_fit: float | None = None
+    eev: float | None = None
+    potential_confidence: Literal["low", "medium", "high"] | None = None
+    creator_confidence: Literal["low", "medium", "high"] | None = None
+    openness_confidence: Literal["low", "medium", "high"] | None = None
+    entry_fit_confidence: Literal["low", "medium", "high"] | None = None
+    eev_confidence: Literal["low", "medium", "high"] | None = None
+    openness_sample_n: int | None = None
+    intel_decision: str | None = None
+    intel_high_confidence: bool = False
+    project_summary: str | None = None
+    summary_source: str | None = None
+    creator_stats: dict[str, Any] | None = None
+    openness_stats: dict[str, Any] | None = None
+    thesis: dict[str, str] | None = None
 
 
 class BoardDocument(BaseModel):

@@ -124,3 +124,27 @@ Plan: [`docs/opportunity-engine-v2-plan.md`](docs/opportunity-engine-v2-plan.md)
 | S5-1 | Observed Access is a visible overlay from this user's events. Access formula weights stay published and unused by S5. |
 | S5-2 | Overlay sample under 3 outcomes → UNKNOWN, not 0. |
 | S6-1 | Portfolio counts missions/events. It does not scrape third-party GitHub. |
+
+## Project Intelligence (accepted 2026-09-03)
+
+Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks by Expected Entry Value. Champion stays **formula-v1** until explicit promotion. No PPO.
+
+| ID | Decision |
+|---|---|
+| PI-1 | Official Top 5 remains v1 55/35/local v7. Empty is success. EEV never writes `selected_rank`. |
+| PI-2 | Homepage default sort is Expected Entry Value. Rank is ordinal, not quality. |
+| PI-3 | Scores split: Potential, Creator Prior, Contributor Openness, Entry Fit. EEV = geomean of available core (need ≥2 of Potential / Openness / Entry Fit). NA omitted, never 0-fill. |
+| PI-4 | Openness = Wilson lower bound of external closed PRs (merged + unmerged). `n_ext<8` → NA. Not `access_score`. Bots / maintainers / org members are not external. |
+| PI-5 | Creator prior from `owner.repositories` on HydrateB (top ~30). No followers, no sum-of-stars celebrity boost. Weight `w=1/(1+snapshots)` in EEV only. NA if <3 usable past repos. |
+| PI-6 | Stars enter Potential only as damped growth (`star_trust`). Stars are not a sort key. |
+| PI-7 | Schema 8: `model_runs`, `intel_scores`, `outcome_labels`. No JOIN at score time. Labels 7/30/90; missing horizon NULL. |
+| PI-8 | Trainer reads SQLite RO, never GitHub. Optional sklearn HistGradientBoosting via extra `[learn]`. No PPO. Champion = `formula-v1` until explicit promotion. Shadow ε-greedy logs only. |
+| PI-9 | API: creator + openness folded into HydrateB (30). Medium REST cap 15. Deep commits `max_pages=1`. No extra owner REST. No collaborators fetch. |
+| PI-10 | Summary cached by default-branch SHA. Extractive; LLM optional and must not invent. |
+| PI-11 | Draft PR still disabled. No third-party GitHub writes. |
+| PI-12 | EEV requires Potential and Entry Fit. Unknown Openness is ranked as conservative 22, never omitted (omitting rewarded missingness) and never 0-filled. Displayed Openness stays NA. |
+| PI-13 | First-phase challenger target is `growth_sign_30d` (local 30d star delta sign). Not "future potential". Champion remains formula-v1. |
+| PI-14 | Openness UI is a recent closed-PR sample, not full history. Ignored-PR ratio is not shown (no open-stale sample). |
+| PI-15 | Board chips and EEV sort read stored `formula-v1` `intel_scores`. Live rescore is fallback only when that row is missing. |
+
+**K7 / E2-11:** Official Top 5 still needs genuine local v7. EEV is Board sort only. **K10:** LLM remains narrative. **S4-1 / PI-11:** remote GitHub mutations stay refused.

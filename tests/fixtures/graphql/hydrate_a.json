@@ -10,6 +10,46 @@
       "id": "R_memkit",
       "databaseId": 4242,
       "nameWithOwner": "acme/memkit",
+      "owner": {
+        "__typename": "User",
+        "login": "acme",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "repositories": {
+          "totalCount": 3,
+          "nodes": [
+            {
+              "nameWithOwner": "acme/alpha",
+              "createdAt": "2026-04-01T00:00:00Z",
+              "pushedAt": "2026-08-10T00:00:00Z",
+              "isArchived": false,
+              "isFork": false,
+              "forkCount": 0,
+              "issuesOpen": { "totalCount": 0 },
+              "releases": { "totalCount": 0 }
+            },
+            {
+              "nameWithOwner": "acme/beta",
+              "createdAt": "2026-04-01T00:00:00Z",
+              "pushedAt": "2026-08-10T00:00:00Z",
+              "isArchived": false,
+              "isFork": false,
+              "forkCount": 0,
+              "issuesOpen": { "totalCount": 0 },
+              "releases": { "totalCount": 0 }
+            },
+            {
+              "nameWithOwner": "acme/gamma",
+              "createdAt": "2026-04-01T00:00:00Z",
+              "pushedAt": "2026-08-10T00:00:00Z",
+              "isArchived": false,
+              "isFork": false,
+              "forkCount": 0,
+              "issuesOpen": { "totalCount": 0 },
+              "releases": { "totalCount": 0 }
+            }
+          ]
+        }
+      },
       "url": "https://github.com/acme/memkit",
       "description": "local memory kit",
       "createdAt": "2026-05-01T00:00:00Z",
@@ -39,6 +79,7 @@
       "issuesOpen": { "totalCount": 12 },
       "issuesClosed": { "totalCount": 40 },
       "prsOpen": { "totalCount": 3 },
+      "prsClosed": { "nodes": [] },
       "discussions": { "totalCount": 1 },
       "contributing": { "byteSize": 1200 }
     }

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from foreshadow.board.chair import ChairOverride, chair_decide, consensus_labels
 from foreshadow.board.dimensions import (
     lightweight_score,
@@ -446,6 +448,71 @@ def test_load_scored_from_db_passes_intro_and_topics(tmp_path, monkeypatch):
     assert card.intro_zh == "Local RAG memory for LLMs"
     assert card.match_score is not None
     assert card.match_reasons
+
+
+def test_load_scored_from_db_prefers_stored_intel_scores(tmp_path, monkeypatch):
+    monkeypatch.setenv("FORESHADOW_HOME", str(tmp_path))
+    from datetime import UTC, datetime
+
+    from foreshadow.board.pipeline import assemble_board, load_scored_from_db
+    from foreshadow.config import load_config
+
+    conn = connect(tmp_path / "foreshadow.sqlite3")
+    migrate(conn)
+    conn.execute(
+        "INSERT INTO repos(node_id, full_name, owner, name, first_seen_at, "
+        "last_seen_at, description, language) "
+        "VALUES ('N1','acme/x','acme','x','t','t','Local RAG memory','Python')"
+    )
+    conn.execute(
+        "INSERT INTO snapshots(repo_id, snapshot_date, captured_at, stars, "
+        "completeness, topics_json, features_json) "
+        "VALUES (1,'2026-08-24','t',100,1,'[\"rag\"]',"
+        '\'{"commits_30d":30,"recent_contributors_7d":4,"releases_30d":1,'
+        '"pr_external_closed_n":14,"pr_external_merged_closed_n":12,'
+        '"creator_repo_n":6,"creator_success_n":4,"owner_login":"acme"}\')'
+    )
+    conn.execute(
+        "INSERT INTO daily_runs(run_date, started_at, status, budget_cap) "
+        "VALUES ('2026-08-24','t','complete',800)"
+    )
+    conn.execute(
+        "INSERT INTO candidates(run_id, repo_id, discovery_source, hydrate_status) "
+        "VALUES (1,1,'search','ok')"
+    )
+    conn.execute(
+        "INSERT INTO intel_scores(repo_id, as_of_date, model_run_id, score, "
+        "components_json, scored_at) VALUES (1,'2026-08-24',1,70.2665,"
+        '\'{"potential":89.0899,"creator_prior":null,"openness":78.4683,'
+        '"entry_fit":49.6276,"eev":70.2665,"decision":"观察",'
+        '"sample":14,"high_confidence":false,"formula_version":"intel-v1.1"}\','
+        "'t')"
+    )
+    conn.commit()
+    clock = Clock(now=datetime(2026, 8, 24, 0, 5, tzinfo=UTC))
+    scored, extras, days = load_scored_from_db(conn, "2026-08-24", clock, load_config())
+    assert scored
+    stored = extras["acme/x"].get("intel") or {}
+    assert stored.get("eev") == 70.2665
+    assert stored.get("potential") == 89.0899
+    assert stored.get("entry_fit") == 49.6276
+    board = assemble_board(
+        scored,
+        date="2026-08-24",
+        preview=True,
+        snapshot_days=days,
+        extras=extras,
+    )
+    card = board.shortlist[0]
+    assert card.eev == pytest.approx(70.2665)
+    assert card.potential == pytest.approx(89.0899)
+    assert card.entry_fit == pytest.approx(49.6276)
+    assert card.openness == pytest.approx(78.4683)
+    assert card.eev != pytest.approx(79, abs=1)
+    assert card.eev_confidence == "low"
+    assert card.creator_stats is not None
+    assert card.creator_stats.get("maintained_repos") == 4
+    assert card.creator_stats.get("successful_repos") == 4
 
 
 def test_to_dim20_and_lightweight_na_drop():

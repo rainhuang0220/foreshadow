@@ -1,8 +1,10 @@
 # Foreshadow（伏笔）
 
-**Beta 0.3.1** — 找出未来已经埋伏下的项目，并在本地准备贡献。
+**Beta 0.4.0** — 找出未来已经埋伏下的项目，并在本地准备贡献。
 
 Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发现新兴的公开 GitHub 仓库，持续观察还来得及进入的项目，在 Board 上告诉你今天值得看什么、以及为什么。点 **开始进入** 后，它只做本地准备（clone 和计划），然后停下。它不会替你在别人的 GitHub 上发 Issue、评论、PR，也不会 push。
+
+Board 现在展示项目摘要和四项分数（潜力 / 作者先验 / 开放度 / 进入契合），并按期望进入价值排序。名次是序位，不是质量分。正式 Top 5 规则不变；空榜仍是成功。
 
 完整说明以英文 [README.md](README.md) 为准。明早走查：[docs/PRODUCT.md](docs/PRODUCT.md)。
 
@@ -11,15 +13,15 @@ Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发
 需要 Python 3.12+。要进入仓库还需要 `git`。
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0"
 # 或
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0"
 ```
 
 Git 安装不会靠 `uv tool upgrade` 跟到新 tag。换版本：
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1" --reinstall
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0" --reinstall
 ```
 
 ## Token
