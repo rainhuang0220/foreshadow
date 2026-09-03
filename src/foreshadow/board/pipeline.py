@@ -174,9 +174,15 @@ def _intel_payload(extra: dict[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     features = extra.get("features")
     has_features = isinstance(features, dict) and bool(features)
-    if has_features or extra.get("snapshot_count") is not None:
+    stored = extra.get("intel")
+    has_stored = isinstance(stored, dict) and (
+        stored.get("eev") is not None
+        or stored.get("potential") is not None
+        or stored.get("entry_fit") is not None
+    )
+    if not has_stored and (has_features or extra.get("snapshot_count") is not None):
         payload.update(_try_score_intel(extra))
-    raw = extra.get("intel")
+    raw = stored
     if isinstance(raw, dict):
         payload.update(raw)
     if not isinstance(payload.get("creator_stats"), dict):
@@ -868,7 +874,48 @@ def load_scored_from_db(
         if extra is None:
             continue
         extra["observation_events"] = events
+    _attach_intel_scores(conn, date, extras, extras_by_id)
     return scored, extras, snap_days
+
+
+def _attach_intel_scores(
+    conn: sqlite3.Connection,
+    date: str,
+    extras: dict[str, dict[str, Any]],
+    extras_by_id: dict[int, str],
+) -> None:
+    """Homepage chips and EEV sort must match the daily formula row."""
+    if not extras_by_id:
+        return
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.repo_id, s.score, s.components_json
+            FROM intel_scores s
+            JOIN model_runs m ON m.id = s.model_run_id
+            WHERE s.as_of_date=? AND m.name='formula-v1'
+            """,
+            (date,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    for repo_id, score, components_json in rows:
+        name = extras_by_id.get(int(repo_id))
+        extra = extras.get(name) if name else None
+        if extra is None:
+            continue
+        try:
+            data = json.loads(components_json) if components_json else {}
+        except (TypeError, json.JSONDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        intel = dict(data)
+        if intel.get("eev") is None and score is not None:
+            intel["eev"] = score
+        if intel.get("openness_sample_n") is None and intel.get("sample") is not None:
+            intel["openness_sample_n"] = intel.get("sample")
+        extra["intel"] = intel
 
 
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]+\)")

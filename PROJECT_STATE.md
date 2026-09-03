@@ -5,11 +5,11 @@
 | **Product** | Foreshadow (伏笔) |
 | **Current Phase** | Project Intelligence |
 | **Current Goal** | Board shows project summary + four scores and ranks by Expected Entry Value. Do not change Official Top 5 (v1 55/35/local v7). Empty Top 5 is success. Champion stays `formula-v1`. No PPO. |
-| **Scoring version** | **Official v1** for Top 5. Board default sort is EEV (geomean of available core). Preview **v2** dual-written; never Official. Champion **formula-v1** until explicit promotion. |
+| **Scoring version** | **Official v1** for Top 5. Board default sort is stored formula-v1 EEV (Potential + Entry Fit required; unknown Openness ranked conservatively). Preview **v2** dual-written; never Official. Champion **formula-v1** until explicit promotion. |
 | **Discovery version** | v2 recall (14 queries, pools A/B/C). Seats: operator watchlist → system observations → fresh search (`fresh_discovery_floor=24`). |
 | **Known API limits** | Third-party stargazer listing / `starred_at` admin-only. Daily snapshots are star history. Creator + openness live on HydrateB (30). Medium REST cap 15. Deep commits `max_pages=1`. No extra owner REST. No collaborators fetch. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/project-intelligence` |
-| **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md), [`docs/p1-observation.md`](docs/p1-observation.md), [`DECISIONS.md`](DECISIONS.md) PI-1…PI-11 |
+| **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md), [`docs/p1-observation.md`](docs/p1-observation.md), [`DECISIONS.md`](DECISIONS.md) PI-1…PI-15 |
 | **Package** | `foreshadow-radar` `0.4.0` |
 | **Date** | 2026-09-03 |
 
