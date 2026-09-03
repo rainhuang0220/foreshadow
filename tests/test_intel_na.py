@@ -89,12 +89,27 @@ def test_eev_omits_na_and_does_not_zero_fill():
     feat = FeaturesBlob(
         pr_external_closed_n=20,
         pr_external_merged_closed_n=20,
+        commits_30d=20,
+        recent_contributors_7d=3,
+        releases_30d=1,
     )
-    result = score_intel(feat=feat, direction_fit=81, contribution_opp=81)
-    assert _value(result, "potential") is None
+    result = score_intel(
+        feat=feat, direction_fit=81, contribution_opp=81, pushed_age_days=3
+    )
+    assert _value(result, "potential") is not None
     assert _value(result, "openness") is not None
     assert _value(result, "entry_fit") is not None
     eev = _value(result, "eev")
     assert eev is not None
     assert eev != 0
     assert eev > 40
+
+
+def test_eev_na_when_potential_missing_even_if_entry_and_openness_known():
+    feat = FeaturesBlob(
+        pr_external_closed_n=20,
+        pr_external_merged_closed_n=20,
+    )
+    result = score_intel(feat=feat, direction_fit=81, contribution_opp=81)
+    assert _value(result, "potential") is None
+    assert _value(result, "eev") is None

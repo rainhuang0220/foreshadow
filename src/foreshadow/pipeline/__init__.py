@@ -1201,7 +1201,7 @@ def _intel_components(
         if sample is None:
             sample = getattr(intel, "sample", None)
         snapshot_count = getattr(intel, "snapshot_count", None)
-        formula_version = getattr(intel, "formula_version", None) or "intel-v1"
+        formula_version = getattr(intel, "formula_version", None) or "intel-v1.1"
         high_confidence = getattr(intel, "high_confidence", None)
     feat = data.get("features") or {}
     if sample is None:

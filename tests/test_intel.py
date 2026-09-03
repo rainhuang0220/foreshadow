@@ -93,9 +93,16 @@ def test_eev_defined_if_potential_and_openness_known():
         pr_external_closed_n=10,
         pr_external_merged_closed_n=8,
     )
-    result = score_intel(feat=feat, pushed_age_days=3)
+    result = score_intel(
+        feat=feat,
+        pushed_age_days=3,
+        direction_fit=80,
+        contribution_opp=80,
+        strategy_path="issue-first",
+    )
     assert _val(result.potential) is not None
     assert _val(result.openness) is not None
+    assert _val(result.entry_fit) is not None
     assert _val(result.eev) is not None
     assert _val(result.eev) != 0
     assert result.decision != "数据不足"
@@ -150,6 +157,52 @@ def test_raw_stars_are_not_potential():
     result = score_intel(stars=100_000, windows_v7=80)
     assert _val(result.potential) is None
     assert _val(result.potential) != 80
+
+
+def test_missing_openness_does_not_beat_known_low():
+    from foreshadow.pipeline.intel import _eev
+
+    kw = {
+        "potential": 80.0,
+        "entry_fit": 90.0,
+        "creator": None,
+        "prior_weight": 0.0,
+        "pot_conf": "medium",
+        "open_conf": "medium",
+        "entry_conf": "medium",
+    }
+    miss, *_ = _eev(openness=None, **kw)
+    low, *_ = _eev(openness=25.0, **kw)
+    high, *_ = _eev(openness=80.0, **kw)
+    terrible, *_ = _eev(openness=5.0, **kw)
+    assert (
+        miss is not None
+        and low is not None
+        and high is not None
+        and terrible is not None
+    )
+    assert miss < low
+    assert miss < high
+    assert miss > terrible
+    assert miss != low
+
+
+def test_eev_requires_potential_and_entry_fit():
+    from foreshadow.pipeline.intel import _eev
+
+    kw = {
+        "creator": None,
+        "prior_weight": 0.0,
+        "pot_conf": "medium",
+        "open_conf": "medium",
+        "entry_conf": "medium",
+    }
+    none_p, *_ = _eev(potential=None, entry_fit=90.0, openness=80.0, **kw)
+    none_e, *_ = _eev(potential=80.0, entry_fit=None, openness=80.0, **kw)
+    ok, *_ = _eev(potential=80.0, entry_fit=90.0, openness=80.0, **kw)
+    assert none_p is None
+    assert none_e is None
+    assert ok is not None
 
 
 def test_pr_accept_rate_is_not_openness():

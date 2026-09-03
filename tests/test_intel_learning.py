@@ -389,6 +389,16 @@ def test_trainer_does_not_promote_formula_champion(tmp_home):
     trained = conn.execute("SELECT status FROM model_runs WHERE id>1").fetchall()
     assert trained
     assert all(row[0] == "trained" for row in trained)
+    assert out["target"] == "growth_sign_30d"
+
+
+def test_corrupt_challenger_artifact_does_not_raise(tmp_path):
+    from foreshadow.pipeline.trainer import load_challenger_or_none
+
+    junk = tmp_path / "broken.joblib"
+    junk.write_bytes(b"not-a-model")
+    assert load_challenger_or_none(junk) is None
+    assert load_challenger_or_none(tmp_path / "missing.pkl") is None
 
 
 def _seed_train_panel(conn, *, n: int, as_of: date, start: int) -> None:

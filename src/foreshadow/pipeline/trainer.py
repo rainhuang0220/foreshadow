@@ -1,4 +1,19 @@
-"""Offline challenger trainer. SQLite read-only. Never promotes over formula-v1."""
+"""Offline challenger trainer. SQLite read-only. Never promotes over formula-v1.
+
+Model card (first-phase challenger)
+-----------------------------------
+TARGET:           growth_sign_30d
+FEATURE CUTOFF:   snapshot_date == as_of_date (no t+h fields)
+HORIZON:          30 local UTC days
+POSITIVE LABEL:   delta_stars > 0 (both t and t+30 snapshots present)
+NEGATIVE LABEL:   delta_stars <= 0 (both present; true zero growth is negative)
+UNKNOWN:          delta_stars IS NULL (missing t+30) — excluded from training
+MINIMUM SAMPLE:   30 labeled rows
+METRICS:          accuracy, ROC AUC on a time split (train as_of < cutoff)
+CHAMPION:         formula-v1 Expected Entry Value (not this classifier)
+NOT A TARGET:     "future potential", survival-only, contributor growth
+FUTURE OUTCOMES:  still_maintained (90d), delta_contributors — not trained here
+"""
 
 from __future__ import annotations
 
@@ -10,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 FORMULA_CHAMPION = "formula-v1"
+CHALLENGER_NAME = "growth_sign_30d"
 MIN_SAMPLES = 30
 MAX_TRAIN_ROWS = 5000
 TRAIN_HORIZON_DAYS = 30
@@ -141,7 +157,12 @@ def train_challenger(
 ) -> dict[str, Any]:
     learn = _import_learn()
     if learn is None:
-        return {"status": "skipped", "reason": "sklearn"}
+        return {
+            "status": "skipped",
+            "reason": "sklearn",
+            "code": "SKIPPED_NO_SKLEARN",
+            "target": CHALLENGER_NAME,
+        }
     classifier_cls, accuracy_score, roc_auc_score = learn
 
     max_rows = MAX_TRAIN_ROWS if memory_limit_mb >= 32 else min(MAX_TRAIN_ROWS, 1000)
@@ -156,7 +177,13 @@ def train_challenger(
 
     n = len(rows)
     if n < MIN_SAMPLES:
-        return {"status": "skipped", "reason": "few_samples", "n": n}
+        return {
+            "status": "skipped",
+            "reason": "few_samples",
+            "code": "SKIPPED_INSUFFICIENT_DATA",
+            "n": n,
+            "target": CHALLENGER_NAME,
+        }
 
     as_of_dates = [date.fromisoformat(row["as_of_date"]) for row in rows]
     cutoff = cutoff_date or (max(as_of_dates) - timedelta(days=30))
@@ -201,13 +228,15 @@ def train_challenger(
         "cutoff_date": cutoff_s,
         "trained_at": trained_at.isoformat(),
         "model_type": "HistGradientBoostingClassifier",
+        "target": CHALLENGER_NAME,
         "label": "delta_stars>0",
+        "horizon_days": TRAIN_HORIZON_DAYS,
         "champion": FORMULA_CHAMPION,
     }
     _dump_artifact(payload, artifact_path)
     _insert_model_run(
         db_path,
-        name=artifact_path.stem,
+        name=CHALLENGER_NAME,
         trained_at=trained_at.isoformat(),
         cutoff=cutoff_s,
         metrics=metrics,
@@ -222,6 +251,7 @@ def train_challenger(
         "cutoff_date": cutoff_s,
         "metrics": metrics,
         "champion": FORMULA_CHAMPION,
+        "target": CHALLENGER_NAME,
         "promoted": False,
     }
 
@@ -233,7 +263,12 @@ def evaluate_champion_challenger(
 ) -> dict[str, Any]:
     learn = _import_learn()
     if learn is None:
-        return {"status": "skipped", "reason": "sklearn"}
+        return {
+            "status": "skipped",
+            "reason": "sklearn",
+            "code": "SKIPPED_NO_SKLEARN",
+            "target": CHALLENGER_NAME,
+        }
     _, accuracy_score, roc_auc_score = learn
 
     cutoff_s = cutoff.isoformat() if isinstance(cutoff, date) else str(cutoff)
@@ -444,6 +479,17 @@ def _load_artifact(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("challenger artifact must be a dict")
     return payload
+
+
+def load_challenger_or_none(path: Path | str) -> dict[str, Any] | None:
+    """Corrupt or missing artifacts must not take down scoring. Champion stays formula-v1."""
+    file = Path(path)
+    if not file.is_file():
+        return None
+    try:
+        return _load_artifact(file)
+    except (OSError, ValueError, TypeError, pickle.UnpicklingError, EOFError, KeyError):
+        return None
 
 
 def _insert_model_run(

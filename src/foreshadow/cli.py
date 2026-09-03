@@ -517,7 +517,7 @@ def _format_train_result(result: object) -> tuple[str, int]:
             line = "train skipped: sklearn not installed (install extra: learn)"
         elif reason == "few_samples":
             extra = "" if n is None else f" n={n}"
-            line = f"train skipped: few samples{extra}"
+            line = f"train skipped: SKIPPED_INSUFFICIENT_DATA{extra}"
         else:
             extra = f" {reason}" if reason else ""
             line = f"train skipped:{extra}" if extra else "train skipped"

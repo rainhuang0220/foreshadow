@@ -780,7 +780,12 @@ function chipsView(c) {
 function eevLine(c) {
   const eev = intelScore(c, "eev");
   const dec = c && c.decision ? String(c.decision) : "";
-  return `<div class="eev">预期进入 ${naText(eev)}${dec ? " · " + esc(dec) : ""}</div>`;
+  const intel = intelOf(c);
+  const openMissing = intelScore(c, "openness") == null;
+  const note = openMissing && eev != null
+    ? " · 开放度未知，排序按保守估计，不是把缺失当高分"
+    : "";
+  return `<div class="eev">预期进入 ${naText(eev)}${dec ? " · " + esc(dec) : ""}${note}</div>`;
 }
 function rankFootnote(c) {
   const official = c && c.status === "official";
@@ -1039,6 +1044,7 @@ function header(board) {
   <header class="mast">
     <div class="brand">伏笔</div>
     <h1>FORESHADOW · 今日机会</h1>
+    ${intelBanner(board)}
     <div class="mast-meta">
       <p class="date">${esc(board.date)}</p>
       <div class="ribbon ${preview ? "" : "official"}">${esc(ribbon)}</div>
@@ -1160,8 +1166,10 @@ function listView(board) {
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
         ${desc ? `<div class="sub entry">${esc(desc)}</div>` : ""}
+        ${cardWhy(c) ? `<div class="why">为什么现在：${esc(cardWhy(c))}</div>` : ""}
         ${chipsView(c)}
         ${eevLine(c)}
+        <p class="meta">置信度：${esc((c.intel && c.intel.eev_confidence_zh) || c.confidence_zh || "低")}</p>
         ${rankFootnote(c)}
       </div>
       <div class="act">
@@ -1210,7 +1218,8 @@ function creatorView(card) {
   const lines = [];
   if (login) lines.push(`<p><strong>登录：</strong>${esc(login)}</p>`);
   if (past) lines.push(`<p><strong>过往仓库：</strong>${esc(past)}</p>`);
-  if (ok) lines.push(`<p><strong>成功项目：</strong>${esc(ok)}</p>`);
+  const maintained = fmtList(cr.maintained_repos != null ? cr.maintained_repos : (cr.successful_repos != null ? cr.successful_repos : ok));
+  if (maintained) lines.push(`<p><strong>持续维护项目：</strong>${esc(maintained)}</p>`);
   if (longest != null && longest !== "") lines.push(`<p><strong>最长维护：</strong>${esc(String(longest))}</p>`);
   if (!lines.length) return "";
   return `<section><h3>创作者</h3>${lines.join("")}</section>`;
@@ -1235,7 +1244,8 @@ function communityView(card) {
   return `<section>
     <h3>贡献者开放度</h3>
     <p><strong>开放度：</strong>${openKnown ? esc(openScore) : '<span class="na">N/A</span>'}${openKnown ? "" : ' <span class="na">数据不足，不是 0</span>'}</p>
-    <p class="meta">样本：${sample == null ? `<span class="na">N/A</span>` : esc(sample)} 个外部 PR</p>
+    <p class="meta">${esc(stats.window_zh || intel.window_zh || "最近已关闭外部 PR 样本（非全历史）")}：${sample == null ? `<span class="na">N/A</span>` : esc(sample)}</p>
+    <p class="meta">${esc(stats.ttfr_zh || "近期样本首次维护者回复中位数")}：${stats.first_response_hours == null ? `<span class="na">N/A</span>` : esc(stats.first_response_hours)}</p>
     ${extra.length ? `<p class="meta">${extra.join(" · ")}</p>` : ""}
     <h3>进入通道</h3>
     <p><strong>进入通道：</strong>${esc(accessLine(card))}</p>
@@ -1317,7 +1327,7 @@ function drawerView(card) {
       ${eevLine(card)}
       ${card.decision ? `<p>判断：${esc(card.decision)}</p>` : ""}
       ${conf ? `<p class="meta">置信度：${esc(conf)}</p>` : `<p class="meta">置信度：<span class="na">N/A</span></p>`}
-      <p class="meta">样本：${sample == null ? `<span class="na">N/A</span>` : esc(sample)} 个外部 PR</p>
+      <p class="meta">最近已关闭外部 PR 样本：${sample == null ? `<span class="na">N/A</span>` : esc(sample)}</p>
     </section>
     <section>
       <h3>为什么现在：</h3>
@@ -1415,7 +1425,6 @@ function boardView() {
   </div>
   ${state.showMissions ? missionListView() : ""}
   ${contributionJobsView()}
-  ${intelBanner(b)}
   <h2 id="board-list">今日候选榜</h2>
   <div class="list">${listView(b)}</div>
   ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}

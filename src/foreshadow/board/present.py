@@ -608,8 +608,10 @@ def _creator_view(card: BoardCard) -> dict[str, Any] | None:
     view: dict[str, Any] = {
         "login": stats.get("login") or stats.get("owner") or card.owner,
         "past_public_repos": past,
+        "maintained_repos": successful,
         "successful_repos": successful,
         "longest_maintained_days": longest,
+        "maintained_label_zh": "持续维护项目",
     }
     for key, value in stats.items():
         if key not in view:
@@ -627,6 +629,10 @@ def _community_openness_view(card: BoardCard) -> dict[str, Any] | None:
         view["sample_n"] = sample_n
     if "openness" not in view:
         view["openness"] = _n(card.openness)
+    view.setdefault("window_zh", "最近已关闭外部 PR 样本（非全历史）")
+    view.setdefault("ttfr_zh", "近期样本首次维护者回复中位数")
+    view.setdefault("truncated", True)
+    view.pop("ignored_ext_n", None)
     if card.openness is None:
         view.setdefault(
             "note",
@@ -702,6 +708,8 @@ def _intel_view(card: BoardCard) -> dict[str, Any]:
         ),
         "entry_fit_na_note": _intel_score_note(card.entry_fit, kind="entry_fit"),
         "eev_na_note": _intel_score_note(card.eev, kind="eev"),
+        "openness_window_zh": "最近已关闭外部 PR 样本（非全历史）",
+        "openness_unknown": card.openness is None,
         "community": _community_openness_view(card),
     }
 
@@ -780,7 +788,8 @@ def present_card(
         ),
         "p0_confidence": card.p0_confidence,
         "p0_confidence_zh": conf_zh,
-        "confidence_zh": conf_zh,
+        "confidence_zh": _intel_conf_zh(card.eev_confidence) if card.eev is not None else conf_zh,
+        "decision": _intel_decision_zh(card.intel_decision) or card.intel_decision,
         "activity_momentum": card.activity_momentum,
         "activity_class": card.activity_class,
         "activity_class_zh": ACTIVITY_CLASS_LABELS.get(

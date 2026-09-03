@@ -32,6 +32,9 @@ class OpennessResult:
     ignored_ext_n: int | None
     why: str
     na: bool
+    truncated: bool = True
+    sample_start: str | None = None
+    sample_end: str | None = None
     stats: dict[str, Any] = field(default_factory=dict)
 
 
@@ -54,9 +57,9 @@ def compute_openness_from_prs(
     merged_ext = 0
     newcomer_closed = 0
     newcomer_merged = 0
-    ignored = 0
     resp_hours: list[float] = []
     merge_hours: list[float] = []
+    starts: list[str] = []
     for pr in combined:
         login, typ = _author(pr)
         assoc = str(pr.get("authorAssociation") or pr.get("author_association") or "")
@@ -76,12 +79,14 @@ def compute_openness_from_prs(
             )
             if hours is not None:
                 merge_hours.append(hours)
-        else:
-            if _ignored(pr):
-                ignored += 1
+        created = pr.get("createdAt") or pr.get("created_at") or pr.get("closedAt")
+        if created:
+            starts.append(str(created)[:10])
         first = _first_maint_hours(pr)
         if first is not None:
             resp_hours.append(first)
+    start = min(starts) if starts else None
+    end = max(starts) if starts else None
     return _from_counts(
         closed_ext=closed_ext,
         merged_ext=merged_ext,
@@ -89,8 +94,11 @@ def compute_openness_from_prs(
         newcomer_merged=newcomer_merged,
         first_response_hours=_median(resp_hours),
         merge_hours=_median(merge_hours),
-        ignored_ext_n=ignored if closed_ext else None,
+        ignored_ext_n=None,
         sampled=len(combined),
+        truncated=True,
+        sample_start=start,
+        sample_end=end,
     )
 
 
@@ -111,8 +119,11 @@ def compute_openness(feat: FeaturesBlob | Mapping[str, Any] | None) -> OpennessR
         newcomer_merged=_int(get("pr_newcomer_merged_n")) or 0,
         first_response_hours=_float(get("pr_ext_first_response_hours")),
         merge_hours=_float(get("pr_ext_merge_hours")),
-        ignored_ext_n=_int(get("pr_ignored_ext_n")),
+        ignored_ext_n=None,
         sampled=_int(get("pr_closed_sample_n")) or closed_ext,
+        truncated=True,
+        sample_start=_str(get("pr_sample_start")),
+        sample_end=_str(get("pr_sample_end")),
     )
 
 
@@ -126,6 +137,9 @@ def _from_counts(
     merge_hours: float | None,
     ignored_ext_n: int | None,
     sampled: int,
+    truncated: bool = True,
+    sample_start: str | None = None,
+    sample_end: str | None = None,
 ) -> OpennessResult:
     merged_ext = min(merged_ext, closed_ext)
     stats = {
@@ -136,8 +150,13 @@ def _from_counts(
         "newcomer_merged": newcomer_merged,
         "first_response_hours": first_response_hours,
         "merge_hours": merge_hours,
-        "ignored_ext_n": ignored_ext_n,
         "sampled_prs": sampled,
+        "truncated": truncated,
+        "sample_start": sample_start,
+        "sample_end": sample_end,
+        "window": "recent_closed",
+        "window_zh": "最近已关闭外部 PR 样本（非全历史）",
+        "ttfr_zh": "近期样本首次维护者回复中位数",
     }
     if closed_ext < MIN_CLOSED_EXT:
         return OpennessResult(
@@ -150,9 +169,12 @@ def _from_counts(
             newcomer_merged=newcomer_merged,
             first_response_hours=first_response_hours,
             merge_hours=merge_hours,
-            ignored_ext_n=ignored_ext_n,
+            ignored_ext_n=None,
             why=f"UNKNOWN (n_ext={closed_ext} < {MIN_CLOSED_EXT}); not 0",
             na=True,
+            truncated=truncated,
+            sample_start=sample_start,
+            sample_end=sample_end,
             stats=stats,
         )
     lb = wilson_lower_bound(merged_ext, closed_ext)
@@ -168,9 +190,12 @@ def _from_counts(
         newcomer_merged=newcomer_merged,
         first_response_hours=first_response_hours,
         merge_hours=merge_hours,
-        ignored_ext_n=ignored_ext_n,
-        why=f"Wilson LB of {merged_ext}/{closed_ext} external closed PRs",
+        ignored_ext_n=None,
+        why=f"Wilson LB of {merged_ext}/{closed_ext} recent sampled external closed PRs",
         na=False,
+        truncated=truncated,
+        sample_start=sample_start,
+        sample_end=sample_end,
         stats=stats,
     )
 
@@ -189,8 +214,16 @@ def _na(why: str) -> OpennessResult:
         ignored_ext_n=None,
         why=why,
         na=True,
-        stats={"sample_n": None},
+        truncated=True,
+        stats={"sample_n": None, "truncated": True, "window": "recent_closed"},
     )
+
+
+def _str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _bot_login(login: str | None, type_: str | None) -> bool:
@@ -213,7 +246,7 @@ def _author(pr: Mapping[str, Any]) -> tuple[str | None, str | None]:
     )
 
 
-def _ignored(pr: Mapping[str, Any]) -> bool:
+def _ignored_closed_unmerged(pr: Mapping[str, Any]) -> bool:
     reviews = pr.get("reviews") if isinstance(pr.get("reviews"), Mapping) else {}
     try:
         rc = int(reviews.get("totalCount") or 0)

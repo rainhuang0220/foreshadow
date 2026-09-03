@@ -142,5 +142,8 @@ Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks
 | PI-9 | API: creator + openness folded into HydrateB (30). Medium REST cap 15. Deep commits `max_pages=1`. No extra owner REST. No collaborators fetch. |
 | PI-10 | Summary cached by default-branch SHA. Extractive; LLM optional and must not invent. |
 | PI-11 | Draft PR still disabled. No third-party GitHub writes. |
+| PI-12 | EEV requires Potential and Entry Fit. Unknown Openness is ranked as conservative 22, never omitted (omitting rewarded missingness) and never 0-filled. Displayed Openness stays NA. |
+| PI-13 | First-phase challenger target is `growth_sign_30d` (local 30d star delta sign). Not "future potential". Champion remains formula-v1. |
+| PI-14 | Openness UI is a recent closed-PR sample, not full history. Ignored-PR ratio is not shown (no open-stale sample). |
 
 **K7 / E2-11:** Official Top 5 still needs genuine local v7. EEV is Board sort only. **K10:** LLM remains narrative. **S4-1 / PI-11:** remote GitHub mutations stay refused.

@@ -14,9 +14,13 @@ from foreshadow.pipeline.features import clip01
 from foreshadow.pipeline.openness import compute_openness
 from foreshadow.pipeline.star_trust import star_trust as star_trust_of
 
-FORMULA_VERSION = "intel-v1"
+FORMULA_VERSION = "intel-v1.1"
 EPS = 1e-6
 CONF_RANK = {"low": 0, "medium": 1, "high": 2}
+# Ranking-only stand-in when Openness is NA. Displayed Openness stays NA.
+# 22 < 25 so missing cannot beat a known-low 25 on the same Potential/Entry Fit;
+# 22 > 5 so missing is not treated as catastrophic.
+OPEN_UNKNOWN_RANK = 22.0
 
 
 @dataclass
@@ -31,6 +35,8 @@ class IntelScores:
     decision: str
     high_confidence: bool
     formula_version: str = FORMULA_VERSION
+    eev_coverage: str | None = None
+    openness_unknown: bool = False
     openness_sample_n: int | None = None
     openness_stats: dict[str, Any] = field(default_factory=dict)
     creator_stats: dict[str, Any] = field(default_factory=dict)
@@ -56,6 +62,8 @@ class IntelScores:
             "high_confidence": self.high_confidence,
             "intel_high_confidence": self.high_confidence,
             "formula_version": self.formula_version,
+            "eev_coverage": self.eev_coverage,
+            "openness_unknown": self.openness_unknown,
             "openness_stats": self.openness_stats,
             "creator_stats": self.creator_stats,
             "why": self.why,
@@ -168,12 +176,11 @@ def score_intel(
         open_conf=openness.confidence if openness.score is not None else None,
         entry_conf=entry_conf,
     )
-    core_known = sum(v is not None for v in (potential, openness.score, entry))
+    open_known = openness.score is not None
     high = (
         eev is not None
         and eev_conf == "high"
-        and core_known == 3
-        and openness.score is not None
+        and open_known
         and potential is not None
         and entry is not None
     )
@@ -204,6 +211,8 @@ def score_intel(
         prior_weight=w,
         decision=decision,
         high_confidence=high,
+        eev_coverage=_coverage(potential, entry, openness.score),
+        openness_unknown=openness.score is None,
         openness_sample_n=openness.sample_n if openness.sample_n else None,
         openness_stats=dict(openness.stats),
         creator_stats=dict(creator.stats),
@@ -354,32 +363,42 @@ def _eev(
     open_conf: str | None,
     entry_conf: str | None,
 ) -> tuple[float | None, str, list[str], str]:
-    core: list[float] = []
-    confs: list[str | None] = []
+    """Expected Entry Value for display and homepage rank.
+
+    Mandatory axes: Potential and Entry Fit. Either missing → EEV NA.
+    Openness is an evidence modifier. Known Openness enters the geomean.
+    Unknown Openness does **not** drop out (that rewarded missingness).
+    It is replaced for ranking only by OPEN_UNKNOWN_RANK. Displayed
+    Openness stays NA. Unknown is worse than a known 25 and better than
+    a known 5 on otherwise identical cores.
+    Creator prior is optional and omitted when unknown.
+    """
     missing: list[str] = []
-    if potential is not None:
-        core.append(clip01(potential / 100.0))
-        confs.append(pot_conf)
-    else:
+    if potential is None:
         missing.append("potential")
-    if openness is not None:
-        core.append(clip01(openness / 100.0))
-        confs.append(open_conf)
-    else:
-        missing.append("openness")
-    if entry_fit is not None:
-        core.append(clip01(entry_fit / 100.0))
-        confs.append(entry_conf)
-    else:
+    if entry_fit is None:
         missing.append("entry_fit")
-    if len(core) < 2:
+    if missing:
+        if openness is None:
+            missing.append("openness")
         return (
             None,
             "low",
             missing,
-            "EEV NA (|core|<2); creator is never the only factor",
+            "EEV NA (Potential and Entry Fit are mandatory)",
         )
-    core_gm = geomean(core)
+    factors = [clip01(potential / 100.0), clip01(entry_fit / 100.0)]
+    confs: list[str | None] = [pot_conf, entry_conf]
+    if openness is not None:
+        factors.append(clip01(openness / 100.0))
+        confs.append(open_conf)
+        why_open = f"openness={openness:.1f}"
+    else:
+        factors.append(clip01(OPEN_UNKNOWN_RANK / 100.0))
+        confs.append("low")
+        why_open = f"openness=NA rank_as={OPEN_UNKNOWN_RANK:.0f}"
+        missing.append("openness")
+    core_gm = geomean(factors)
     if core_gm is None:
         return None, "low", missing, "EEV NA"
     w = min(float(prior_weight), 0.5)
@@ -388,19 +407,29 @@ def _eev(
             (1.0 - w) * math.log(max(core_gm, EPS))
             + w * math.log(max(clip01(creator / 100.0), EPS))
         )
-        why = f"EEV core={core_gm:.4f} prior w={w:.4f}"
+        why = f"EEV core={core_gm:.4f} {why_open} prior w={w:.4f}"
     else:
         mixed = core_gm
-        why = f"EEV core={core_gm:.4f} prior omitted w={w:.4f}"
-    ranks = [CONF_RANK.get(c or "low", 0) for c in confs]
-    floor = min(ranks) if ranks else 0
-    if len(core) == 3 and floor >= 2:
-        conf = "high"
-    elif floor >= 1 or len(core) >= 2:
-        conf = "medium"
-    else:
+        why = f"EEV core={core_gm:.4f} {why_open} prior omitted"
+    if openness is None:
         conf = "low"
+    else:
+        ranks = [CONF_RANK.get(c or "low", 0) for c in confs]
+        floor = min(ranks) if ranks else 0
+        if floor >= 2:
+            conf = "high"
+        elif floor >= 1:
+            conf = "medium"
+        else:
+            conf = "low"
     return 100.0 * mixed, conf, missing, why
+
+
+def _coverage(
+    potential: float | None, entry_fit: float | None, openness: float | None
+) -> str:
+    known = sum(v is not None for v in (potential, entry_fit, openness))
+    return f"{known}/3"
 
 
 def _decision(eev: float | None, conf: str | None) -> str:
