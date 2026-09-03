@@ -1,8 +1,10 @@
 # Foreshadow (伏笔)
 
-**Beta 0.3.1** — find what the future has already foreshadowed. Then prepare a local contribution.
+**Beta 0.4.0** — find what the future has already foreshadowed. Then prepare a local contribution.
 
 Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. If you choose to enter, it prepares a local clone and a plan, then **stops**. It never opens Issues, comments, or PRs, and it never pushes to someone else’s GitHub.
+
+The Board now shows a project summary and four scores — Potential, Creator Prior, Openness, and Entry Fit — and ranks the homepage by expected entry value. Rank is ordinal, not a quality grade. Official Top 5 is unchanged; an empty Top 5 is still success.
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md)。明早走查见 [docs/PRODUCT.md](docs/PRODUCT.md)。
 
@@ -12,17 +14,17 @@ Python **3.12+**. `git` is needed if you will enter a repo.
 
 ```bash
 # uv (recommended) — pin a release tag
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0"
 
 # pip
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0"
 ```
 
 Update to a newer tag (git installs do **not** follow new tags via `uv tool upgrade`):
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1" --reinstall
-# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.3.1"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0" --reinstall
+# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.4.0"
 ```
 
 ## GitHub token
@@ -56,7 +58,7 @@ Register a local Board account (username, email, password). It stays on this mac
 
 ## Empty Top 5 is success
 
-Official Top 5 is allowed to be **empty**. Foreshadow will not pad the list.
+Official Top 5 is allowed to be **empty**. Foreshadow will not pad the list. Expected Entry Value sorts the Board; it does not write Official rank.
 
 The Board can still show candidates to watch. Explosion for a repo needs about seven days of Foreshadow’s own observations of **that same repo**. In the first week, expect an empty Official Top 5.
 

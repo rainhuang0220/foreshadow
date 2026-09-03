@@ -69,6 +69,28 @@ STAGE_LABELS = {
 }
 
 NA_NOTE = "当前历史数据不足，不参与虚假的补零。"
+NA_NOT_ZERO = "数据不足，不是 0"
+NA_UNMODELED = "尚未建模，不是 0"
+NA_SMALL_SAMPLE = "未知（样本少，不是 0）"
+SUMMARY_MISSING = "信息不足，无法写简介。"
+NO_HIGH_CONFIDENCE_NOTE = "今天没有高置信机会。以下为参考排名。"
+
+INTEL_DECISION_ZH = {
+    "enter": "建议进入",
+    "watch": "继续观察",
+    "observe": "继续观察",
+    "pass": "暂不进入",
+    "skip": "暂不进入",
+    "reject": "不建议进入",
+    "strong_candidate": "强候选",
+    "candidate": "候选",
+    "insufficient": "数据不足",
+    "unknown": "未知",
+    "数据不足": "数据不足",
+    "值得进入": "值得进入",
+    "继续观察": "继续观察",
+    "暂不进入": "暂不进入",
+}
 
 _RUN_STATUS_ZH = {
     "complete": "扫描完成",
@@ -521,6 +543,169 @@ def _chair_judgment(card: BoardCard) -> str:
     return "，".join(bits) + "。" + risk
 
 
+def _intel_conf_zh(conf: str | None) -> str:
+    if conf is None:
+        return "未知"
+    return CONF_LABELS.get(conf, "未知")
+
+
+def _intel_decision_zh(decision: str | None) -> str | None:
+    if not decision:
+        return None
+    return INTEL_DECISION_ZH.get(decision, decision)
+
+
+def _score_zh(value: int | None) -> str:
+    return "N/A" if value is None else str(value)
+
+
+def _intel_score_note(
+    value: float | None, *, kind: str, sample_n: int | None = None
+) -> str | None:
+    if value is not None:
+        return None
+    if kind == "creator_prior":
+        return NA_UNMODELED
+    if kind == "openness" and (sample_n is None or sample_n < 5):
+        return NA_SMALL_SAMPLE
+    return NA_NOT_ZERO
+
+
+def _openness_sample_n(card: BoardCard) -> int | None:
+    raw = card.openness_sample_n
+    if raw is None:
+        stats = card.openness_stats
+        if isinstance(stats, dict):
+            raw = stats.get("sample_n")
+            if raw is None:
+                raw = stats.get("n")
+            if raw is None:
+                raw = stats.get("closed_ext")
+    if raw is None:
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 and card.openness is None:
+        return None
+    return n
+
+
+def _creator_view(card: BoardCard) -> dict[str, Any] | None:
+    stats = card.creator_stats
+    if not isinstance(stats, dict) or not stats:
+        return None
+    past = stats.get("past_public_repos")
+    if past is None:
+        past = stats.get("past_repos")
+    successful = stats.get("successful_repos")
+    if successful is None:
+        successful = stats.get("successful")
+    longest = stats.get("longest_maintained_days")
+    if longest is None:
+        longest = stats.get("longest_days")
+    view: dict[str, Any] = {
+        "login": stats.get("login") or stats.get("owner") or card.owner,
+        "past_public_repos": past,
+        "successful_repos": successful,
+        "longest_maintained_days": longest,
+    }
+    for key, value in stats.items():
+        if key not in view:
+            view[key] = value
+    return view
+
+
+def _community_openness_view(card: BoardCard) -> dict[str, Any] | None:
+    stats = card.openness_stats if isinstance(card.openness_stats, dict) else None
+    sample_n = _openness_sample_n(card)
+    if not stats and sample_n is None and card.openness is None:
+        return None
+    view: dict[str, Any] = dict(stats) if stats else {}
+    if "sample_n" not in view and sample_n is not None:
+        view["sample_n"] = sample_n
+    if "openness" not in view:
+        view["openness"] = _n(card.openness)
+    if card.openness is None:
+        view.setdefault(
+            "note",
+            _intel_score_note(card.openness, kind="openness", sample_n=sample_n),
+        )
+    return view or None
+
+
+def _present_summary(card: BoardCard) -> tuple[str, str | None]:
+    text = (card.project_summary or "").strip()
+    source = card.summary_source
+    if text:
+        return text, source
+    fallback = (card.description or "").strip() or (card.intro_zh or "").strip()
+    if fallback:
+        lines = [ln.strip() for ln in fallback.split("\n") if ln.strip()]
+        return "\n".join(lines[:4]) if lines else fallback, source or "description"
+    return SUMMARY_MISSING, source
+
+
+def _has_high_confidence_eev(card: BoardCard) -> bool:
+    if not card.intel_high_confidence or card.eev is None:
+        return False
+    return card.eev >= 70
+
+
+def _eev_sort_key(card: BoardCard) -> tuple:
+    return (
+        card.eev is None,
+        -(card.eev if card.eev is not None else 0.0),
+        -(card.final_score or -1.0),
+        -(card.trend.score or -1.0),
+        -(card.contributor.score or -1.0),
+        card.full_name,
+    )
+
+
+def _intel_view(card: BoardCard) -> dict[str, Any]:
+    sample_n = _openness_sample_n(card)
+    potential = _n(card.potential)
+    creator_prior = _n(card.creator_prior)
+    openness = _n(card.openness)
+    entry_fit = _n(card.entry_fit)
+    eev = _n(card.eev)
+    decision = card.intel_decision
+    return {
+        "potential": potential,
+        "creator_prior": creator_prior,
+        "openness": openness,
+        "entry_fit": entry_fit,
+        "eev": eev,
+        "potential_zh": _score_zh(potential),
+        "creator_prior_zh": _score_zh(creator_prior),
+        "openness_zh": _score_zh(openness),
+        "entry_fit_zh": _score_zh(entry_fit),
+        "eev_zh": _score_zh(eev),
+        "potential_confidence_zh": _intel_conf_zh(card.potential_confidence),
+        "creator_confidence_zh": _intel_conf_zh(card.creator_confidence),
+        "openness_confidence_zh": _intel_conf_zh(card.openness_confidence),
+        "entry_fit_confidence_zh": _intel_conf_zh(card.entry_fit_confidence),
+        "eev_confidence_zh": _intel_conf_zh(card.eev_confidence),
+        "openness_sample_n": sample_n,
+        "decision": decision,
+        "decision_zh": _intel_decision_zh(decision),
+        "high_confidence": bool(card.intel_high_confidence),
+        "na_note": NA_NOT_ZERO,
+        "potential_na_note": _intel_score_note(card.potential, kind="potential"),
+        "creator_prior_na_note": _intel_score_note(
+            card.creator_prior, kind="creator_prior"
+        ),
+        "openness_na_note": _intel_score_note(
+            card.openness, kind="openness", sample_n=sample_n
+        ),
+        "entry_fit_na_note": _intel_score_note(card.entry_fit, kind="entry_fit"),
+        "eev_na_note": _intel_score_note(card.eev, kind="eev"),
+        "community": _community_openness_view(card),
+    }
+
+
 def present_card(
     card: BoardCard,
     board: BoardDocument,
@@ -530,12 +715,14 @@ def present_card(
 ) -> dict[str, Any]:
     status = _status(card, board)
     in_top5 = status in {"official", "preview_top"}
-    rank_kind = "official" if board.mode == "official" else "preview"
+    rank_kind = "official" if status == "official" else "preview"
     dims = _dimension_block(card, board.snapshot_days)
     acc_zh, acc_score, acc_unknown = _access_view(card)
     obs_kind = _observation_kind(card, my_action)
     why_glance = _why_glance(card, status)
     conf_zh = CONF_LABELS.get(card.p0_confidence or "low", "低")
+    summary, summary_source = _present_summary(card)
+    rank_kind_zh = "正式入选" if rank_kind == "official" else "参考排名"
     return {
         "rank": card.list_rank,
         "full_name": card.full_name,
@@ -568,8 +755,22 @@ def present_card(
         "status": status,
         "status_zh": STATUS_LABELS[status],
         "rank_kind": rank_kind,
-        "rank_kind_zh": "正式排名" if rank_kind == "official" else "参考排名",
+        "rank_kind_zh": rank_kind_zh,
         "not_official": rank_kind != "official",
+        "rank_is_not_quality": True,
+        "rank_footnote_zh": f"序 ≠ 质量 · {rank_kind_zh}",
+        "potential": _n(card.potential),
+        "creator_prior": _n(card.creator_prior),
+        "openness": _n(card.openness),
+        "entry_fit": _n(card.entry_fit),
+        "eev": _n(card.eev),
+        "intel": _intel_view(card),
+        "project_summary": summary,
+        "summary_source": summary_source,
+        "creator": _creator_view(card),
+        "openness_stats": _community_openness_view(card),
+        "community_stats": _community_openness_view(card),
+        "thesis": card.thesis,
         "official_eligible": card.official_eligible,
         "momentum_na": card.momentum_na,
         "vetoed": card.vetoed,
@@ -629,6 +830,8 @@ def present_card(
         "my_action": my_action,
         "my_action_zh": ACTION_LABELS.get(my_action or "", None),
         "detail": {
+            "project_summary": summary,
+            "summary_source": summary_source,
             "dimensions": dims,
             "reviewers": [
                 _reviewer_panel(card, "trend", board.snapshot_days),
@@ -867,15 +1070,7 @@ def present_board(
     if run is None:
         extra_run = extra.get("run")
         run = extra_run if isinstance(extra_run, dict) else None
-    ranked = sorted(
-        board.shortlist,
-        key=lambda c: (
-            -(c.final_score or -1.0),
-            -(c.trend.score or -1.0),
-            -(c.contributor.score or -1.0),
-            c.full_name,
-        ),
-    )
+    ranked = sorted(board.shortlist, key=_eev_sort_key)
     candidates = [
         present_card(
             card,
@@ -899,6 +1094,11 @@ def present_board(
         "run": run_view,
         "empty": empty,
         "official_empty_note": _official_empty_note(board, run),
+        "no_high_confidence_note": (
+            None
+            if any(_has_high_confidence_eev(card) for card in ranked)
+            else NO_HIGH_CONFIDENCE_NOTE
+        ),
         "counts": {
             "discovered": board.discovered,
             "shortlisted": board.shortlisted,
@@ -916,8 +1116,8 @@ def present_board(
             "observing": "持续观察",
         },
         "snapshot_days": board.snapshot_days,
-        "sort_default": "final_score",
-        "sort_default_zh": "按综合评分从高到低",
+        "sort_default": "eev",
+        "sort_default_zh": "按预期进入价值",
         "candidates": candidates,
         "actions": [{"id": a, "label": ACTION_LABELS[a]} for a in ACTIONS],
     }

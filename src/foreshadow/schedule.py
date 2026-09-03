@@ -2,7 +2,19 @@
 
 Never points ProgramArguments, WorkingDirectory, or logs at a Desktop
 worktree. HOME is platformdirs (or a stable FORESHADOW_HOME override).
-The job is ``<absolute python> -m foreshadow run``.
+The daily job is ``<absolute python> -m foreshadow run``.
+
+``install`` / ``install_schedule`` also write a weekly oneshot train hook
+(``python -m foreshadow train``). That is not a second always-on service
+and is only created when the scheduler is installed:
+
+- systemd --user: ``foreshadow-train.service`` (Type=oneshot, MemoryMax=400M,
+  Nice=10) + ``foreshadow-train.timer`` (weekly). Do **not** add OnCalendar
+  to the daily unit — that unit must keep starting ``foreshadow run``.
+- launchd: ``ai.foreshadow.train`` (StartCalendarInterval Weekday).
+- cron: a second line in the same ``FORESHADOW DAILY`` crontab block.
+
+Train is local-only: it must not call GitHub. Daily units stay ``run``.
 """
 
 from __future__ import annotations
@@ -25,13 +37,16 @@ from foreshadow.paths import (
 )
 
 LAUNCHD_LABEL = "ai.foreshadow.daily"
+TRAIN_LABEL = "ai.foreshadow.train"
 DOGFOOD_LABEL = "ai.foreshadow.dogfood"
 SYSTEMD_UNIT = "foreshadow-daily"
+SYSTEMD_TRAIN_UNIT = "foreshadow-train"
 CRON_BEGIN = "# BEGIN FORESHADOW DAILY"
 CRON_END = "# END FORESHADOW DAILY"
 META_NAME = "schedule.json"
 DEFAULT_AT = "08:00"
 WRAPPER_NAME = "foreshadow-daily"
+TRAIN_WRAPPER_NAME = "foreshadow-train"
 
 
 class ScheduleError(RuntimeError):
@@ -58,11 +73,29 @@ class ScheduleSpec:
         return self.home / "logs" / f"{self.backend}.err.log"
 
     @property
+    def train_log_out(self) -> Path:
+        return self.home / "logs" / f"{self.backend}-train.out.log"
+
+    @property
+    def train_log_err(self) -> Path:
+        return self.home / "logs" / f"{self.backend}-train.err.log"
+
+    @property
     def program_args(self) -> list[str]:
+        return self.job_args("run")
+
+    @property
+    def train_program_args(self) -> list[str]:
+        return self.job_args("train")
+
+    def job_args(self, command: str) -> list[str]:
         if is_unstable_path(self.python):
-            wrap = self.wrapper or wrapper_path(self.home)
+            if command == "run":
+                wrap = self.wrapper or wrapper_path(self.home)
+            else:
+                wrap = train_wrapper_path(self.home)
             return ["/bin/bash", str(wrap)]
-        return [str(self.python), "-m", "foreshadow", "run"]
+        return [str(self.python), "-m", "foreshadow", command]
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -160,6 +193,14 @@ def wrapper_path(home: Path | None = None) -> Path:
     )
 
 
+def train_wrapper_path(home: Path | None = None) -> Path:
+    return (
+        (Path(home) if home is not None else resolve_data_dir())
+        / "bin"
+        / TRAIN_WRAPPER_NAME
+    )
+
+
 def macos_plist_path() -> Path:
     return _plist_path()
 
@@ -197,8 +238,18 @@ def _resolve_scheduled_python(python: Path | None) -> tuple[Path, bool]:
         return _fallback_python(), True
 
 
-def _write_wrapper(spec: ScheduleSpec) -> Path:
-    path = spec.wrapper or wrapper_path(spec.home)
+def _write_wrapper(spec: ScheduleSpec, *, command: str = "run") -> Path:
+    if command == "train":
+        path = train_wrapper_path(spec.home)
+        comment = (
+            "# Weekly train (local only). Never cd to a Desktop worktree. "
+            "Does not call GitHub."
+        )
+        unset_github = "unset GITHUB_TOKEN GH_TOKEN || true\n"
+    else:
+        path = spec.wrapper or wrapper_path(spec.home)
+        comment = "# Foreshadow daily job. Never cd to a Desktop worktree."
+        unset_github = ""
     path.parent.mkdir(parents=True, exist_ok=True)
     py_exec = str(spec.python) if not is_unstable_path(spec.python) else "python3"
     path_value = ":".join(
@@ -212,20 +263,21 @@ def _write_wrapper(spec: ScheduleSpec) -> Path:
     )
     py_line = "python3" if py_exec == "python3" else _sh_quote(py_exec)
     body = f"""#!/bin/bash
-# Foreshadow daily job. Never cd to a Desktop worktree.
+{comment}
 set -euo pipefail
-export HOME={_sh_quote(str(spec.user_home))}
+{unset_github}export HOME={_sh_quote(str(spec.user_home))}
 export FORESHADOW_HOME={_sh_quote(str(spec.home))}
 export PATH={_sh_quote(path_value)}
 cd "$FORESHADOW_HOME" || cd /tmp
 if command -v foreshadow >/dev/null 2>&1; then
-  exec foreshadow run "$@"
+  exec foreshadow {command} "$@"
 fi
-exec {py_line} -m foreshadow run "$@"
+exec {py_line} -m foreshadow {command} "$@"
 """
     path.write_text(body, encoding="utf-8")
     path.chmod(0o755)
-    spec.wrapper = path
+    if command == "run":
+        spec.wrapper = path
     return path
 
 
@@ -282,6 +334,7 @@ def install(
     resolve_log_dir(data_home)
     (data_home / "reports").mkdir(exist_ok=True)
     _write_wrapper(spec)
+    _write_wrapper(spec, command="train")
     _assert_spec_stable(spec)
     notes: list[str] = [f"wrote {spec.wrapper}"]
     if kind == "launchd":
@@ -315,6 +368,10 @@ def uninstall(*, apply: bool = True, backend: str | None = None) -> list[str]:
         if wrap.is_file():
             wrap.unlink()
             notes.append(f"removed {wrap}")
+        twrap = train_wrapper_path(root)
+        if twrap.is_file():
+            twrap.unlink()
+            notes.append(f"removed {twrap}")
     if not notes:
         notes.append("scheduler not installed")
     return notes
@@ -441,9 +498,10 @@ def stray_agent_plists() -> list[Path]:
     if not agents.is_dir():
         return []
     found: list[Path] = []
+    known = {f"{LAUNCHD_LABEL}.plist", f"{TRAIN_LABEL}.plist"}
     for path in sorted(agents.glob("*.plist")):
         name = path.name
-        if name == f"{LAUNCHD_LABEL}.plist":
+        if name in known:
             continue
         if "foreshadow" not in name.lower() and name != f"{DOGFOOD_LABEL}.plist":
             continue
@@ -467,8 +525,12 @@ def _assert_spec_stable(spec: ScheduleSpec) -> None:
         spec.home,
         spec.log_out,
         spec.log_err,
+        spec.train_log_out,
+        spec.train_log_err,
         spec.user_home,
         *spec.program_args,
+        *spec.train_program_args,
+        train_wrapper_path(spec.home),
     ]
     if spec.wrapper is not None:
         paths.append(spec.wrapper)
@@ -488,7 +550,10 @@ def _installed_paths_unstable(spec: ScheduleSpec | None, plist: Path | None) -> 
             _assert_spec_stable(spec)
         except ScheduleError:
             return True
-    return bool(plist is not None and plist.is_file() and plist_text_unstable(plist))
+    for path in (plist, _train_plist_path()):
+        if path is not None and path.is_file() and plist_text_unstable(path):
+            return True
+    return False
 
 
 def _meta_roots(home: Path | None = None) -> list[Path]:
@@ -590,6 +655,10 @@ def _plist_path() -> Path:
     return _launch_agents_dir() / f"{LAUNCHD_LABEL}.plist"
 
 
+def _train_plist_path() -> Path:
+    return _launch_agents_dir() / f"{TRAIN_LABEL}.plist"
+
+
 def _xml_escape(value: str) -> str:
     return (
         value.replace("&", "&amp;")
@@ -599,10 +668,17 @@ def _xml_escape(value: str) -> str:
     )
 
 
-def render_plist(spec: ScheduleSpec) -> str:
-    args = "\n".join(
-        f"    <string>{_xml_escape(arg)}</string>" for arg in spec.program_args
-    )
+def render_plist(
+    spec: ScheduleSpec,
+    *,
+    label: str | None = None,
+    args: list[str] | None = None,
+    weekly: bool = False,
+    log_out: Path | None = None,
+    log_err: Path | None = None,
+) -> str:
+    argv = spec.program_args if args is None else args
+    args_xml = "\n".join(f"    <string>{_xml_escape(arg)}</string>" for arg in argv)
     path_dirs = [
         str(spec.user_home / ".local" / "bin"),
         "/opt/homebrew/bin",
@@ -615,12 +691,33 @@ def render_plist(spec: ScheduleSpec) -> str:
         if parent not in path_dirs:
             path_dirs.insert(0, parent)
     path_value = ":".join(path_dirs)
+    job_label = label if label is not None else spec.label
+    stdout = log_out if log_out is not None else spec.log_out
+    stderr = log_err if log_err is not None else spec.log_err
+    if weekly:
+        calendar = f"""  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>{int(spec.hour)}</integer>
+    <key>Minute</key>
+    <integer>{int(spec.minute)}</integer>
+  </dict>"""
+    else:
+        calendar = f"""  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>{int(spec.hour)}</integer>
+    <key>Minute</key>
+    <integer>{int(spec.minute)}</integer>
+  </dict>"""
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>{_xml_escape(spec.label)}</string>
+  <string>{_xml_escape(job_label)}</string>
   <key>WorkingDirectory</key>
   <string>{_xml_escape(str(spec.home))}</string>
   <key>EnvironmentVariables</key>
@@ -634,19 +731,13 @@ def render_plist(spec: ScheduleSpec) -> str:
   </dict>
   <key>ProgramArguments</key>
   <array>
-{args}
+{args_xml}
   </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>{int(spec.hour)}</integer>
-    <key>Minute</key>
-    <integer>{int(spec.minute)}</integer>
-  </dict>
+{calendar}
   <key>StandardOutPath</key>
-  <string>{_xml_escape(str(spec.log_out))}</string>
+  <string>{_xml_escape(str(stdout))}</string>
   <key>StandardErrorPath</key>
-  <string>{_xml_escape(str(spec.log_err))}</string>
+  <string>{_xml_escape(str(stderr))}</string>
   <key>ProcessType</key>
   <string>Background</string>
 </dict>
@@ -654,17 +745,34 @@ def render_plist(spec: ScheduleSpec) -> str:
 """
 
 
+def render_train_plist(spec: ScheduleSpec) -> str:
+    """Weekly launchd job: python -m foreshadow train. Not an always-on agent."""
+    return render_plist(
+        spec,
+        label=TRAIN_LABEL,
+        args=spec.train_program_args,
+        weekly=True,
+        log_out=spec.train_log_out,
+        log_err=spec.train_log_err,
+    )
+
+
 def _install_launchd(spec: ScheduleSpec, *, apply: bool) -> list[str]:
     agents = _launch_agents_dir()
     agents.mkdir(parents=True, exist_ok=True)
     plist = _plist_path()
+    train_plist = _train_plist_path()
     body = render_plist(spec)
-    if ".worktrees" in body or "Desktop/Foreshadow" in body:
-        raise ScheduleError("generated launchd plist would include a worktree path")
+    train_body = render_train_plist(spec)
+    for text in (body, train_body):
+        if ".worktrees" in text or "Desktop/Foreshadow" in text:
+            raise ScheduleError("generated launchd plist would include a worktree path")
     plist.write_text(body, encoding="utf-8")
-    notes = [f"wrote {plist}"]
+    train_plist.write_text(train_body, encoding="utf-8")
+    notes = [f"wrote {plist}", f"wrote {train_plist}"]
     if apply:
         notes.extend(_activate_launchd(plist, spec.label))
+        notes.extend(_activate_launchd(train_plist, TRAIN_LABEL))
     return notes
 
 
@@ -692,18 +800,23 @@ def _activate_launchd(plist: Path, label: str) -> list[str]:
 
 def _uninstall_launchd(spec: ScheduleSpec | None, *, apply: bool) -> list[str]:
     notes: list[str] = []
-    label = spec.label if spec else LAUNCHD_LABEL
-    plist = _plist_path()
+    labels = [LAUNCHD_LABEL, TRAIN_LABEL]
+    if spec and spec.label not in labels:
+        labels.insert(0, spec.label)
+    plists = {_plist_path(), _train_plist_path()}
     if apply:
         uid = os.getuid()
-        target = f"gui/{uid}/{label}"
-        proc = _run(["launchctl", "bootout", target])
-        if proc.returncode != 0:
-            _run(["launchctl", "unload", "-w", str(plist)])
-        notes.append(f"unloaded {label}")
-    if plist.is_file():
-        plist.unlink()
-        notes.append(f"removed {plist}")
+        for label in labels:
+            plist = _launch_agents_dir() / f"{label}.plist"
+            target = f"gui/{uid}/{label}"
+            proc = _run(["launchctl", "bootout", target])
+            if proc.returncode != 0:
+                _run(["launchctl", "unload", "-w", str(plist)])
+            notes.append(f"unloaded {label}")
+    for plist in sorted(plists):
+        if plist.is_file():
+            plist.unlink()
+            notes.append(f"removed {plist}")
     return notes
 
 
@@ -767,23 +880,75 @@ WantedBy=timers.target
 """
 
 
+def render_systemd_train_service(spec: ScheduleSpec) -> str:
+    """Weekly oneshot. Memory-capped so 2GB VMs survive. Does not call GitHub."""
+    args = " ".join(_sh_quote(a) for a in spec.train_program_args)
+    return f"""[Unit]
+Description=Foreshadow weekly train (local, no GitHub)
+# Written only by `foreshadow schedule install`. Type=oneshot + timer, not a daemon.
+# Do not add OnCalendar to {SYSTEMD_UNIT}.timer; that unit must stay run.
+After={SYSTEMD_UNIT}.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={spec.home}
+Environment=HOME={spec.user_home}
+Environment=FORESHADOW_HOME={spec.home}
+UnsetEnvironment=GITHUB_TOKEN GH_TOKEN
+ExecStart={args}
+StandardOutput=append:{spec.train_log_out}
+StandardError=append:{spec.train_log_err}
+Nice=10
+MemoryMax=400M
+"""
+
+
+def render_systemd_train_timer(spec: ScheduleSpec) -> str:
+    """Weekly calendar. Separate unit so the daily timer still starts `run`."""
+    return f"""[Unit]
+Description=Foreshadow weekly train timer
+
+[Timer]
+OnCalendar=Sun *-*-* {spec.hour:02d}:{spec.minute:02d}:00
+Persistent=true
+Unit={SYSTEMD_TRAIN_UNIT}.service
+
+[Install]
+WantedBy=timers.target
+"""
+
+
 def _install_systemd(spec: ScheduleSpec, *, apply: bool) -> list[str]:
     unit_dir = _systemd_dir()
     unit_dir.mkdir(parents=True, exist_ok=True)
     service = unit_dir / f"{SYSTEMD_UNIT}.service"
     timer = unit_dir / f"{SYSTEMD_UNIT}.timer"
-    service_body = render_systemd_service(spec)
-    timer_body = render_systemd_timer(spec)
-    for body in (service_body, timer_body):
+    train_service = unit_dir / f"{SYSTEMD_TRAIN_UNIT}.service"
+    train_timer = unit_dir / f"{SYSTEMD_TRAIN_UNIT}.timer"
+    bodies = {
+        service: render_systemd_service(spec),
+        timer: render_systemd_timer(spec),
+        train_service: render_systemd_train_service(spec),
+        train_timer: render_systemd_train_timer(spec),
+    }
+    for body in bodies.values():
         if ".worktrees" in body or "Desktop/Foreshadow" in body:
             raise ScheduleError("generated systemd unit would include a worktree path")
-    service.write_text(service_body, encoding="utf-8")
-    timer.write_text(timer_body, encoding="utf-8")
-    notes = [f"wrote {service}", f"wrote {timer}"]
+    notes: list[str] = []
+    for path, body in bodies.items():
+        path.write_text(body, encoding="utf-8")
+        notes.append(f"wrote {path}")
     if apply:
         reload = _run(["systemctl", "--user", "daemon-reload"])
         enable = _run(
-            ["systemctl", "--user", "enable", "--now", f"{SYSTEMD_UNIT}.timer"]
+            [
+                "systemctl",
+                "--user",
+                "enable",
+                "--now",
+                f"{SYSTEMD_UNIT}.timer",
+                f"{SYSTEMD_TRAIN_UNIT}.timer",
+            ]
         )
         if reload.returncode != 0 or enable.returncode != 0:
             err = (enable.stderr or reload.stderr or "").strip()
@@ -791,6 +956,7 @@ def _install_systemd(spec: ScheduleSpec, *, apply: bool) -> list[str]:
             notes.append("units written; next: foreshadow doctor")
         else:
             notes.append(f"enabled {SYSTEMD_UNIT}.timer")
+            notes.append(f"enabled {SYSTEMD_TRAIN_UNIT}.timer")
     return notes
 
 
@@ -798,11 +964,19 @@ def _uninstall_systemd(spec: ScheduleSpec | None, *, apply: bool) -> list[str]:
     notes: list[str] = []
     if apply:
         _run(["systemctl", "--user", "disable", "--now", f"{SYSTEMD_UNIT}.timer"])
+        _run(["systemctl", "--user", "disable", "--now", f"{SYSTEMD_TRAIN_UNIT}.timer"])
         _run(["systemctl", "--user", "stop", f"{SYSTEMD_UNIT}.service"])
+        _run(["systemctl", "--user", "stop", f"{SYSTEMD_TRAIN_UNIT}.service"])
         _run(["systemctl", "--user", "daemon-reload"])
         notes.append(f"disabled {SYSTEMD_UNIT}.timer")
+        notes.append(f"disabled {SYSTEMD_TRAIN_UNIT}.timer")
     unit_dir = _systemd_dir()
-    for name in (f"{SYSTEMD_UNIT}.service", f"{SYSTEMD_UNIT}.timer"):
+    for name in (
+        f"{SYSTEMD_UNIT}.service",
+        f"{SYSTEMD_UNIT}.timer",
+        f"{SYSTEMD_TRAIN_UNIT}.service",
+        f"{SYSTEMD_TRAIN_UNIT}.timer",
+    ):
         path = unit_dir / name
         if path.is_file():
             path.unlink()
@@ -836,16 +1010,36 @@ def render_cron_line(spec: ScheduleSpec) -> str:
     )
 
 
+def render_cron_train_line(spec: ScheduleSpec) -> str:
+    """Sunday line in the same crontab block. Local train; no GitHub env."""
+    env = (
+        f"HOME={_sh_quote(str(spec.user_home))} "
+        f"FORESHADOW_HOME={_sh_quote(str(spec.home))}"
+    )
+    cmd = " ".join(_sh_quote(a) for a in spec.train_program_args)
+    out = _sh_quote(str(spec.train_log_out))
+    err = _sh_quote(str(spec.train_log_err))
+    work = _sh_quote(str(spec.home))
+    return (
+        f"{spec.minute} {spec.hour} * * 0 {env} cd {work} && "
+        f"env -u GITHUB_TOKEN -u GH_TOKEN {cmd} >> {out} 2>> {err}"
+    )
+
+
+def render_cron_block(spec: ScheduleSpec) -> str:
+    return render_cron_line(spec) + "\n" + render_cron_train_line(spec)
+
+
 def _install_cron(spec: ScheduleSpec, *, apply: bool) -> list[str]:
-    line = render_cron_line(spec)
-    if ".worktrees" in line or "Desktop/Foreshadow" in line:
+    block = render_cron_block(spec)
+    if ".worktrees" in block or "Desktop/Foreshadow" in block:
         raise ScheduleError("generated cron line would include a worktree path")
     notes = [f"cron: {CRON_BEGIN}"]
     if not apply:
-        notes.append(line)
+        notes.append(block)
         return notes
     current = _crontab_get()
-    updated = _crontab_replace(current, line)
+    updated = _crontab_replace(current, block)
     err = _crontab_set(updated)
     if err:
         notes.append(f"crontab failed: {err}")
@@ -945,6 +1139,7 @@ def format_install(info: dict[str, Any]) -> str:
         f"wrapper: {info.get('wrapper')}",
         f"python: {info.get('python')}",
         "job: python -m foreshadow run",
+        "train: python -m foreshadow train (weekly oneshot, no GitHub)",
     ]
     if info.get("unsafe_executable"):
         lines.append(

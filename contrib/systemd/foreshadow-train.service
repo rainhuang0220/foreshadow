@@ -1,0 +1,18 @@
+[Unit]
+Description=Foreshadow weekly train (local, no GitHub)
+# Oneshot companion to foreshadow-daily -- not a second always-on service.
+# User machines get this from `foreshadow schedule install` (systemd --user).
+# Do not add OnCalendar to foreshadow-daily.timer; that unit must stay `run`.
+After=foreshadow-daily.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/etc/foreshadow/environment
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/var/lib/foreshadow
+ExecStart=/home/ubuntu/.local/bin/foreshadow train
+UnsetEnvironment=GITHUB_TOKEN GH_TOKEN
+Nice=10
+MemoryMax=400M

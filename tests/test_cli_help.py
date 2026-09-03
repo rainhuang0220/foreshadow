@@ -61,6 +61,7 @@ def test_help_lists_commands():
         "outcome",
         "missions",
         "sample-access",
+        "train",
         "init",
         "doctor",
         "status",

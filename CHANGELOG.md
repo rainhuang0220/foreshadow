@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0] - 2026-09-03
+
+Project Intelligence + Learning. The Board ranks by expected entry value; Official Top 5 stays v1.
+
+### Added
+
+- Board: extractive project summary, cached by default-branch SHA. Optional LLM narrative must not invent.
+- Four scores: Potential, Creator Prior, Contributor Openness, Entry Fit.
+- Expected Entry Value (EEV) = geometric mean of available core scores (need ≥2 of Potential / Openness / Entry Fit). NA omitted, never 0-fill.
+- Homepage default sort is Expected Entry Value. Rank is ordinal, not a quality grade.
+- Creator prior from HydrateB `owner.repositories` (top ~30). No followers, no sum-of-stars celebrity boost.
+- Contributor Openness = Wilson lower bound of external closed PRs (merged + unmerged). Not Access Score. `n_ext<8` → NA.
+- Stars enter Potential only as damped growth (`star_trust`). Stars are not a sort key.
+- Schema 8: `model_runs`, `intel_scores`, `outcome_labels`. Labels 7/30/90; missing horizon is NULL. No JOIN at score time.
+- Offline trainer: SQLite read-only, never GitHub. Optional sklearn HistGradientBoosting via extra `[learn]`.
+- Shadow ε-greedy logs only. Champion remains `formula-v1` until explicit promotion.
+
+### Unchanged
+
+- Official Top 5 still v1 55/35/local v7. Empty Top 5 is success. EEV never writes `selected_rank`.
+- Draft PR still disabled. No third-party GitHub writes.
+- No PPO / RL.
+
 ## [0.3.1] - 2026-09-03
 
 ### Fixed

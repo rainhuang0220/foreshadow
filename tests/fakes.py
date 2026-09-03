@@ -13,6 +13,41 @@ from foreshadow.github.client import GitHubError, operation_name
 NOW = datetime(2026, 8, 24, 0, 5, tzinfo=UTC)
 
 
+def _owner_login(full_name: str) -> str:
+    return full_name.split("/", 1)[0] if "/" in full_name else full_name
+
+
+def _owner_side_repo(full_name: str) -> dict[str, Any]:
+    """HydrateB owner.repositories node. No stargazerCount (not requested)."""
+    return {
+        "nameWithOwner": full_name,
+        "createdAt": "2026-04-01T00:00:00Z",
+        "pushedAt": "2026-08-10T00:00:00Z",
+        "isArchived": False,
+        "isFork": False,
+        "forkCount": 0,
+        "issuesOpen": {"totalCount": 0},
+        "releases": {"totalCount": 0},
+    }
+
+
+def _default_owner(full_name: str) -> dict[str, Any]:
+    login = _owner_login(full_name)
+    return {
+        "__typename": "User",
+        "login": login,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "repositories": {
+            "totalCount": 3,
+            "nodes": [
+                _owner_side_repo(f"{login}/alpha"),
+                _owner_side_repo(f"{login}/beta"),
+                _owner_side_repo(f"{login}/gamma"),
+            ],
+        },
+    }
+
+
 class FakeResponse:
     def __init__(
         self,
@@ -44,6 +79,7 @@ def repo_node(node_id: str, full_name: str, **over: Any) -> dict[str, Any]:
         "id": node_id,
         "databaseId": over.pop("databaseId", None),
         "nameWithOwner": full_name,
+        "owner": _default_owner(full_name),
         "url": f"https://github.com/{full_name}",
         "description": f"repo {full_name}",
         "createdAt": "2026-05-01T00:00:00Z",
@@ -68,6 +104,7 @@ def repo_node(node_id: str, full_name: str, **over: Any) -> dict[str, Any]:
         "issuesOpen": {"totalCount": 4},
         "issuesClosed": {"totalCount": 1},
         "prsOpen": {"totalCount": 1},
+        "prsClosed": {"nodes": []},
         "discussions": {"totalCount": 0},
         "contributing": None,
         "readme": {"text": "# Hi\npip install x\n", "byteSize": 20},
@@ -335,6 +372,12 @@ class FakeGitHub:
                     source=op,
                 )
             repo = dict(self.nodes[str(nid)])
+            if op in {"HydrateB", "HydrateBNode"}:
+                repo.setdefault(
+                    "owner",
+                    _default_owner(str(repo.get("nameWithOwner") or "")),
+                )
+                repo.setdefault("prsClosed", {"nodes": []})
             field = "repository" if op in {"HydrateA", "HydrateB"} else "node"
             return {"data": {"rateLimit": rl, field: repo}}
         raise AssertionError(f"unexpected GraphQL operation {op}")

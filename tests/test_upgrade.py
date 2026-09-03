@@ -1,4 +1,4 @@
-"""P0 DB upgrade to schema 7 and empty-HOME clean install."""
+"""P0 DB upgrade to schema 8 and empty-HOME clean install."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from fakes import FakeGitHub, repo_node
 from foreshadow import __version__
+from foreshadow.auth import ensure_local_user
 from foreshadow.cli import app
 from foreshadow.config import ScoringSettings, Settings, user_config_path
 from foreshadow.db import SCHEMA_VERSION, connect, migrate
@@ -97,9 +98,30 @@ def test_p0_schema1_upgrade_to_6_preserves_reviews_and_watchlist(tmp_home):
         (run_id, watched),
     )
     conn.commit()
+    for version, filename in (
+        (2, "002_users.sql"),
+        (3, "003_score_version.sql"),
+        (4, "004_missions.sql"),
+        (5, "005_learning.sql"),
+        (6, "006_observations.sql"),
+        (7, "007_v03.sql"),
+    ):
+        _apply_sql(conn, version, filename)
+    uid = ensure_local_user(conn)
+    conn.execute("UPDATE reviews SET user_id=? WHERE user_id IS NULL", (uid,))
+    conn.execute(
+        """
+        INSERT INTO contribution_jobs(
+          user_id, repo_id, full_name, status, backend, task_json, log_json,
+          created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (uid, watched, "acme/watched", "queued", "native", "{}", "[]", "t", "t"),
+    )
+    conn.commit()
     migrate(conn)
-    assert SCHEMA_VERSION == 7
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
+    assert SCHEMA_VERSION == 8
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8]
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -114,8 +136,8 @@ def test_p0_schema1_upgrade_to_6_preserves_reviews_and_watchlist(tmp_home):
         ("acme/other", "interested", "keep-interest"),
     ]
     assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
-    uid = conn.execute("SELECT user_id FROM reviews WHERE repo_id=?", (watched,))
-    assert uid.fetchone()[0] is not None
+    uid_row = conn.execute("SELECT user_id FROM reviews WHERE repo_id=?", (watched,))
+    assert uid_row.fetchone()[0] is not None
     watch = load_watchlist(conn, date(2026, 8, 24), ScoringSettings())
     names = {w.full_name: w.action for w in watch}
     assert names["acme/watched"] == "watch"
@@ -130,6 +152,10 @@ def test_p0_schema1_upgrade_to_6_preserves_reviews_and_watchlist(tmp_home):
     ).fetchone()
     assert score == ("v1", 50)
     assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+    job = conn.execute(
+        "SELECT full_name, status, repo_id FROM contribution_jobs"
+    ).fetchone()
+    assert job == ("acme/watched", "queued", watched)
 
 
 def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
@@ -140,7 +166,7 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     assert list(home.iterdir()) == []
     assert not data.exists()
-    assert SCHEMA_VERSION == 7
+    assert SCHEMA_VERSION == 8
     ver = CliRunner().invoke(app, ["version"])
     assert ver.exit_code == 0
     assert __version__ in ver.stdout
@@ -175,7 +201,7 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     assert mode == 0o600
     conn = connect(db_path)
     migrate(conn)
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8]
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -186,13 +212,13 @@ def test_clean_install_empty_home_init_version_migrate(tmp_path, monkeypatch):
     assert (data / "reports" / "2026-08-24.md").is_file()
 
 
-def test_migrate_on_empty_db_is_schema_7(tmp_home):
+def test_migrate_on_empty_db_is_schema_8(tmp_home):
     db = tmp_home / "foreshadow.sqlite3"
     assert not db.exists()
     conn = connect(db)
     migrate(conn)
-    assert SCHEMA_VERSION == 7
-    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7]
+    assert SCHEMA_VERSION == 8
+    assert _versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8]
     assert os.stat(db).st_mode & 0o777 == 0o600
     row = conn.execute("SELECT username FROM users WHERE is_local=1").fetchone()
     assert row[0] == "local"

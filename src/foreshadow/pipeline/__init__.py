@@ -32,6 +32,10 @@ from foreshadow.pipeline.discover import (
     is_degraded,
     load_watchlist,
 )
+from foreshadow.pipeline.obs_events import (
+    record_potential_ups_for_today,
+    record_today_observation_events,
+)
 from foreshadow.pipeline.observation import (
     admit_from_scores,
     count_states,
@@ -366,6 +370,7 @@ def _run(
         )
     ]
     mark_observed(conn, snap_ids, today)
+    record_today_observation_events(conn, today)
     conn.execute(
         """
         UPDATE daily_runs
@@ -464,6 +469,16 @@ def _run(
             """,
             (row.breakdown.selected_rank, run_id, repo_id),
         )
+
+    _record_project_intelligence(
+        conn,
+        scored_rows=scored_rows,
+        selected=selected,
+        today=today,
+        clock=clock,
+        slack_days=settings.scoring.window_slack_days,
+        scored_at=now_iso,
+    )
 
     watch_now = load_watchlist(conn, today, settings.scoring)
     watch_repo_ids = {int(w.repo_id) for w in watch_now}
@@ -905,3 +920,317 @@ def _as_dict(raw: Any) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _record_project_intelligence(
+    conn: sqlite3.Connection,
+    *,
+    scored_rows: Sequence[tuple[int, ScoredRepo, dict[str, Any]]],
+    selected: Sequence[ScoredRepo],
+    today: date,
+    clock: Clock,
+    slack_days: int,
+    scored_at: str,
+) -> None:
+    """Write formula intel_scores and labels. Never touches Official selected_rank."""
+    try:
+        _write_intel_scores(
+            conn,
+            scored_rows=scored_rows,
+            selected=selected,
+            today=today,
+            clock=clock,
+            slack_days=slack_days,
+            scored_at=scored_at,
+        )
+        _resolve_outcome_labels(conn, today, slack_days=slack_days)
+    except sqlite3.OperationalError:
+        return
+
+
+def _write_intel_scores(
+    conn: sqlite3.Connection,
+    *,
+    scored_rows: Sequence[tuple[int, ScoredRepo, dict[str, Any]]],
+    selected: Sequence[ScoredRepo],
+    today: date,
+    clock: Clock,
+    slack_days: int,
+    scored_at: str,
+) -> None:
+    score_intel = _load_score_intel()
+    if score_intel is None:
+        return
+    model_run_id = _formula_model_run_id(conn)
+    if model_run_id is None:
+        return
+    policy = _shadow_policy(scored_rows, selected)
+    today_s = today.isoformat()
+    if scored_rows:
+        print("Scoring intelligence…", flush=True)
+    for repo_id, scored, data in scored_rows:
+        intel = _call_score_intel(
+            score_intel,
+            scored=scored,
+            data=data,
+            clock=clock,
+            slack_days=slack_days,
+        )
+        if intel is None:
+            continue
+        components = _intel_components(intel, data=data, policy=policy)
+        eev = components.get("eev")
+        try:
+            conn.execute(
+                """
+                INSERT INTO intel_scores(
+                  repo_id, as_of_date, model_run_id, score,
+                  components_json, scored_at
+                ) VALUES (?,?,?,?,?,?)
+                ON CONFLICT(repo_id, as_of_date, model_run_id) DO UPDATE SET
+                  score=excluded.score,
+                  components_json=excluded.components_json,
+                  scored_at=excluded.scored_at
+                """,
+                (
+                    repo_id,
+                    today_s,
+                    model_run_id,
+                    eev,
+                    json.dumps(components, ensure_ascii=False),
+                    scored_at,
+                ),
+            )
+        except sqlite3.OperationalError:
+            return
+        except sqlite3.Error:
+            continue
+    try:
+        record_potential_ups_for_today(conn, today)
+    except sqlite3.Error:
+        return
+
+
+def _resolve_outcome_labels(
+    conn: sqlite3.Connection, today: date, *, slack_days: int = 1
+) -> None:
+    try:
+        from foreshadow.pipeline.labels import resolve_labels
+    except ImportError:
+        return
+    try:
+        resolve_labels(conn, today, slack_days=slack_days)
+    except sqlite3.Error:
+        return
+    except (TypeError, ValueError, AttributeError):
+        return
+
+
+def _load_score_intel() -> Any | None:
+    try:
+        from foreshadow.pipeline.intel import score_intel
+    except ImportError:
+        return None
+    return score_intel
+
+
+def _formula_model_run_id(conn: sqlite3.Connection) -> int | None:
+    try:
+        present = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='intel_scores'"
+        ).fetchone()
+        if present is None:
+            return None
+        row = conn.execute(
+            """
+            SELECT id FROM model_runs
+            WHERE name='formula-v1'
+            ORDER BY id
+            LIMIT 1
+            """
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if row is not None:
+        return int(row[0])
+    return 1
+
+
+def _shadow_policy(
+    scored_rows: Sequence[tuple[int, ScoredRepo, dict[str, Any]]],
+    selected: Sequence[ScoredRepo],
+) -> dict[str, Any] | None:
+    try:
+        from foreshadow.pipeline.bandit import shadow_explore
+    except ImportError:
+        return None
+    phase_b = [
+        scored.full_name
+        for _, scored, data in scored_rows
+        if _feature_phase(data) == "B"
+    ]
+    ranked = [row.full_name for row in selected]
+    try:
+        policy = shadow_explore(phase_b, ranked)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return policy if isinstance(policy, dict) else None
+
+
+def _feature_phase(data: dict[str, Any]) -> str | None:
+    feat = data.get("features") or {}
+    if isinstance(feat, dict):
+        phase = feat.get("phase")
+    else:
+        phase = getattr(feat, "phase", None)
+    return str(phase) if phase else None
+
+
+def _call_score_intel(
+    score_intel: Any,
+    *,
+    scored: ScoredRepo,
+    data: dict[str, Any],
+    clock: Clock,
+    slack_days: int,
+) -> Any | None:
+    import inspect
+
+    try:
+        kwargs = _intel_kwargs(
+            scored=scored, data=data, clock=clock, slack_days=slack_days
+        )
+        params = inspect.signature(score_intel).parameters
+        if params and not any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+        ):
+            kwargs = {key: value for key, value in kwargs.items() if key in params}
+        return score_intel(**kwargs)
+    except (TypeError, ValueError, AttributeError, KeyError):
+        return None
+
+
+def _intel_kwargs(
+    *,
+    scored: ScoredRepo,
+    data: dict[str, Any],
+    clock: Clock,
+    slack_days: int,
+) -> dict[str, Any]:
+    from foreshadow.pipeline.features import compute_windows
+    from foreshadow.pipeline.score import _features, _parse_datetime, _snapshots
+
+    feat = _features(data)
+    windows = None
+    try:
+        windows = compute_windows(
+            _snapshots(data), clock, data.get("created_at"), slack_days
+        )
+    except (TypeError, ValueError, AttributeError, KeyError):
+        windows = None
+    ev_windows = (scored.evidence or {}).get("windows") or {}
+    v7 = ev_windows.get("v7")
+    if v7 is None and windows is not None:
+        v7 = windows.v7
+    rel = windows.rel_growth_7d if windows is not None else None
+    today = clock.today()
+    pushed_age = data.get("pushed_age_days")
+    if pushed_age is None:
+        pushed_at = _parse_datetime(data.get("pushed_at"))
+        if pushed_at is not None:
+            pushed_age = max((today - pushed_at.date()).days, 0)
+    bd = scored.breakdown
+    return {
+        "feat": feat,
+        "windows_v7": v7,
+        "rel_growth_7d": rel,
+        "stars": data.get("S"),
+        "forks": data.get("F"),
+        "open_issues": data.get("I_open"),
+        "contributors": data.get("C"),
+        "pushed_age_days": pushed_age,
+        "direction_fit": bd.direction_fit.value,
+        "contribution_opp": bd.contribution_opp.value,
+        "strategy_path": _strategy_path(feat),
+        "snapshot_count": len(data.get("snapshots") or []),
+        "h_flags": list(bd.flags),
+        "current_full_name": scored.full_name,
+        "now": clock.now(),
+    }
+
+
+def _strategy_path(feat: Any) -> str | None:
+    try:
+        from foreshadow.pipeline.strategy import recommend_entry
+    except ImportError:
+        return None
+    try:
+        rec = recommend_entry(feat)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    path = getattr(rec, "path", None)
+    return str(path) if path else None
+
+
+def _intel_components(
+    intel: Any, *, data: dict[str, Any], policy: dict[str, Any] | None
+) -> dict[str, Any]:
+    if isinstance(intel, dict):
+        potential = intel.get("potential")
+        creator_prior = intel.get("creator_prior")
+        openness = intel.get("openness")
+        entry_fit = intel.get("entry_fit")
+        eev = intel.get("eev")
+        decision = intel.get("decision")
+        sample = intel.get("sample", intel.get("sample_n"))
+        if sample is None:
+            sample = intel.get("openness_sample_n")
+        snapshot_count = intel.get("snapshot_count")
+        formula_version = intel.get("formula_version") or "intel-v1"
+        high_confidence = intel.get("high_confidence")
+    else:
+        potential = getattr(intel, "potential", None)
+        creator_prior = getattr(intel, "creator_prior", None)
+        openness = getattr(intel, "openness", None)
+        entry_fit = getattr(intel, "entry_fit", None)
+        eev = getattr(intel, "eev", None)
+        decision = getattr(intel, "decision", None)
+        sample = getattr(intel, "openness_sample_n", None)
+        if sample is None:
+            sample = getattr(intel, "sample_n", None)
+        if sample is None:
+            sample = getattr(intel, "sample", None)
+        snapshot_count = getattr(intel, "snapshot_count", None)
+        formula_version = getattr(intel, "formula_version", None) or "intel-v1"
+        high_confidence = getattr(intel, "high_confidence", None)
+    feat = data.get("features") or {}
+    if sample is None:
+        if isinstance(feat, dict):
+            sample = feat.get("pr_external_closed_n")
+        else:
+            sample = getattr(feat, "pr_external_closed_n", None)
+    if snapshot_count is None:
+        snapshot_count = len(data.get("snapshots") or [])
+    components = {
+        "potential": _cs_value(potential),
+        "creator_prior": _cs_value(creator_prior),
+        "openness": _cs_value(openness),
+        "entry_fit": _cs_value(entry_fit),
+        "eev": _cs_value(eev),
+        "decision": decision,
+        "sample": sample,
+        "snapshot_count": snapshot_count,
+        "formula_version": formula_version,
+        "high_confidence": bool(high_confidence),
+    }
+    if policy is not None:
+        components["policy"] = policy
+    return components
+
+
+def _cs_value(part: Any) -> Any:
+    if part is None:
+        return None
+    if isinstance(part, dict):
+        return part.get("value")
+    return getattr(part, "value", part)

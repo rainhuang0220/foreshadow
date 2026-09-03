@@ -15,7 +15,6 @@ from foreshadow.config import DiscoverySettings
 from foreshadow.github.client import GitHubError, graphql_marks_incomplete
 from foreshadow.github.queries import HYDRATE_A_NODE, HYDRATE_B_NODE
 from foreshadow.github.rest import (
-    content_exists,
     fetch_closed_pulls,
     fetch_commits,
     fetch_community_profile,
@@ -58,6 +57,8 @@ PUNCT_RE = re.compile(r"[^a-z0-9\s]+")
 TEST_DIRS = frozenset({"test", "tests", "spec", "__tests__"})
 EXT_ASSOC = frozenset({"NONE", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"})
 MAINT_ASSOC = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+NEWCOMER_ASSOC = frozenset({"FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"})
+OWNER_TYPES = frozenset({"User", "Organization"})
 
 
 @dataclass
@@ -1007,7 +1008,7 @@ def hydrate_phase_b_rest(
         pass
     try:
         out["commits"] = fetch_commits(
-            client, owner, name, clock.now() - timedelta(days=30)
+            client, owner, name, clock.now() - timedelta(days=30), max_pages=1
         )
     except GitHubError:
         pass
@@ -1028,18 +1029,6 @@ def hydrate_phase_b_rest(
         out["releases"] = fetch_releases(client, owner, name)
     except GitHubError:
         out["releases"] = None
-    contents = out["contents"] if isinstance(out["contents"], list) else []
-    names = {
-        str(item.get("name"))
-        for item in contents
-        if isinstance(item, dict) and item.get("name")
-    }
-    for extra in ("tests", "test", "src"):
-        if extra in names:
-            try:
-                content_exists(client, owner, name, extra)
-            except GitHubError:
-                pass
     return out
 
 
@@ -1357,6 +1346,9 @@ def build_features_blob(
     help_blob = "\n".join(help_titles)
     if len(help_blob.encode()) > 2048:
         help_titles = _cap_titles(help_titles, 2048)
+    owner_intel = _creator_intel(repo, now_dt)
+    pr_intel = _pr_openness(repo)
+    summary_intel = _summary_intel(repo, excerpt, now_dt)
 
     blob = FeaturesBlob(
         u_issue=len(authors) if open_sample_landed else None,
@@ -1405,6 +1397,27 @@ def build_features_blob(
         prs_created_7d=None,
         prs_created_30d=None,
         data_completeness=None,
+        owner_type=owner_intel["owner_type"],
+        owner_login=owner_intel["owner_login"],
+        owner_created_at=owner_intel["owner_created_at"],
+        creator_repo_n=owner_intel["creator_repo_n"],
+        creator_success_n=owner_intel["creator_success_n"],
+        creator_abandoned_n=owner_intel["creator_abandoned_n"],
+        creator_longest_maintained_days=owner_intel["creator_longest_maintained_days"],
+        creator_recent_push_n=owner_intel["creator_recent_push_n"],
+        creator_release_n=owner_intel["creator_release_n"],
+        pr_closed_sample_n=pr_intel["pr_closed_sample_n"],
+        pr_external_closed_n=pr_intel["pr_external_closed_n"],
+        pr_external_merged_closed_n=pr_intel["pr_external_merged_closed_n"],
+        pr_newcomer_closed_n=pr_intel["pr_newcomer_closed_n"],
+        pr_newcomer_merged_n=pr_intel["pr_newcomer_merged_n"],
+        pr_ext_first_response_hours=pr_intel["pr_ext_first_response_hours"],
+        pr_ext_merge_hours=pr_intel["pr_ext_merge_hours"],
+        pr_ignored_ext_n=pr_intel["pr_ignored_ext_n"],
+        summary=summary_intel["summary"],
+        summary_at=summary_intel["summary_at"],
+        summary_source_sha=summary_intel["summary_source_sha"],
+        star_trust=None,
     )
     blob.data_completeness = classify_data_completeness(blob, contributor_count)
     return blob
@@ -1441,9 +1454,396 @@ def build_medium_features_blob(
         pr_accept_rate=pr_rate,
         pr_reviewed_n=pr_rev,
         pr_review_rate=pr_rev_rate,
+        owner_type=None,
+        owner_login=None,
+        owner_created_at=None,
+        creator_repo_n=None,
+        creator_success_n=None,
+        creator_abandoned_n=None,
+        creator_longest_maintained_days=None,
+        creator_recent_push_n=None,
+        creator_release_n=None,
+        pr_closed_sample_n=None,
+        pr_external_closed_n=None,
+        pr_external_merged_closed_n=None,
+        pr_newcomer_closed_n=None,
+        pr_newcomer_merged_n=None,
+        pr_ext_first_response_hours=None,
+        pr_ext_merge_hours=None,
+        pr_ignored_ext_n=None,
+        summary=None,
+        summary_at=None,
+        summary_source_sha=None,
+        star_trust=None,
     )
     blob.data_completeness = classify_data_completeness(blob, contributor_count)
     return blob
+
+
+def _empty_owner_intel() -> dict[str, Any]:
+    return {
+        "owner_type": None,
+        "owner_login": None,
+        "owner_created_at": None,
+        "creator_repo_n": None,
+        "creator_success_n": None,
+        "creator_abandoned_n": None,
+        "creator_longest_maintained_days": None,
+        "creator_recent_push_n": None,
+        "creator_release_n": None,
+    }
+
+
+def _empty_pr_openness() -> dict[str, Any]:
+    return {
+        "pr_closed_sample_n": None,
+        "pr_external_closed_n": None,
+        "pr_external_merged_closed_n": None,
+        "pr_newcomer_closed_n": None,
+        "pr_newcomer_merged_n": None,
+        "pr_ext_first_response_hours": None,
+        "pr_ext_merge_hours": None,
+        "pr_ignored_ext_n": None,
+    }
+
+
+def _empty_summary_intel() -> dict[str, Any]:
+    return {"summary": None, "summary_at": None, "summary_source_sha": None}
+
+
+def _owner_identity(owner: Mapping[str, Any]) -> dict[str, Any]:
+    typename = owner.get("__typename")
+    login = owner.get("login")
+    created = owner.get("createdAt")
+    return {
+        "owner_type": typename if typename in OWNER_TYPES else None,
+        "owner_login": str(login) if login else None,
+        "owner_created_at": str(created) if created else None,
+    }
+
+
+def _creator_intel(repo: Mapping[str, Any], now: datetime) -> dict[str, Any]:
+    owner = repo.get("owner")
+    if not isinstance(owner, Mapping):
+        return _empty_owner_intel()
+    current = str(repo.get("nameWithOwner") or "")
+    stats = _creator_stats_from_module(owner, current_nwo=current, now=now)
+    if stats is not None:
+        out = _empty_owner_intel()
+        out.update(_owner_identity(owner))
+        for key in out:
+            if key in stats:
+                out[key] = stats[key]
+        return out
+    return _creator_from_owner(owner, current_nwo=current, now=now)
+
+
+def _creator_stats_from_module(
+    owner: Mapping[str, Any], *, current_nwo: str, now: datetime
+) -> dict[str, Any] | None:
+    try:
+        from foreshadow.pipeline import creator as creator_mod
+    except ImportError:
+        return None
+    for name in ("compute_creator_stats", "creator_stats", "from_owner"):
+        fn = getattr(creator_mod, name, None)
+        if not callable(fn):
+            continue
+        try:
+            result = fn(owner, current_nwo=current_nwo, now=now)
+        except TypeError:
+            try:
+                result = fn(owner, current_nwo, now)
+            except TypeError:
+                continue
+        if isinstance(result, Mapping):
+            return dict(result)
+    return None
+
+
+def _creator_from_owner(
+    owner: Mapping[str, Any], *, current_nwo: str, now: datetime
+) -> dict[str, Any]:
+    """Owner sample stats. Never stores star or follower sums."""
+    out = _empty_owner_intel()
+    out.update(_owner_identity(owner))
+    repos = owner.get("repositories")
+    nodes = repos.get("nodes") if isinstance(repos, Mapping) else None
+    if not isinstance(nodes, list):
+        return out
+    sample: list[Mapping[str, Any]] = []
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            continue
+        nwo = str(node.get("nameWithOwner") or "")
+        if current_nwo and nwo == current_nwo:
+            continue
+        sample.append(node)
+    success = 0
+    abandoned = 0
+    recent = 0
+    released = 0
+    longest: int | None = None
+    for node in sample:
+        created = parse_dt(node.get("createdAt"))
+        pushed = parse_dt(node.get("pushedAt"))
+        age = None if created is None else (now.date() - created.date()).days
+        pushed_age = None if pushed is None else (now.date() - pushed.date()).days
+        is_fork = bool(node.get("isFork"))
+        is_archived = bool(node.get("isArchived"))
+        rel = node.get("releases")
+        try:
+            n_rel = int(rel.get("totalCount") or 0) if isinstance(rel, Mapping) else 0
+        except (TypeError, ValueError):
+            n_rel = 0
+        if n_rel >= 1:
+            released += 1
+        if pushed_age is not None and pushed_age <= 90:
+            recent += 1
+        recent_or_released = (pushed_age is not None and pushed_age <= 90) or n_rel >= 1
+        if (
+            not is_fork
+            and age is not None
+            and age >= 180
+            and not is_archived
+            and recent_or_released
+        ):
+            success += 1
+        if (
+            age is not None
+            and age >= 180
+            and pushed_age is not None
+            and pushed_age > 365
+        ):
+            abandoned += 1
+        if created is not None:
+            end = pushed or now
+            span = (end.date() - created.date()).days
+            if span >= 0 and (longest is None or span > longest):
+                longest = span
+    out["creator_repo_n"] = len(sample)
+    out["creator_success_n"] = success
+    out["creator_abandoned_n"] = abandoned
+    out["creator_longest_maintained_days"] = longest
+    out["creator_recent_push_n"] = recent
+    out["creator_release_n"] = released
+    return out
+
+
+def _pr_openness(repo: Mapping[str, Any]) -> dict[str, Any]:
+    merged_raw = repo.get("prsMerged")
+    closed_raw = repo.get("prsClosed")
+    merged_nodes = merged_raw.get("nodes") if isinstance(merged_raw, Mapping) else None
+    closed_nodes = closed_raw.get("nodes") if isinstance(closed_raw, Mapping) else None
+    if not isinstance(merged_nodes, list) or not isinstance(closed_nodes, list):
+        return _empty_pr_openness()
+    combined: list[tuple[bool, Mapping[str, Any]]] = []
+    for pr in merged_nodes:
+        if isinstance(pr, Mapping):
+            combined.append((True, pr))
+    for pr in closed_nodes:
+        if isinstance(pr, Mapping) and not pr.get("mergedAt"):
+            combined.append((False, pr))
+    ext_closed = 0
+    ext_merged = 0
+    newcomer_closed = 0
+    newcomer_merged = 0
+    ignored = 0
+    resp_hours: list[float] = []
+    merge_hours: list[float] = []
+    for merged, pr in combined:
+        if _pr_is_bot(pr):
+            continue
+        assoc = str(pr.get("authorAssociation") or "")
+        is_ext = assoc in EXT_ASSOC
+        is_new = assoc in NEWCOMER_ASSOC
+        if is_ext:
+            ext_closed += 1
+            if merged:
+                ext_merged += 1
+            hours = _first_maint_response_hours(pr)
+            if hours is not None:
+                resp_hours.append(hours)
+            if not merged and _is_ignored_ext_pr(pr):
+                ignored += 1
+            if merged:
+                mh = _pr_merge_hours(pr)
+                if mh is not None:
+                    merge_hours.append(mh)
+        if is_new:
+            newcomer_closed += 1
+            if merged:
+                newcomer_merged += 1
+    return {
+        "pr_closed_sample_n": len(combined),
+        "pr_external_closed_n": ext_closed,
+        "pr_external_merged_closed_n": ext_merged,
+        "pr_newcomer_closed_n": newcomer_closed,
+        "pr_newcomer_merged_n": newcomer_merged,
+        "pr_ext_first_response_hours": _median(resp_hours),
+        "pr_ext_merge_hours": _median(merge_hours),
+        "pr_ignored_ext_n": ignored,
+    }
+
+
+def _pr_is_bot(pr: Mapping[str, Any]) -> bool:
+    from foreshadow.pipeline.openness import BOT_LOGINS, is_external_author
+
+    author = pr.get("author") if isinstance(pr.get("author"), Mapping) else {}
+    login = author.get("login") if isinstance(author, Mapping) else None
+    typ = author.get("type") if isinstance(author, Mapping) else None
+    if is_bot(login, typ):
+        return True
+    if isinstance(login, str) and (
+        login.endswith("[bot]") or login.lower().removesuffix("[bot]") in BOT_LOGINS
+    ):
+        return True
+    assoc = str(pr.get("authorAssociation") or "")
+    return assoc in EXT_ASSOC and not is_external_author(assoc, login, typ)
+
+
+def _comment_nodes(pr: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    comments = pr.get("comments") if isinstance(pr.get("comments"), Mapping) else {}
+    nodes = comments.get("nodes") if isinstance(comments, Mapping) else None
+    if not isinstance(nodes, list):
+        return []
+    return [cmt for cmt in nodes if isinstance(cmt, Mapping)]
+
+
+def _first_maint_response_hours(pr: Mapping[str, Any]) -> float | None:
+    created = parse_dt(pr.get("createdAt"))
+    if created is None:
+        return None
+    comments = _comment_nodes(pr)
+    if not comments:
+        return None
+    first_maint: datetime | None = None
+    for cmt in comments:
+        if str(cmt.get("authorAssociation") or "") not in MAINT_ASSOC:
+            continue
+        c_at = parse_dt(cmt.get("createdAt"))
+        if c_at is None:
+            continue
+        if first_maint is None or c_at < first_maint:
+            first_maint = c_at
+    if first_maint is None:
+        return None
+    hours = (first_maint - created).total_seconds() / 3600.0
+    if hours < 0:
+        return None
+    return hours
+
+
+def _pr_merge_hours(pr: Mapping[str, Any]) -> float | None:
+    created = parse_dt(pr.get("createdAt"))
+    merged_at = parse_dt(pr.get("mergedAt"))
+    if created is None or merged_at is None:
+        return None
+    hours = (merged_at - created).total_seconds() / 3600.0
+    if hours < 0:
+        return None
+    return hours
+
+
+def _is_ignored_ext_pr(pr: Mapping[str, Any]) -> bool:
+    reviews = pr.get("reviews") if isinstance(pr.get("reviews"), Mapping) else {}
+    try:
+        rc = int(reviews.get("totalCount") or 0) if isinstance(reviews, Mapping) else 0
+    except (TypeError, ValueError):
+        rc = 0
+    if rc > 0:
+        return False
+    for cmt in _comment_nodes(pr):
+        if str(cmt.get("authorAssociation") or "") in MAINT_ASSOC:
+            return False
+    return True
+
+
+def _median(values: Sequence[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    n = len(ordered)
+    mid = n // 2
+    if n % 2:
+        return float(ordered[mid])
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _repo_topics(repo: Mapping[str, Any]) -> list[str]:
+    raw = repo.get("repositoryTopics") or {}
+    nodes = raw.get("nodes") if isinstance(raw, Mapping) else None
+    out: list[str] = []
+    if not isinstance(nodes, list):
+        return out
+    for node in nodes:
+        if isinstance(node, Mapping) and isinstance(node.get("topic"), Mapping):
+            name = node["topic"].get("name")
+            if name:
+                out.append(str(name))
+    return out
+
+
+def _default_branch_oid(repo: Mapping[str, Any]) -> str | None:
+    ref = repo.get("defaultBranchRef")
+    if not isinstance(ref, Mapping):
+        return None
+    target = ref.get("target")
+    if not isinstance(target, Mapping):
+        return None
+    oid = target.get("oid")
+    return str(oid) if oid else None
+
+
+def _summary_intel(
+    repo: Mapping[str, Any], excerpt: str | None, now: datetime
+) -> dict[str, Any]:
+    try:
+        from foreshadow.pipeline.summary import summarize_project
+    except ImportError:
+        return _empty_summary_intel()
+    oid = _default_branch_oid(repo)
+    result = summarize_project(
+        repo.get("description"), excerpt, _repo_topics(repo), oid
+    )
+    if result is None:
+        return _empty_summary_intel()
+    if isinstance(result, Mapping):
+        summary = result.get("summary") or result.get("text")
+        if not summary:
+            return _empty_summary_intel()
+        at = result.get("summary_at") or now.isoformat()
+        sha = result.get("summary_source_sha") or result.get("source_sha") or oid
+        return {
+            "summary": str(summary),
+            "summary_at": str(at),
+            "summary_source_sha": str(sha) if sha else None,
+        }
+    text = getattr(result, "summary", None) or getattr(result, "text", None)
+    if text:
+        at = (
+            getattr(result, "summary_at", None)
+            or getattr(result, "at", None)
+            or now.isoformat()
+        )
+        sha = (
+            getattr(result, "summary_source_sha", None)
+            or getattr(result, "source_sha", None)
+            or oid
+        )
+        return {
+            "summary": str(text),
+            "summary_at": str(at),
+            "summary_source_sha": str(sha) if sha else None,
+        }
+    raw = str(result).strip()
+    if not raw:
+        return _empty_summary_intel()
+    return {
+        "summary": raw,
+        "summary_at": now.isoformat(),
+        "summary_source_sha": oid,
+    }
 
 
 def _pr_acceptance(

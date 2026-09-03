@@ -25,7 +25,7 @@ from test_board_server import _seed_board
 def test_schema_7_adds_github_identity_and_v03_tables(tmp_home):
     conn = connect(tmp_home / "foreshadow.sqlite3")
     migrate(conn)
-    assert SCHEMA_VERSION == 7
+    assert SCHEMA_VERSION == 8
     cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     assert "github_id" in cols
     assert "github_login" in cols
