@@ -296,7 +296,17 @@ class BoardHandler(BaseHTTPRequestHandler):
         if not origin_host or origin_host != req_host:
             return False
         origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        req_port = req.port or 80
+        if req.port is not None:
+            req_port = req.port
+        else:
+            proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0]
+            proto = proto.strip().lower()
+            if proto == "https":
+                req_port = 443
+            elif proto == "http":
+                req_port = 80
+            else:
+                req_port = 443 if parsed.scheme == "https" else 80
         return origin_port == req_port
 
     def _access(self) -> dict[str, Any]:

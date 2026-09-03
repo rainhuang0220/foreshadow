@@ -104,6 +104,46 @@ def test_board_rejects_foreign_origin(tmp_home, frozen_clock):
         httpd.server_close()
 
 
+def test_https_forwarded_origin_allows_host_without_port(tmp_home, frozen_clock):
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        parsed = urlparse(base)
+        body = json.dumps(
+            {
+                "username": "alice",
+                "email": "alice@example.com",
+                "password": "password1",
+            }
+        ).encode()
+        conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+        conn.putrequest("POST", "/api/register", skip_host=True)
+        conn.putheader("Host", "foreshadow.plainlist.space")
+        conn.putheader("Origin", "https://foreshadow.plainlist.space")
+        conn.putheader("X-Forwarded-Proto", "https")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(len(body)))
+        conn.endheaders()
+        conn.send(body)
+        resp = conn.getresponse()
+        assert resp.status == 200, resp.read()
+        conn.close()
+        evil = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+        evil.putrequest("POST", "/api/login", skip_host=True)
+        evil.putheader("Host", "foreshadow.plainlist.space")
+        evil.putheader("Origin", "https://evil.example")
+        evil.putheader("X-Forwarded-Proto", "https")
+        evil.putheader("Content-Type", "application/json")
+        evil.putheader("Content-Length", "2")
+        evil.endheaders()
+        evil.send(b"{}")
+        bad = evil.getresponse()
+        assert bad.status == 403
+        evil.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_board_rejects_negative_content_length(tmp_home, frozen_clock):
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:

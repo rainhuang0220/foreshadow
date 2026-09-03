@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1] - 2026-09-03
+
+### Fixed
+
+- Board CSRF origin check treated a `Host` header without a port as HTTP :80, so browser POSTs from `https://foreshadow.plainlist.space` (implied :443) were rejected. Honor `X-Forwarded-Proto` behind nginx.
+
 ## [0.3.0] - 2026-09-03
 
 Opportunity → Contribution Agent. Not another radar patch.
