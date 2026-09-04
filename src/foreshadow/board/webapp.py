@@ -1046,9 +1046,10 @@ function header(board) {
     <h1>FORESHADOW · 今日机会</h1>
     ${intelBanner(board)}
     <div class="mast-meta">
-      <p class="date">${esc(board.date)}</p>
+      <p class="date">数据截至 ${esc(board.display_as_of_date || board.date || "")}</p>
       <div class="ribbon ${preview ? "" : "official"}">${esc(ribbon)}</div>
     </div>
+    ${board.as_of_note_zh ? `<p class="meta">${esc(board.as_of_note_zh)}</p>` : ""}
     <p class="meta">${state.portfolio ? ("已进入任务 " + n(state.portfolio.entered) + " · 任务总数 " + n(state.portfolio.missions) + " · 远程 GitHub 写入默认关闭" + (state.portfolio.observed_access ? (state.portfolio.observed_access.score == null ? " · 亲历通道未知（样本少，不是 0，也不改公式）" : " · 亲历通道 " + n(state.portfolio.observed_access.score) + "（不改公式）") : "")) : ""}</p>
     <p class="meta">最近扫描 ${esc((board.run && (board.run.finished_at || board.run.status_zh || board.run.status)) || board.date)} · 本页不会在后台写 GitHub。</p>
     ${state.busy ? `<p class="meta">正在准备本地环境（clone）…</p>` : ""}

@@ -310,6 +310,7 @@ def board(
         )
         raise SystemExit(EXIT_USAGE)
     clock, day = _board_clock(date)
+    pin_date = date is not None
     if export_html:
         doc, before, after = build_board_from_db(date=day, preview=preview, clock=clock)
         if before != after:
@@ -337,9 +338,9 @@ def board(
         serve_board(
             host=host,
             port=port,
-            date=day,
+            date=day if pin_date else None,
             preview=preview,
-            clock=clock,
+            clock=clock if pin_date else Clock(),
             open_browser=not no_open,
             public=public,
         )

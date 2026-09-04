@@ -35,6 +35,12 @@
 
 Plan Tasks 1–11 complete on `p0-implementation`. Version is `0.1.0` in tree only — no git tag, no PyPI/Homebrew publish unless the owner asks.
 
+## v0.4.x backlog (not this patch)
+
+- P2: extractive summaries still leak README CI badge markdown
+- P2: org Creator Prior is NA when the org lists only the current repo
+- P2: Potential can reach 100 when growth is missing; mitigated by low confidence + 继续观察
+
 ## Explicitly not now
 
 - Auto PR / issue / comment on third-party repos

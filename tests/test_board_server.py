@@ -67,6 +67,98 @@ def _run_server(tmp_home, frozen_clock):
     return httpd, f"http://{host}:{port}"
 
 
+def test_board_api_rolls_to_new_official_without_restart(tmp_home):
+    from datetime import UTC, datetime
+
+    from foreshadow.pipeline.snapshot import upsert_snapshot
+
+    clock = Clock(now=datetime(2026, 8, 24, 1, 0, tzinfo=UTC))
+    _seed_board(tmp_home, clock)
+    httpd = make_server(
+        host="127.0.0.1",
+        port=0,
+        date=None,
+        preview=True,
+        clock=clock,
+        public=True,
+    )
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address[:2]
+    base = f"http://{host}:{port}"
+    try:
+        first = json.loads(httpx.get(f"{base}/api/board", timeout=5).text)
+        assert first["date"] == "2026-08-24"
+        conn = connect(tmp_home / "foreshadow.sqlite3")
+        migrate(conn)
+        rid = int(
+            conn.execute("SELECT id FROM repos WHERE full_name='acme/x'").fetchone()[0]
+        )
+        upsert_snapshot(
+            conn,
+            rid,
+            "2026-08-25",
+            {
+                "stars": 121,
+                "forks": 11,
+                "open_issues": 4,
+                "open_prs": 1,
+                "captured_at": "2026-08-25T00:37:00+00:00",
+                "topics_json": "[]",
+                "features_json": '{"phase":"B"}',
+                "completeness": 1.0,
+                "contributor_count": 6,
+            },
+        )
+        conn.execute(
+            "INSERT INTO daily_runs(run_date, started_at, finished_at, status, budget_cap) "
+            "VALUES ('2026-08-25','2026-08-25T00:30:00+00:00','2026-08-25T00:37:00+00:00',"
+            "'degraded',800)"
+        )
+        run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.execute(
+            "INSERT INTO candidates(run_id, repo_id, discovery_source, hydrate_status) "
+            "VALUES (?,?,'search','ok')",
+            (run_id, rid),
+        )
+        conn.commit()
+        clock._now = datetime(2026, 8, 25, 1, 0, tzinfo=UTC)
+        second = json.loads(httpx.get(f"{base}/api/board", timeout=5).text)
+        assert second["date"] == "2026-08-25"
+        assert second.get("display_as_of_date") == "2026-08-25"
+        assert second.get("current_date") == "2026-08-25"
+        assert httpd.server_address[1] == port
+    finally:
+        httpd.shutdown()
+
+
+def test_empty_db_board_api_is_200(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    conn.close()
+    clock = Clock()
+    httpd = make_server(
+        host="127.0.0.1",
+        port=0,
+        date=None,
+        preview=True,
+        clock=clock,
+        public=True,
+    )
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address[:2]
+    try:
+        res = httpx.get(f"http://{host}:{port}/api/board", timeout=5)
+        assert res.status_code == 200
+        payload = json.loads(res.text)
+        assert payload.get("today_run_status") == "none"
+        assert payload.get("display_as_of_date") is None
+        assert isinstance(payload.get("candidates"), list)
+    finally:
+        httpd.shutdown()
+
+
 def test_validate_host_rejects_wildcard():
     with pytest.raises(ValueError, match="回环"):
         validate_host("0.0.0.0")

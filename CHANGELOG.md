@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - 2026-09-04
+
+### Fixed
+
+- Board reads the latest `complete`/`degraded` Official `daily_runs` row on each request. A long-lived `foreshadow-board` process no longer stays on the startup date after the next UTC daily run finishes.
+
 ## [0.4.0] - 2026-09-03
 
 Project Intelligence + Learning. The Board ranks by expected entry value; Official Top 5 stays v1.
