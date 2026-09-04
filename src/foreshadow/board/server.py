@@ -27,6 +27,7 @@ from foreshadow.auth import (
     session_cookie,
     upsert_github_user,
 )
+from foreshadow.board.as_of import resolve_board_as_of, scoring_clock_for
 from foreshadow.board.pipeline import build_board_from_db
 from foreshadow.board.present import present_board
 from foreshadow.clock import Clock
@@ -118,18 +119,19 @@ class BoardState:
     def __init__(
         self,
         *,
-        date: str,
-        preview: bool,
-        clock: Clock,
-        settings: Settings,
+        date: str | None = None,
+        preview: bool = False,
+        clock: Clock | None = None,
+        settings: Settings | None = None,
         public: bool = False,
         allow_register: bool = True,
         public_url: str = "",
     ) -> None:
         self.date = date
+        self.pinned_date = date
         self.preview = preview
-        self.clock = clock
-        self.settings = settings
+        self.clock = clock or Clock()
+        self.settings = settings or load_config()
         self.public = public
         self.allow_register = allow_register
         self.public_url = public_url
@@ -145,10 +147,26 @@ class BoardState:
         with self._lock:
             conn = self.db()
             try:
+                if self.pinned_date:
+                    as_of_date = self.pinned_date
+                    current = self.clock.today().isoformat()
+                    today_status = "pinned"
+                    note_zh = None
+                    score_clock = self.clock
+                else:
+                    resolved = resolve_board_as_of(conn, self.clock)
+                    as_of_date = resolved.display_as_of_date
+                    current = resolved.current_date
+                    today_status = resolved.today_run_status
+                    note_zh = resolved.note_zh
+                    score_clock = (
+                        scoring_clock_for(as_of_date) if as_of_date else self.clock
+                    )
+                load_date = as_of_date or current
                 doc, before, after = build_board_from_db(
-                    date=self.date,
+                    date=load_date,
                     preview=self.preview,
-                    clock=self.clock,
+                    clock=score_clock,
                     settings=self.settings,
                 )
                 if before != after:
@@ -164,6 +182,11 @@ class BoardState:
                             continue
                         missions.setdefault(name, row)
                 payload = present_board(doc, stances=stances, missions=missions)
+                payload["date"] = as_of_date or current
+                payload["current_date"] = current
+                payload["display_as_of_date"] = as_of_date
+                payload["today_run_status"] = today_status
+                payload["as_of_note_zh"] = note_zh
                 from foreshadow.observation_view import enrich_board_payload
 
                 payload = enrich_board_payload(payload, conn)
@@ -967,7 +990,7 @@ def make_server(
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
-    date: str,
+    date: str | None = None,
     preview: bool,
     clock: Clock | None = None,
     settings: Settings | None = None,
@@ -999,7 +1022,7 @@ def serve_board(
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
-    date: str,
+    date: str | None = None,
     preview: bool,
     clock: Clock | None = None,
     settings: Settings | None = None,

@@ -24,7 +24,7 @@ def test_version_and_init_doctor_status(tmp_home, monkeypatch):
     runner = CliRunner()
     ver = runner.invoke(app, ["version"])
     assert ver.exit_code == 0
-    assert "0.4.0" in ver.stdout
+    assert "0.4.1" in ver.stdout
     first = runner.invoke(app, ["init"])
     assert first.exit_code == 0
     assert "Foreshadow is ready" in first.stdout

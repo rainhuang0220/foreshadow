@@ -10,7 +10,7 @@
 | **Known API limits** | Third-party stargazer listing / `starred_at` admin-only. Daily snapshots are star history. Creator + openness live on HydrateB (30). Medium REST cap 15. Deep commits `max_pages=1`. No extra owner REST. No collaborators fetch. |
 | **Workspace** | `/Users/rainhuang/Desktop/Foreshadow/.worktrees/project-intelligence` |
 | **Canonical spec** | [`docs/p0-architecture.md`](docs/p0-architecture.md), [`docs/p1-observation.md`](docs/p1-observation.md), [`DECISIONS.md`](DECISIONS.md) PI-1…PI-15 |
-| **Package** | `foreshadow-radar` `0.4.0` |
+| **Package** | `foreshadow-radar` `0.4.1` |
 | **Date** | 2026-09-03 |
 
 ## Completed
