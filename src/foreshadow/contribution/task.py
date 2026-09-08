@@ -34,8 +34,10 @@ class StructuredTask(BaseModel):
             lines.append(f"Related issue: #{self.issue_number}")
         if self.issue_url:
             lines.append(f"Issue URL: {self.issue_url}")
-        if self.why:
-            lines.append(f"Why this task: {self.why}")
+        if self.issue_title:
+            lines.append(f"Issue title: {self.issue_title}")
+        if self.issue_body:
+            lines.append(f"Issue body: {self.issue_body[:2000]}")
         if self.evidence:
             lines.append("Evidence:")
             lines.extend(f"- {item}" for item in self.evidence)

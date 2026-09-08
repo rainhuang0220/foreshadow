@@ -95,7 +95,8 @@ _FILEISH = re.compile(
 )
 
 # Category → patterns. A hit is a leak unless the exact span is already in
-# the issue body or the diff (so genuine technical mentions can pass).
+# the issue or repo guidelines (not the patch: a poisoned comment must not
+# launder Official ranking notes into the PR body).
 LEAK_CATEGORIES: dict[str, tuple[re.Pattern[str], ...]] = {
     "ranking": (
         re.compile(r"official\s+top\s*5", re.IGNORECASE),
@@ -126,17 +127,24 @@ LEAK_CATEGORIES: dict[str, tuple[re.Pattern[str], ...]] = {
 }
 
 
-def _allowed_blob(ctx: MaintainerDraftContext) -> str:
-    return "\n".join(
-        [
-            ctx.issue_title,
-            ctx.issue_body,
-            ctx.diff,
-            ctx.contributing,
-            ctx.pr_template,
-            " ".join(ctx.test_commands),
-            " ".join(ctx.changed_files),
-        ]
+def _allowed_blob(ctx: MaintainerDraftContext, *, include_diff: bool = False) -> str:
+    parts = [
+        ctx.issue_title,
+        ctx.issue_body,
+        ctx.contributing,
+        ctx.pr_template,
+        " ".join(ctx.test_commands),
+        " ".join(ctx.changed_files),
+    ]
+    if include_diff:
+        parts.append(ctx.diff)
+    return "\n".join(parts)
+
+
+def looks_internal(text: str) -> bool:
+    blob = text or ""
+    return any(
+        pat.search(blob) for patterns in LEAK_CATEGORIES.values() for pat in patterns
     )
 
 
@@ -190,7 +198,7 @@ def hype_hits(text: str) -> list[str]:
 
 def ai_attribution_hits(text: str, ctx: MaintainerDraftContext) -> list[str]:
     found = [m.group(0) for m in _AI_ATTRIBUTION.finditer(text)]
-    allowed = _allowed_blob(ctx)
+    allowed = _allowed_blob(ctx, include_diff=True)
     for match in _TECH_NAME.finditer(text):
         name = match.group(0)
         if _already_in_sources(name, allowed):
@@ -259,7 +267,7 @@ _STRUCTURAL = frozenset(
 
 
 def grounding_hits(body: str, ctx: MaintainerDraftContext) -> list[str]:
-    allowed = _tokens(_allowed_blob(ctx))
+    allowed = _tokens(_allowed_blob(ctx, include_diff=True))
     bad: list[str] = []
     for claim in _claims(body):
         local = claim

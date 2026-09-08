@@ -23,7 +23,7 @@ Two layers, deny-by-default:
 | Internal / user | Operator Dashboard | Official Top 5, human confirm, scores, mission/job/artifact ids, executor provenance |
 | Maintainer | Third-party GitHub | PR title/body, future comments |
 
-`MaintainerDraftContext` is the only input to draft generation: repo, issue title/body, diff, files, executed tests, CONTRIBUTING / PR template. Entry Strategy why, ranking, and task extras do not flow.
+`MaintainerDraftContext` is the only input to draft generation: repo, issue title/body, diff, files, executed tests, CONTRIBUTING / PR template. Entry Strategy why, ranking, and task extras do not flow. Executor prompts also omit ranking `why` so Official notes cannot be pasted into the patch and then echoed into a PR. Leak allowlists come from the issue and repo guidelines, not from the diff. Semantic `ok` is JSON `true` only; `"false"` or a missing field is FAIL.
 
 `MAINTAINER_OUTPUT_GATE` is deterministic (leak / privacy / grounding / cross-issue / language / style / claim match) plus an isolated semantic reviewer that sees only issue, diff, tests, guidelines, and the draft. Any FAIL → `MAINTAINER_OUTPUT_UNSAFE` and remote submission is refused. Regenerations cap at 3.
 

@@ -13,6 +13,7 @@ from foreshadow.contribution.maintainer.gate import (
     GateResult,
     evaluate_maintainer_output,
 )
+from foreshadow.contribution.maintainer.lint import looks_internal
 
 _DROP_LINE = re.compile(
     r"ignore previous|github_token|ghp_[a-z0-9]|gho_[a-z0-9]|<script|"
@@ -96,6 +97,8 @@ def _added_phrases(diff: str) -> list[str]:
     for match in _ADDED.finditer(diff or ""):
         line = match.group(0)[1:].strip()
         line = line.strip('`",')
+        if looks_internal(line):
+            continue
         if 2 < len(line) < 80 and not line.startswith("package "):
             found.append(line)
         if len(found) >= 4:

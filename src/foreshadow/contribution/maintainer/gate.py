@@ -100,7 +100,7 @@ def evaluate_maintainer_output(
     }
     reviewer = semantic_reviewer or _llm_semantic_reviewer
     review = reviewer(payload) or {}
-    semantic_ok = bool(review.get("ok", True))
+    semantic_ok = review.get("ok") is True
     semantic_reasons = [str(x) for x in (review.get("reasons") or [])]
     if semantic_reviewer is None and not semantic_reasons:
         semantic_reasons = default_semantic_reasons(f"{title}\n{body}")
@@ -187,7 +187,7 @@ def _llm_semantic_reviewer(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(data, dict):
             return {"ok": False, "reasons": ["reviewer-invalid"]}
         return {
-            "ok": bool(data.get("ok")),
+            "ok": data.get("ok") is True,
             "reasons": [str(x) for x in (data.get("reasons") or [])],
         }
     except (RuntimeError, json.JSONDecodeError, TypeError, ValueError):

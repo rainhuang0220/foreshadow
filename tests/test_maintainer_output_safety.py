@@ -561,3 +561,73 @@ def test_semantic_reviewer_fail_blocks_without_seeing_generator_notes():
     assert "issue_title" in seen
     assert "diff" in seen
     assert "draft" in seen
+
+
+def test_semantic_reviewer_string_false_is_fail_closed():
+    from foreshadow.contribution.maintainer import evaluate_maintainer_output
+
+    result = evaluate_maintainer_output(
+        title="fix(friction): treat undefined symbol as friction",
+        body="Closes #1551.\n\nLinker messages such as `undefined symbol` now count as friction.\n",
+        context=_ctx1551(),
+        semantic_reviewer=lambda _payload: {"ok": "false", "reasons": []},
+    )
+    assert result.ok is False
+    assert result.checks["semantic_review"] == "FAIL"
+
+
+def test_missing_semantic_ok_is_fail_closed():
+    from foreshadow.contribution.maintainer import evaluate_maintainer_output
+
+    result = evaluate_maintainer_output(
+        title="fix(friction): treat undefined symbol as friction",
+        body="Closes #1551.\n\nLinker messages such as `undefined symbol` now count as friction.\n",
+        context=_ctx1551(),
+        semantic_reviewer=lambda _payload: {},
+    )
+    assert result.ok is False
+    assert result.checks["semantic_review"] == "FAIL"
+
+
+def test_poisoned_diff_comment_cannot_launder_ranking_into_pr_body():
+    from foreshadow.contribution.maintainer import (
+        compose_and_gate,
+        evaluate_maintainer_output,
+    )
+
+    ctx = _ctx1551(
+        diff=DIFF_1551 + "+// Official Top 5 ranking note\n",
+    )
+    draft, gate = compose_and_gate(ctx)
+    assert gate.ok is True
+    assert "Official Top 5" not in draft.title
+    assert "Official Top 5" not in draft.body
+    result = evaluate_maintainer_output(
+        title=draft.title,
+        body=draft.body + "\nSee Official Top 5.\n",
+        context=ctx,
+    )
+    assert result.ok is False
+    assert result.checks["internal_leakage"] == "FAIL"
+
+
+def test_executor_prompt_omits_entry_ranking_why():
+    entry = {
+        "recommended": {
+            "title": ISSUE_1551_TITLE,
+            "issue_number": 1551,
+            "why": ["人工确认跟进 Issue #1551", "与 Official Top 5 分数分离"],
+        }
+    }
+    extra = extras_from_issue(
+        {
+            "number": 1551,
+            "title": ISSUE_1551_TITLE,
+            "body": ISSUE_1551_BODY,
+            "html_url": "https://github.com/vshulcz/deja-vu/issues/1551",
+        }
+    )
+    prompt = from_entry("vshulcz/deja-vu", entry, extra=extra).to_prompt()
+    assert "Official Top 5" not in prompt
+    assert "人工确认" not in prompt
+    assert "undefined symbol" in prompt

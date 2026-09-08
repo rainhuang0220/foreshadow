@@ -126,7 +126,7 @@ def _extras_for(
 
         try:
             payload = fetch_live_payload(full_name)
-        except (OSError, ValueError, TypeError, RuntimeError, KeyError):
+        except (OSError, ValueError, TypeError, RuntimeError, KeyError, SystemExit):
             payload = {}
         for item in payload.get("issues") or []:
             if isinstance(item, dict) and int(item.get("number") or 0) == int(issue_n):

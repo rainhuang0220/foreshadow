@@ -425,10 +425,13 @@ def test_cli_enter_accepts_issue_and_contribute_flags():
 
     from foreshadow.cli import app
 
-    result = CliRunner().invoke(app, ["enter", "--help"])
+    result = CliRunner().invoke(
+        app, ["enter", "--help"], env={"COLUMNS": "200", "NO_COLOR": "1"}
+    )
     assert result.exit_code == 0
-    assert "--issue" in result.stdout
-    assert "--contribute" in result.stdout
+    help_text = (result.stdout or "").replace("\n", "")
+    assert "--issue" in help_text
+    assert "--contribute" in help_text
 
 
 def test_active_entry_replaces_old_mission_recommendation(tmp_home, monkeypatch):
