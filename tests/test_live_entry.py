@@ -614,3 +614,107 @@ def test_missing_explicit_issue_is_rejected_instead_of_falling_back(tmp_home):
             preferred_issue=99999,
             fetch=lambda _: _live_payload(),
         )
+
+
+class _FakeResp:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+
+def test_specified_issue_is_fetched_even_when_absent_from_open_list(monkeypatch):
+    from foreshadow.github.live_entry import fetch_live_payload
+
+    calls: list[str] = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get(self, path, params=None):
+            calls.append(path)
+            if path.endswith("/issues/1551"):
+                return _FakeResp(
+                    {
+                        "number": 1551,
+                        "title": "undefined symbol is not friction",
+                        "state": "open",
+                        "labels": [{"name": "good first issue"}],
+                        "assignees": [],
+                        "body": "linker failures never reach isFriction",
+                        "html_url": "https://github.com/vshulcz/deja-vu/issues/1551",
+                    }
+                )
+            if path.endswith("/issues"):
+                return _FakeResp(
+                    [
+                        {
+                            "number": 3301,
+                            "title": "recent assigned issue",
+                            "state": "open",
+                            "assignees": [{"login": "vshulcz"}],
+                        }
+                    ]
+                )
+            if path.endswith("/pulls"):
+                return _FakeResp([])
+            if "/repos/vshulcz/deja-vu" in path:
+                return _FakeResp(
+                    {
+                        "full_name": "vshulcz/deja-vu",
+                        "html_url": "https://github.com/vshulcz/deja-vu",
+                        "language": "Go",
+                        "description": "memory",
+                        "default_branch": "main",
+                    }
+                )
+            return _FakeResp({})
+
+    monkeypatch.setattr("foreshadow.github.client.GitHubClient", _Client)
+    monkeypatch.setattr("foreshadow.github.client.resolve_token", lambda: "test")
+    payload = fetch_live_payload("vshulcz/deja-vu", preferred_issue=1551)
+    numbers = [int(i["number"]) for i in payload["issues"] if i.get("number")]
+    assert 1551 in numbers
+    assert any(path.endswith("/issues/1551") for path in calls)
+
+
+def test_specified_issue_with_assignees_is_refused(tmp_home):
+    import pytest
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    payload = {
+        "full_name": "vshulcz/deja-vu",
+        "language": "Go",
+        "html_url": "https://github.com/vshulcz/deja-vu",
+        "issues": [
+            {
+                "number": 1551,
+                "title": "undefined symbol is not friction",
+                "state": "open",
+                "labels": ["good first issue"],
+                "assignees": [{"login": "someone"}],
+                "html_url": "https://github.com/vshulcz/deja-vu/issues/1551",
+            },
+            {
+                "number": 1827,
+                "title": "deja index has no --quiet",
+                "state": "open",
+                "labels": ["good first issue"],
+                "assignees": [],
+                "html_url": "https://github.com/vshulcz/deja-vu/issues/1827",
+            },
+        ],
+        "prs": [],
+    }
+    with pytest.raises(ValueError, match="confirmed issue"):
+        refresh_entry_for_repo(
+            conn,
+            "vshulcz/deja-vu",
+            now=NOW,
+            preferred_issue=1551,
+            fetch=lambda _: payload,
+        )

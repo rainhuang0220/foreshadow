@@ -182,6 +182,28 @@ class EntryStrategy:
         return out
 
 
+def preferred_issue_eligible(
+    features: dict | FeaturesBlob,
+    preferred_issue: int | None,
+) -> bool:
+    """True only if the specified issue is present, open, unassigned, and uncovered."""
+    if preferred_issue is None:
+        return False
+    raw = _raw_map(features)
+    issues = _collect_issues(raw)
+    known_issues = {int(i["number"]) for i in issues if i.get("number") is not None}
+    covered = _pr_referenced_issues(_collect_prs(raw))
+    return (
+        _preferred_issue_cand(
+            issues,
+            known_issues=known_issues,
+            covered=covered,
+            preferred_issue=preferred_issue,
+        )
+        is not None
+    )
+
+
 def analyze_entry(
     features: dict | FeaturesBlob,
     *,
@@ -1042,6 +1064,9 @@ def _preferred_issue_cand(
         None,
     )
     if iss is None or not _is_open(iss) or _is_windows_only(iss):
+        return None
+    assignees = iss.get("assignees")
+    if isinstance(assignees, list) and assignees:
         return None
     if iss.get("assignees_n") not in (None, 0):
         return None

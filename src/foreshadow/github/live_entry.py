@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from foreshadow.entry import analyze_entry, persist_entry
+from foreshadow.entry import analyze_entry, persist_entry, preferred_issue_eligible
 
 FetchFn = Callable[[str], dict[str, Any]]
 
@@ -76,7 +76,9 @@ def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_live_payload(full_name: str) -> dict[str, Any]:
+def fetch_live_payload(
+    full_name: str, preferred_issue: int | None = None
+) -> dict[str, Any]:
     """GET-only live snapshot. Never posts."""
     from foreshadow.config import load_config
     from foreshadow.github.client import GitHubClient, resolve_token
@@ -97,6 +99,16 @@ def fetch_live_payload(full_name: str) -> dict[str, Any]:
         for item in (issues_raw if isinstance(issues_raw, list) else [])
         if isinstance(item, dict) and "pull_request" not in item
     ]
+    if preferred_issue is not None:
+        extra = _fetch_issue(client, owner, name, int(preferred_issue))
+        if extra is not None:
+            known = {
+                int(item["number"])
+                for item in issues
+                if item.get("number") is not None
+            }
+            if int(extra.get("number") or 0) not in known:
+                issues.append(extra)
     prs_raw = client.get(
         f"/repos/{owner}/{name}/pulls",
         params={"state": "open", "per_page": 50},
@@ -137,7 +149,10 @@ def refresh_entry_for_repo(
     from foreshadow.mission import parse_repo_name
 
     full_name = parse_repo_name(full_name)
-    payload = (fetch or fetch_live_payload)(full_name)
+    if fetch is None:
+        payload = fetch_live_payload(full_name, preferred_issue=preferred_issue)
+    else:
+        payload = fetch(full_name)
     if not isinstance(payload, dict):
         payload = {}
     payload.setdefault("full_name", full_name)
@@ -150,7 +165,10 @@ def refresh_entry_for_repo(
         language=str(lang) if lang else None,
         preferred_issue=preferred_issue,
     )
-    if preferred_issue is not None and strategy.recommended.issue_number != preferred_issue:
+    if preferred_issue is not None and (
+        not preferred_issue_eligible(features, preferred_issue)
+        or strategy.recommended.issue_number != preferred_issue
+    ):
         raise ValueError("confirmed issue is unavailable or ineligible; refusing fallback")
     persist_entry(conn, repo_id, strategy)
     return {
@@ -226,6 +244,24 @@ def _ensure_repo_row(
     )
     conn.commit()
     return int(conn.execute("SELECT id FROM repos WHERE full_name=?", (full,)).fetchone()[0])
+
+
+def _fetch_issue(client: Any, owner: str, repo: str, number: int) -> dict[str, Any] | None:
+    """GET one issue. Missing/closed-as-PR is None so recertification can refuse."""
+    from foreshadow.github.client import GitHubError
+
+    try:
+        resp = client.get(f"/repos/{owner}/{repo}/issues/{int(number)}")
+    except GitHubError as exc:
+        if getattr(exc, "status", None) in {404, 410, 451}:
+            return None
+        raise
+    body = resp.json()
+    if not isinstance(body, dict) or body.get("number") is None:
+        return None
+    if "pull_request" in body:
+        return None
+    return body
 
 
 def _file_text(client: Any, owner: str, repo: str, path: str) -> str:
