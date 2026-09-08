@@ -442,7 +442,7 @@ def test_revise_appends_safe_package_and_keeps_original(tmp_home):
         "qa": "PASS",
         "qa_ok": True,
         "remote_writes": 0,
-        "remote_status": "WAITING_USER_APPROVAL",
+        "remote_status": "MAINTAINER_OUTPUT_UNSAFE",
         "implementation": {
             "mode": "autonomous_executor",
             "clean_before": True,
@@ -511,6 +511,7 @@ def test_revise_appends_safe_package_and_keeps_original(tmp_home):
     assert current["diff"] == DIFF_1551
     assert current["qa"] == "PASS"
     assert current["implementation"]["clean_before"] is True
+    assert current["remote_status"] == "WAITING_USER_APPROVAL"
     pr = pr_draft(conn, uid, mid)
     assert pr["safety"]["ok"] is True
     assert "Official Top 5" not in pr["body"]

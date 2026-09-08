@@ -421,15 +421,19 @@ def test_confirmed_contribution_uses_go_tests_when_go_mod_present(tmp_home, tmp_
 
 
 def test_cli_enter_accepts_issue_and_contribute_flags():
+    import inspect
+    import re
+
     from typer.testing import CliRunner
 
-    from foreshadow.cli import app
+    from foreshadow.cli import app, enter
 
-    result = CliRunner().invoke(
-        app, ["enter", "--help"], env={"COLUMNS": "200", "NO_COLOR": "1"}
-    )
+    sig = inspect.signature(enter)
+    assert "issue" in sig.parameters
+    assert "contribute" in sig.parameters
+    result = CliRunner().invoke(app, ["enter", "--help"])
     assert result.exit_code == 0
-    help_text = (result.stdout or "").replace("\n", "")
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout or "")
     assert "--issue" in help_text
     assert "--contribute" in help_text
 

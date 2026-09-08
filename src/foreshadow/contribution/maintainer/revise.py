@@ -36,7 +36,7 @@ def revise_package_draft(
     new_pkg["issue_title"] = context.issue_title
     new_pkg["issue_body"] = context.issue_body
     if gate.ok:
-        new_pkg["remote_status"] = pkg.get("remote_status") or "WAITING_USER_APPROVAL"
+        new_pkg["remote_status"] = "WAITING_USER_APPROVAL"
     else:
         new_pkg["remote_status"] = "MAINTAINER_OUTPUT_UNSAFE"
     return persist_artifact(
