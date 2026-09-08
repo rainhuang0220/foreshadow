@@ -5,7 +5,30 @@ from __future__ import annotations
 from typing import Any
 
 from foreshadow.contribution.executor import ContributionJob, PatchArtifact
+from foreshadow.contribution.maintainer import (
+    compose_and_gate,
+    project_maintainer_context,
+)
 from foreshadow.contribution.task import StructuredTask
+
+
+def _test_commands(
+    job: ContributionJob, structured: StructuredTask | None
+) -> list[str]:
+    tests = job.test_result or {}
+    out: list[str] = []
+    raw = tests.get("commands") or []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict) and item.get("command"):
+                out.append(str(item["command"]))
+            elif isinstance(item, str) and item.strip():
+                out.append(item)
+    if not out and tests.get("command"):
+        out.append(str(tests["command"]))
+    if not out and structured is not None:
+        out = list(structured.test_commands or [])
+    return out
 
 
 def build_package(
@@ -26,19 +49,20 @@ def build_package(
         issue = f"#{structured.issue_number}"
     elif task.get("issue_number") is not None:
         issue = f"#{task.get('issue_number')}"
-    title = artifact.title or (structured.task if structured else "") or "Contribution"
-    body_lines = [
-        artifact.why or job.why or (structured.why if structured else ""),
-        "",
-    ]
-    if structured and structured.expected_behavior:
-        body_lines.append(structured.expected_behavior)
-        body_lines.append("")
-    if structured and structured.acceptance_criteria:
-        body_lines.extend(f"- {item}" for item in structured.acceptance_criteria[:6])
-        body_lines.append("")
-    if issue:
-        body_lines.append(f"Closes {issue}.")
+    contributing = ""
+    if isinstance(task.get("entry"), dict):
+        contributing = str(task["entry"].get("contributing") or "")
+    ctx = project_maintainer_context(
+        repository=job.full_name,
+        structured=structured,
+        diff=artifact.diff or "",
+        files=files,
+        test_commands=_test_commands(job, structured),
+        tests_ok=bool(artifact.tests_passed),
+        contributing=contributing,
+    )
+    draft, gate = compose_and_gate(ctx)
+    title = draft.title or artifact.title or "Contribution"
     implementation = dict(task.get("implementation") or {})
     if job.backend == "workspace":
         implementation = {
@@ -74,9 +98,11 @@ def build_package(
         "qa_reasons": list(artifact.qa_reasons or []),
         "risk": artifact.risk,
         "pr_title": title,
-        "pr_body": "\n".join(line for line in body_lines if line is not None).strip(),
+        "pr_body": draft.body,
         "related_issue": issue,
         "issue_url": structured.issue_url if structured else None,
+        "issue_title": ctx.issue_title,
+        "issue_body": ctx.issue_body,
         "maintainer_notes": list(structured.contribution_rules) if structured else [],
         "estimated_acceptance_likelihood": _likelihood(structured, qa),
         "backend": job.backend,
@@ -85,7 +111,12 @@ def build_package(
         else "failed",
         "log": list(job.log or []),
         "remote_writes": 0,
-        "remote_status": "WAITING_USER_APPROVAL",
+        "remote_status": "WAITING_USER_APPROVAL"
+        if gate.ok
+        else "MAINTAINER_OUTPUT_UNSAFE",
+        "maintainer_output_gate": gate.as_dict(),
+        "pr_draft_revision": 1,
+        "draft_status": "current",
     }
 
 

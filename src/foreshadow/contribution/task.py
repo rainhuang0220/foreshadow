@@ -14,6 +14,8 @@ class StructuredTask(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     issue_number: int | None = None
     issue_url: str | None = None
+    issue_title: str = ""
+    issue_body: str = ""
     expected_behavior: str = ""
     acceptance_criteria: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
@@ -135,6 +137,8 @@ def from_entry(
         evidence=evidence or [str(x) for x in extra.get("evidence") or []],
         issue_number=issue_n_i,
         issue_url=str(issue_url) if issue_url else None,
+        issue_title=str(extra.get("issue_title") or ""),
+        issue_body=body,
         expected_behavior=str(extra.get("expected_behavior") or ""),
         acceptance_criteria=[str(x) for x in extra.get("acceptance_criteria") or []],
         constraints=[str(x) for x in extra.get("constraints") or []],

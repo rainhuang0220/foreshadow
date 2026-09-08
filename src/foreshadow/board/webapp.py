@@ -576,6 +576,10 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
 .diff-line.hunk { color: var(--ink-dim); background: #f1eee6; }
 .pr-md h1,.pr-md h2,.pr-md h3 { font-family: var(--font-display); }
 .pr-md pre { overflow-x: auto; background: #fff; border: 1px solid var(--rule); padding: .5rem; }
+.draft-safety { border: 1px solid var(--rule); padding: .55rem .7rem; margin: 0 0 .8rem; }
+.draft-safety.ok { border-color: #245c32; background: #e8f4ea; color: #245c32; }
+.draft-safety.bad { border-color: #8b342c; background: #f8e8e6; color: #8b342c; }
+.draft-safety ul { margin: .35rem 0 0; padding: 0 0 0 1.1rem; }
 .review-next { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0; }
 @media (max-width: 420px) {
   .drawer { width: 100%; }
@@ -1004,6 +1008,7 @@ function reviewOverview(r) {
       <p class="meta">pre_tree_hash ${esc(r.pre_tree_hash || "—")}</p>
       <p class="meta">executor ${esc(r.executor_started || "—")} → ${esc(r.executor_finished || "—")}</p>
       <p class="meta">path ${esc(r.local_path || "—")}</p>
+      ${((r.pr && r.pr.draft_history) || []).map(h => `<p class="meta">draft ${esc(h.draft_status)} · artifact ${esc(h.artifact_id)} · safety ${h.safety_ok===true?"PASS":(h.safety_ok===false?"FAIL":"—")}</p>`).join("")}
       ${r.raw_package ? `<pre class="diff">${esc(JSON.stringify(r.raw_package, null, 2))}</pre>` : ""}
     </details>`;
 }
@@ -1036,7 +1041,13 @@ function reviewPr(r) {
   const body = pr.body || r.pr_body || "";
   const html = pr.body_html || "";
   const mode = state.reviewPrMode || "preview";
-  return `<p><strong>PR Title</strong></p><p>${esc(title)}</p>
+  const safety = pr.safety || r.draft_safety || {};
+  const ok = safety.ok === true;
+  const items = safety.summary || [];
+  const banner = ok
+    ? `<div class="draft-safety ok"><strong>Draft safety</strong><ul>${(items.length?items:["Grounded in issue/diff","Internal metadata clean","Repository style checked"]).map(x=>`<li>✓ ${esc(x)}</li>`).join("")}</ul></div>`
+    : `<div class="draft-safety bad"><strong>Unsafe draft — remote submission blocked</strong></div>`;
+  return `${banner}<p><strong>PR Title</strong></p><p>${esc(title)}</p>
     <p class="meta">Target ${esc(r.repository)} · base ${esc(pr.base || "main")} · ${esc(pr.closes || ("#"+r.issue_number))} · ${esc(pr.status || "NOT SUBMITTED")} · REMOTE_WRITES=${esc(r.remote_writes || 0)}</p>
     <div class="review-tabs">
       <button type="button" class="${mode==="preview"?"on":""}" onclick="state.reviewPrMode='preview';render()">Preview</button>
@@ -1061,6 +1072,8 @@ function reviewChecks(r) {
     <h3>QA</h3><p>${(c.qa||{}).ok || r.qa_ok ? "Passed" : "Failed"} · ${esc((c.qa||{}).verdict || r.qa || "—")}</p>
     <h3>Remote Safety</h3>
     <p class="meta">Push: blocked · Create PR: blocked · Comments: 0 · REMOTE_WRITES=${esc((c.remote||{}).remote_writes || r.remote_writes || 0)}</p>
+    <h3>Draft safety</h3>
+    <pre class="meta">${esc(JSON.stringify((c.maintainer_output || (r.pr && r.pr.safety && r.pr.safety.checks) || {}), null, 2))}</pre>
     <ol class="plan">${tl}</ol>`;
 }
 async function loadReview(name, missionId) {

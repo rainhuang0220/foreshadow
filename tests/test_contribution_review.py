@@ -121,13 +121,17 @@ def _mission(conn, uid, full_name, issue, title, *, now="2026-09-08T00:00:00+00:
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
-def _job_pkg(conn, uid, full_name, pkg, *, backend="mini_swe_agent", status=JobStatus.ready):
+def _job_pkg(
+    conn, uid, full_name, pkg, *, backend="mini_swe_agent", status=JobStatus.ready
+):
     job = ContributionJob(
         user_id=uid,
         full_name=full_name,
         backend=backend,
         status=status,
-        task={"structured": {"issue_number": int(str(pkg["related_issue"]).lstrip("#"))}},
+        task={
+            "structured": {"issue_number": int(str(pkg["related_issue"]).lstrip("#"))}
+        },
     )
     persist_job(conn, job)
     persist_artifact(conn, int(job.id), kind="package", body=json.dumps(pkg))
@@ -254,7 +258,12 @@ def test_latest_package_artifact_wins(tmp_home):
         int(job.id),
         kind="package",
         body=json.dumps(
-            _pkg(issue=1551, title="NEW", diff=DIFF_1551, files=["internal/index/friction.go"])
+            _pkg(
+                issue=1551,
+                title="NEW",
+                diff=DIFF_1551,
+                files=["internal/index/friction.go"],
+            )
         ),
     )
     review = contribution_for_mission(conn, uid, m2)
@@ -335,7 +344,10 @@ def test_discovery_recommendation_is_not_active_title(tmp_home):
         "preferred_issue": 1551,
         "cited_issue": {"number": 1551, "title": "undefined symbol is not friction"},
         "entry_source": "HUMAN_CONFIRM",
-        "active_entry_target": {"issue_number": 1551, "title": "undefined symbol is not friction"},
+        "active_entry_target": {
+            "issue_number": 1551,
+            "title": "undefined symbol is not friction",
+        },
         "entry_strategy": {
             "recommended": {"issue_number": 308, "title": "stale discovery docs #308"}
         },
@@ -370,7 +382,10 @@ def test_discovery_recommendation_is_not_active_title(tmp_home):
             issue=1551,
             title="Fix undefined symbol (#1551)",
             diff=DIFF_1551,
-            files=["internal/index/friction.go", "internal/index/friction_phrases_test.go"],
+            files=[
+                "internal/index/friction.go",
+                "internal/index/friction_phrases_test.go",
+            ],
         ),
     )
     active = active_contribution(conn, uid, "vshulcz/deja-vu")
@@ -381,9 +396,7 @@ def test_discovery_recommendation_is_not_active_title(tmp_home):
         "candidates": [
             {
                 "full_name": "vshulcz/deja-vu",
-                "entry": {
-                    "recommended": {"issue_number": 308, "title": "docs pass"}
-                },
+                "entry": {"recommended": {"issue_number": 308, "title": "docs pass"}},
             }
         ]
     }
@@ -498,12 +511,8 @@ def test_review_http_endpoints_and_board_priority(tmp_home, frozen_clock):
         assert active["review"]["issue_number"] == 1551
         assert "package" not in active["review"]
         assert active["review"].get("raw_package")
-        hist_1828 = client.get(
-            f"{base}/api/contribution/diff?mission_id={m1}"
-        ).json()
-        hist_1551 = client.get(
-            f"{base}/api/contribution/diff?mission_id={m2}"
-        ).json()
+        hist_1828 = client.get(f"{base}/api/contribution/diff?mission_id={m1}").json()
+        hist_1551 = client.get(f"{base}/api/contribution/diff?mission_id={m2}").json()
         assert "doctor.go" in hist_1828["diff"]
         assert "friction.go" not in hist_1828["diff"]
         assert "friction.go" in hist_1551["diff"]

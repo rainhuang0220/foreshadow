@@ -32,7 +32,9 @@ class WorkspaceExecutor:
         if remotes.stdout.strip():
             for name in remotes.stdout.split():
                 _git(sandbox, "remote", "remove", name)
-        self.last_sandbox_env = sandbox_env(home=(job.work_dir or sandbox.parent) / "home")
+        self.last_sandbox_env = sandbox_env(
+            home=(job.work_dir or sandbox.parent) / "home"
+        )
         job.log.append(
             {
                 "step": "prepare",
@@ -47,7 +49,9 @@ class WorkspaceExecutor:
         job.log.append(
             {
                 "step": "analyze",
-                "files": sorted(p.name for p in sandbox.iterdir() if p.name != ".git")[:24],
+                "files": sorted(p.name for p in sandbox.iterdir() if p.name != ".git")[
+                    :24
+                ],
             }
         )
 

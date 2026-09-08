@@ -1100,7 +1100,9 @@ def present_board(
             card["active_entry_target"] = entry.get("recommended")
             card["entry_source"] = mission.get("entry_source")
             card["discovery_recommendation"] = {
-                "summary": card.get("strategy_summary_zh"), "why": card.get("strategy_why")}
+                "summary": card.get("strategy_summary_zh"),
+                "why": card.get("strategy_why"),
+            }
             strategy = mission.get("strategy") or {}
             card["strategy_summary_zh"] = strategy.get("summary_zh")
             card["strategy_why"] = strategy.get("why") or []

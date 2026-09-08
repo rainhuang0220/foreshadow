@@ -456,7 +456,9 @@ class BoardHandler(BaseHTTPRequestHandler):
             elif full_name and "/" in full_name:
                 if path == "/api/contribution/history":
                     self._send(
-                        *_json_bytes({"history": history_for_repo(conn, uid, full_name)})
+                        *_json_bytes(
+                            {"history": history_for_repo(conn, uid, full_name)}
+                        )
                     )
                     return
                 review = active_contribution(conn, uid, full_name)
@@ -464,7 +466,9 @@ class BoardHandler(BaseHTTPRequestHandler):
                 self._send(*_json_bytes({"error": "需要 full_name 或 mission_id"}, 400))
                 return
             if review is None:
-                self._send(*_json_bytes({"error": "没有可审核的贡献", "review": None}, 404))
+                self._send(
+                    *_json_bytes({"error": "没有可审核的贡献", "review": None}, 404)
+                )
                 return
             mid = int(review["mission_id"])
             if path == "/api/contribution/diff":
@@ -970,7 +974,44 @@ class BoardHandler(BaseHTTPRequestHandler):
 
             action = str(data.get("action") or "")
             if action in {"push", "pr", "draft_pr", "create_pr"}:
-                self._send(*_json_bytes(refuse_remote(action)))
+                from foreshadow.contribution.maintainer import (
+                    evaluate_remote_submission,
+                )
+                from foreshadow.contribution.maintainer.gate import GateResult
+                from foreshadow.contribution.review import (
+                    active_contribution,
+                    pr_draft,
+                )
+
+                out = refuse_remote(action)
+                name = str(data.get("full_name") or data.get("repo") or "")
+                conn = self.state.db()
+                try:
+                    if "/" in name:
+                        review = active_contribution(conn, int(user["id"]), name)
+                        if review and review.get("mission_id") is not None:
+                            draft = pr_draft(
+                                conn, int(user["id"]), int(review["mission_id"])
+                            )
+                            safety = draft.get("safety") or {}
+                            if safety.get("ok") is False:
+                                out = evaluate_remote_submission(
+                                    action,
+                                    gate=GateResult(
+                                        ok=False,
+                                        verdict=str(
+                                            safety.get("verdict")
+                                            or "MAINTAINER_OUTPUT_UNSAFE"
+                                        ),
+                                        checks=dict(safety.get("checks") or {}),
+                                        summary=list(safety.get("summary") or []),
+                                    ),
+                                )
+                except (KeyError, TypeError, ValueError):
+                    out = refuse_remote(action)
+                finally:
+                    conn.close()
+                self._send(*_json_bytes(out))
                 return
             name = str(data.get("full_name") or data.get("repo") or "")
             if "/" not in name:
@@ -1026,6 +1067,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/mission/remote":
+            from foreshadow.contribution.maintainer import evaluate_remote_submission
+            from foreshadow.contribution.review import pr_draft
             from foreshadow.mission import record_remote_refused, refuse_remote_action
 
             action = str(data.get("action") or "")
@@ -1040,6 +1083,31 @@ class BoardHandler(BaseHTTPRequestHandler):
                             mid = _mission_id(data)
                     except ValueError:
                         mid = None
+                    if mid is not None:
+                        try:
+                            draft = pr_draft(conn, int(user["id"]), int(mid))
+                        except KeyError:
+                            draft = None
+                        safety = (
+                            draft.get("safety") if isinstance(draft, dict) else None
+                        )
+                        if isinstance(safety, dict) and safety.get("ok") is False:
+                            from foreshadow.contribution.maintainer.gate import (
+                                GateResult,
+                            )
+
+                            out = evaluate_remote_submission(
+                                action,
+                                gate=GateResult(
+                                    ok=False,
+                                    verdict=str(
+                                        safety.get("verdict")
+                                        or "MAINTAINER_OUTPUT_UNSAFE"
+                                    ),
+                                    checks=dict(safety.get("checks") or {}),
+                                    summary=list(safety.get("summary") or []),
+                                ),
+                            )
                     record_remote_refused(
                         conn,
                         user_id=int(user["id"]),

@@ -175,6 +175,7 @@ def run_contribution(
         _save(conn, job)
         if worker.name == "mini_swe_agent":
             from foreshadow.contribution.provenance import begin
+
             begin(job)
             _save(conn, job)
         worker.implement(job)
@@ -184,6 +185,7 @@ def run_contribution(
         worker.iterate(job)
         if worker.name == "mini_swe_agent":
             from foreshadow.contribution.provenance import finish
+
             finish(job)
         artifact = worker.produce_patch(job)
         job.status = JobStatus.qa

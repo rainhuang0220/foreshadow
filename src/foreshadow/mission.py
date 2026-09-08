@@ -334,6 +334,7 @@ def create_for_user(
     historical_entry = None
     if repo_id is not None:
         from foreshadow.entry import load_entry
+
         stored_entry = load_entry(conn, repo_id)
         historical_entry = stored_entry.as_dict() if stored_entry else None
     if existing:
@@ -352,7 +353,12 @@ def create_for_user(
             if isinstance(raw_live, dict) and raw_live:
                 try:
                     feat = FeaturesBlob.model_validate(
-                        {k: v for k, v in raw_live.items() if hasattr(FeaturesBlob, k) or k in FeaturesBlob.model_fields}
+                        {
+                            k: v
+                            for k, v in raw_live.items()
+                            if hasattr(FeaturesBlob, k)
+                            or k in FeaturesBlob.model_fields
+                        }
                     )
                 except (TypeError, ValueError):
                     pass
@@ -395,10 +401,17 @@ def create_for_user(
     dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
     if existing and live:
         from uuid import uuid4
+
         dest = dest.with_name(dest.name + "__mission_" + uuid4().hex[:12])
         dest.mkdir(parents=True, exist_ok=False)
     mission.local_path = str(dest)
-    write_mission_doc(dest, mission, extra={"entry_strategy": live_entry["strategy"].as_dict()} if live_entry else None)
+    write_mission_doc(
+        dest,
+        mission,
+        extra={"entry_strategy": live_entry["strategy"].as_dict()}
+        if live_entry
+        else None,
+    )
     write_issue_draft(dest, mission)
     write_pr_draft(dest, mission)
     write_fork_note(dest, full_name)
@@ -418,7 +431,9 @@ def create_for_user(
             },
         )
     if live_entry is not None:
-        write_mission_doc(dest, mission, extra={"entry_strategy": live_entry["strategy"].as_dict()})
+        write_mission_doc(
+            dest, mission, extra={"entry_strategy": live_entry["strategy"].as_dict()}
+        )
     record_event(
         conn,
         user_id=user_id,

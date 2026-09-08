@@ -57,7 +57,9 @@ def parse_unified_diff(diff: str) -> dict[str, Any]:
             kind = "del"
             current["deleted"] += 1
             deleted += 1
-        hunk["lines"].append({"kind": kind, "text": line[1:] if kind != "ctx" else line})
+        hunk["lines"].append(
+            {"kind": kind, "text": line[1:] if kind != "ctx" else line}
+        )
     if current is not None:
         files.append(current)
     return {"files": files, "added": added, "deleted": deleted, "raw": diff}
@@ -111,7 +113,9 @@ def issue_from_package(pkg: dict[str, Any] | None) -> int | None:
     return issue_from_text(title)
 
 
-def latest_package(conn: sqlite3.Connection, job_id: int) -> tuple[dict[str, Any], int] | None:
+def latest_package(
+    conn: sqlite3.Connection, job_id: int
+) -> tuple[dict[str, Any], int] | None:
     arts = list_artifacts(conn, job_id)
     chosen: tuple[dict[str, Any], int] | None = None
     for item in arts:
@@ -132,7 +136,11 @@ def _same_issue(value: Any, issue: int | None) -> bool:
 
 def _title_from(plan: dict[str, Any], pkg: dict[str, Any], issue: int | None) -> str:
     cited = plan.get("cited_issue") or {}
-    if isinstance(cited, dict) and _same_issue(cited.get("number"), issue) and cited.get("title"):
+    if (
+        isinstance(cited, dict)
+        and _same_issue(cited.get("number"), issue)
+        and cited.get("title")
+    ):
         return str(cited["title"])
     active = plan.get("active_entry_target") or {}
     if (
@@ -211,7 +219,9 @@ def _review(
     issue = issue_from_mission(plan) or issue_from_package(pkg)
     diff = str(pkg.get("diff") or "")
     parsed = parse_unified_diff(diff)
-    impl = pkg.get("implementation") if isinstance(pkg.get("implementation"), dict) else {}
+    impl = (
+        pkg.get("implementation") if isinstance(pkg.get("implementation"), dict) else {}
+    )
     tests = pkg.get("tests") if isinstance(pkg.get("tests"), dict) else {}
     commands = list(tests.get("commands") or [])
     return {
@@ -236,11 +246,15 @@ def _review(
         "diff": diff,
         "diff_files": parsed["files"],
         "diff_summary": {
-            "files": parsed["files"] and len(parsed["files"]) or int(pkg.get("files_changed_n") or 0),
+            "files": parsed["files"]
+            and len(parsed["files"])
+            or int(pkg.get("files_changed_n") or 0),
             "added": parsed["added"],
             "deleted": parsed["deleted"],
         },
-        "files_changed": list(pkg.get("files_changed") or [f["path"] for f in parsed["files"]]),
+        "files_changed": list(
+            pkg.get("files_changed") or [f["path"] for f in parsed["files"]]
+        ),
         "files_changed_n": int(pkg.get("files_changed_n") or len(parsed["files"])),
         "pr_title": pkg.get("pr_title"),
         "pr_body": pkg.get("pr_body"),
@@ -300,7 +314,11 @@ def history_for_repo(
 
 
 def active_contribution(
-    conn: sqlite3.Connection, user_id: int, full_name: str, *, worktree: Path | None = None
+    conn: sqlite3.Connection,
+    user_id: int,
+    full_name: str,
+    *,
+    worktree: Path | None = None,
 ) -> dict[str, Any] | None:
     rows = [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
     rows = [m for m in rows if str(m.get("status") or "") != "ABANDONED"]
@@ -329,11 +347,76 @@ def contribution_for_mission(
     return _review(conn, user_id, plan, role=role, worktree=worktree)
 
 
+def _draft_history(
+    conn: sqlite3.Connection, job_id: int | None
+) -> list[dict[str, Any]]:
+    if job_id is None:
+        return []
+    out: list[dict[str, Any]] = []
+    arts = [
+        item
+        for item in list_artifacts(conn, int(job_id))
+        if item.get("kind") == "package"
+    ]
+    last_id = arts[-1]["id"] if arts else None
+    for item in arts:
+        try:
+            payload = json.loads(item["body"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        gate = payload.get("maintainer_output_gate")
+        out.append(
+            {
+                "artifact_id": item["id"],
+                "created_at": item.get("created_at"),
+                "draft_status": "current" if item["id"] == last_id else "superseded",
+                "pr_title": payload.get("pr_title"),
+                "safety_ok": gate.get("ok") if isinstance(gate, dict) else None,
+            }
+        )
+    return out
+
+
+def _context_for_review(review: dict[str, Any], plan: dict[str, Any] | None):
+    from foreshadow.contribution.maintainer import project_maintainer_context
+
+    pkg = review.get("package") if isinstance(review.get("package"), dict) else {}
+    cited = (plan or {}).get("cited_issue") if isinstance(plan, dict) else {}
+    if not isinstance(cited, dict):
+        cited = {}
+    tests = review.get("tests") if isinstance(review.get("tests"), dict) else {}
+    commands: list[str] = []
+    for item in tests.get("commands") or []:
+        if isinstance(item, dict) and item.get("command"):
+            commands.append(str(item["command"]))
+        elif isinstance(item, str):
+            commands.append(item)
+    return project_maintainer_context(
+        repository=str(review.get("repository") or ""),
+        diff=str(review.get("diff") or ""),
+        files=list(review.get("files_changed") or []),
+        test_commands=commands,
+        tests_ok=bool(review.get("tests_ok")),
+        issue_title=str(pkg.get("issue_title") or cited.get("title") or ""),
+        issue_body=str(pkg.get("issue_body") or cited.get("body") or ""),
+        issue_number=review.get("issue_number"),
+    )
+
+
 def pr_draft(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+    from foreshadow.contribution.maintainer import evaluate_maintainer_output
+
     review = contribution_for_mission(conn, user_id, mission_id)
     if review is None:
         raise KeyError("contribution not found")
+    plan = load_mission_plan(conn, mission_id, user_id)
     impl = review.get("implementation") or {}
+    title = str(review.get("pr_title") or "")
+    body = str(review.get("pr_body") or "")
+    ctx = _context_for_review(review, plan)
+    gate = evaluate_maintainer_output(title, body, ctx)
     return {
         "title": review.get("pr_title"),
         "body": review.get("pr_body"),
@@ -346,13 +429,22 @@ def pr_draft(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[st
         "tests_ok": review.get("tests_ok"),
         "remote_writes": review.get("remote_writes"),
         "submitted": False,
-        "status": "NOT SUBMITTED",
+        "status": "NOT SUBMITTED" if gate.ok else "MAINTAINER_OUTPUT_UNSAFE",
         "entry_revision": review.get("entry_revision"),
         "source": "package",
+        "safety": {
+            "ok": gate.ok,
+            "verdict": gate.verdict,
+            "summary": list(gate.summary),
+            "checks": dict(gate.checks),
+        },
+        "draft_history": _draft_history(conn, review.get("job_id")),
     }
 
 
-def checks_view(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+def checks_view(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
     review = contribution_for_mission(conn, user_id, mission_id)
     if review is None:
         raise KeyError("contribution not found")
@@ -394,16 +486,28 @@ def checks_view(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict
             "comments": 0,
             "remote_writes": review.get("remote_writes") or 0,
         },
+        "maintainer_output": (review.get("package") or {}).get("maintainer_output_gate")
+        if isinstance(review.get("package"), dict)
+        else None,
         "timeline": [
             {"id": "entry", "label": "Entry", "done": True},
             {"id": "recertify", "label": "Live recertification", "done": True},
-            {"id": "clone", "label": "Clean clone", "done": bool(impl.get("clean_before"))},
+            {
+                "id": "clone",
+                "label": "Clean clone",
+                "done": bool(impl.get("clean_before")),
+            },
             {"id": "analyze", "label": "Analyze", "done": True},
             {"id": "implement", "label": "Implement", "done": bool(review.get("diff"))},
             {"id": "tests", "label": "Tests", "done": bool(review.get("tests_ok"))},
             {"id": "qa", "label": "QA", "done": bool(review.get("qa_ok"))},
             {"id": "package", "label": "Package", "done": True},
-            {"id": "review", "label": "Waiting user review", "done": False, "current": True},
+            {
+                "id": "review",
+                "label": "Waiting user review",
+                "done": False,
+                "current": True,
+            },
         ],
     }
 

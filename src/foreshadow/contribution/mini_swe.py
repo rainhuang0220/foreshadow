@@ -114,9 +114,7 @@ def _docker_exec_argv(container_id: str, command: str, *, go: bool) -> list[str]
     argv = ["docker", "exec", "-w", "/work"]
     for key, value in sandbox_env_for_container(go=go).items():
         argv.extend(["-e", f"{key}={value}"])
-    argv.extend(
-        [container_id, "bash", "-c" if go else "-lc", command]
-    )
+    argv.extend([container_id, "bash", "-c" if go else "-lc", command])
     return argv
 
 
@@ -527,7 +525,9 @@ class MiniSweExecutor:
             },
         )
         if proc.returncode != 0:
-            kind = "go mod download" if (sandbox / "go.mod").is_file() else "pip install"
+            kind = (
+                "go mod download" if (sandbox / "go.mod").is_file() else "pip install"
+            )
             raise ContributionError(
                 f"sandbox {kind} failed: {(proc.stderr or proc.stdout)[-400:]}"
             )

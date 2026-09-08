@@ -354,7 +354,9 @@ def board(
 def enter(
     repo: str = typer.Argument(..., help="owner/repo"),
     issue: int | None = typer.Option(
-        None, "--issue", help="Human-confirmed issue number. Does not change Official Top 5."
+        None,
+        "--issue",
+        help="Human-confirmed issue number. Does not change Official Top 5.",
     ),
     contribute: bool = typer.Option(
         False,
@@ -464,6 +466,124 @@ def contribute(
             f"contribution job {job.id} {repo} status={status} "
             f"backend={job.backend}\n"
             "remote GitHub writes are blocked until you approve them.\n"
+        )
+    finally:
+        conn.close()
+
+
+@app.command(rich_help_panel="Enter")
+def revise_pr_draft(
+    mission_id: int | None = typer.Option(None, "--mission", help="Local mission id"),
+    issue: int | None = typer.Option(
+        None, "--issue", help="Find the mission by issue number"
+    ),
+    repo: str | None = typer.Option(
+        None, "--repo", help="owner/repo when using --issue"
+    ),
+    github_login: str | None = typer.Option(
+        None,
+        "--github-login",
+        help="Board user (production operator). Default: latest session.",
+    ),
+) -> None:
+    """Rewrite the maintainer-facing PR draft. Does not change the patch or write to GitHub."""
+    from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.maintainer import (
+        project_maintainer_context,
+        revise_package_draft,
+    )
+    from foreshadow.contribution.review import (
+        contribution_for_mission,
+        history_for_repo,
+    )
+    from foreshadow.mission import list_missions
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = resolve_cli_user(conn)
+        if github_login:
+            row = conn.execute(
+                "SELECT id FROM users WHERE github_login=? COLLATE NOCASE",
+                (github_login.strip(),),
+            ).fetchone()
+            if row is None:
+                print("github login not found", file=sys.stderr)
+                raise SystemExit(2)
+            uid = int(row[0])
+        if mission_id is None:
+            if issue is None:
+                print("need --mission or --issue", file=sys.stderr)
+                raise SystemExit(2)
+            name = repo or "vshulcz/deja-vu"
+            hist = history_for_repo(conn, uid, name)
+            match = next((h for h in hist if h.get("issue_number") == issue), None)
+            if match is None:
+                from foreshadow.contribution.review import issue_from_mission
+
+                for plan in list_missions(conn, uid):
+                    if issue_from_mission(plan) == issue:
+                        mission_id = int(plan["id"])
+                        break
+            else:
+                mission_id = int(match["mission_id"])
+        if mission_id is None:
+            print("contribution not found", file=sys.stderr)
+            raise SystemExit(2)
+        review = contribution_for_mission(conn, uid, mission_id)
+        if review is None:
+            print("contribution not found", file=sys.stderr)
+            raise SystemExit(2)
+        tests = review.get("tests") if isinstance(review.get("tests"), dict) else {}
+        commands: list[str] = []
+        for item in tests.get("commands") or []:
+            if isinstance(item, dict) and item.get("command"):
+                commands.append(str(item["command"]))
+            elif isinstance(item, str):
+                commands.append(item)
+        pkg = review.get("package") if isinstance(review.get("package"), dict) else {}
+        from foreshadow.mission import load_mission_plan
+
+        plan = load_mission_plan(conn, mission_id, uid) or {}
+        cited = (
+            plan.get("cited_issue") if isinstance(plan.get("cited_issue"), dict) else {}
+        )
+        issue_title = str(pkg.get("issue_title") or cited.get("title") or "")
+        issue_body = str(pkg.get("issue_body") or cited.get("body") or "")
+        if not issue_body and review.get("issue_number"):
+            try:
+                from foreshadow.github.live_entry import (
+                    extras_from_issue,
+                    fetch_live_payload,
+                )
+
+                payload = fetch_live_payload(
+                    str(review.get("repository") or ""),
+                    preferred_issue=int(review["issue_number"]),
+                )
+                for item in payload.get("issues") or []:
+                    if int(item.get("number") or 0) == int(review["issue_number"]):
+                        extra = extras_from_issue(item)
+                        issue_title = issue_title or str(extra.get("issue_title") or "")
+                        issue_body = str(extra.get("issue_body") or "")
+                        break
+            except (OSError, ValueError, TypeError, RuntimeError, KeyError):
+                pass
+        ctx = project_maintainer_context(
+            repository=str(review.get("repository") or ""),
+            diff=str(review.get("diff") or ""),
+            files=list(review.get("files_changed") or []),
+            test_commands=commands,
+            tests_ok=bool(review.get("tests_ok")),
+            issue_title=issue_title,
+            issue_body=issue_body,
+            issue_number=review.get("issue_number"),
+        )
+        new_id = revise_package_draft(conn, int(review["job_id"]), context=ctx)
+        sys.stdout.write(
+            f"pr draft revised mission={mission_id} artifact={new_id} "
+            "remote GitHub writes stay blocked\n"
         )
     finally:
         conn.close()

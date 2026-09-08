@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0] - 2026-09-09
+
+Guarded autonomous contribution, a review workspace, and a maintainer-facing output gate. Remote GitHub writes stay refused.
+
+### Added
+
+- End-to-end local contribution on a confirmed issue: live recertification, sandbox executor, tests, QA, and a package that stops at user review.
+- Contribution Review Dashboard: Overview / Changes / PR Preview / Checks, with active vs history missions on the same repo.
+- Maintainer-output safety gate on every PR draft: internal metadata, privacy, grounding, cross-issue isolation, language, repo style, and an isolated semantic reviewer.
+- Unsafe drafts are `MAINTAINER_OUTPUT_UNSAFE` and cannot be submitted. Historical packages are revised by appending a new artifact, not overwritten.
+- PR Preview shows a compact Draft safety status. Check details stay on Checks / Technical Details.
+
+### Unchanged
+
+- Official Top 5 remains v1. Empty Top 5 is success.
+- Third-party GitHub writes remain refused. YOLO auto-submit is not enabled.
+- No PPO / RL.
+
 ## [0.4.1] - 2026-09-04
 
 ### Fixed

@@ -194,7 +194,9 @@ def test_go_sandbox_install_drops_root_and_adds_repo_cli_tools(tmp_path):
     assert "|| true" in command or "2>/dev/null" in command
 
 
-def test_go_runtime_image_is_baked_with_cli_tools_and_non_root_user(tmp_path, monkeypatch):
+def test_go_runtime_image_is_baked_with_cli_tools_and_non_root_user(
+    tmp_path, monkeypatch
+):
     from foreshadow.contribution.mini_swe import (
         GO_IMAGE,
         GO_RUNTIME_IMAGE,
@@ -268,7 +270,9 @@ def test_go_container_install_exec_uses_non_login_shell_and_go_path():
     assert "bash" in argv
     assert "-lc" not in argv
     env_flags = [argv[i + 1] for i, item in enumerate(argv) if item == "-e"]
-    assert any(item.startswith("PATH=") and "/usr/local/go/bin" in item for item in env_flags)
+    assert any(
+        item.startswith("PATH=") and "/usr/local/go/bin" in item for item in env_flags
+    )
     assert argv[-2] == "-c"
     assert argv[-3] == "bash"
 
@@ -293,12 +297,21 @@ def test_go_suite_skips_overlay_mtime_memo_test_when_present(tmp_path):
     plain = go_test_commands(repo)
     assert plain[0] == "go test ./... -count=1"
     assert "go vet ./..." in plain
-    (repo / "internal" / "sources" / "notes_memo_test.go").write_text("package sources\n")
-    (repo / "internal" / "index" / "damaged_manifest_test.go").write_text("package index\n")
-    (repo / "internal" / "index" / "version_upgrade_test.go").write_text("package index\n")
+    (repo / "internal" / "sources" / "notes_memo_test.go").write_text(
+        "package sources\n"
+    )
+    (repo / "internal" / "index" / "damaged_manifest_test.go").write_text(
+        "package index\n"
+    )
+    (repo / "internal" / "index" / "version_upgrade_test.go").write_text(
+        "package index\n"
+    )
     skipped = go_test_commands(repo)
     assert "-skip" in skipped[0]
-    assert "'TestTheNotesFileIsParsedOncePerProcess|TestDamagedUnreadableManifest|TestIsCurrentVersionDetectsOlderStore'" in skipped[0]
+    assert (
+        "'TestTheNotesFileIsParsedOncePerProcess|TestDamagedUnreadableManifest|TestIsCurrentVersionDetectsOlderStore'"
+        in skipped[0]
+    )
 
 
 def test_go_full_suite_timeout_exceeds_default_python_budget():

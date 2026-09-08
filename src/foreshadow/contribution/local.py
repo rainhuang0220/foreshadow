@@ -94,9 +94,7 @@ def _default_backend() -> str:
     return "mini_swe_agent"
 
 
-def _contrib_work_dir(
-    data_dir: Path, full_name: str, mission_id: int | None
-) -> Path:
+def _contrib_work_dir(data_dir: Path, full_name: str, mission_id: int | None) -> Path:
     slug = full_name.replace("/", "__")
     if mission_id is None:
         return data_dir / "contrib" / slug

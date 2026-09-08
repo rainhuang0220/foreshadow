@@ -178,7 +178,9 @@ class EntryStrategy:
 
         import hashlib
 
-        out["revision"] = hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest()
+        out["revision"] = hashlib.sha256(
+            json.dumps(out, sort_keys=True).encode()
+        ).hexdigest()
         return out
 
 
@@ -1059,7 +1061,8 @@ def _preferred_issue_cand(
         (
             item
             for item in issues
-            if item.get("number") is not None and int(item["number"]) == int(preferred_issue)
+            if item.get("number") is not None
+            and int(item["number"]) == int(preferred_issue)
         ),
         None,
     )

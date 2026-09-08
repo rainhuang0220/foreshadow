@@ -45,7 +45,9 @@ def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
         number = iss.get("number")
         title = str(iss.get("title") or "").strip()
         labels = {
-            str(x).lower() if not isinstance(x, dict) else str(x.get("name") or "").lower()
+            str(x).lower()
+            if not isinstance(x, dict)
+            else str(x.get("name") or "").lower()
             for x in (iss.get("labels") or [])
         }
         line = f"#{number} {title}".strip() if number is not None else title
@@ -118,9 +120,7 @@ def fetch_live_payload(
         extra = _fetch_issue(client, owner, name, int(preferred_issue))
         if extra is not None:
             known = {
-                int(item["number"])
-                for item in issues
-                if item.get("number") is not None
+                int(item["number"]) for item in issues if item.get("number") is not None
             }
             if int(extra.get("number") or 0) not in known:
                 issues.append(extra)
@@ -128,7 +128,11 @@ def fetch_live_payload(
         f"/repos/{owner}/{name}/pulls",
         params={"state": "open", "per_page": 50},
     ).json()
-    prs = [item for item in (prs_raw if isinstance(prs_raw, list) else []) if isinstance(item, dict)]
+    prs = [
+        item
+        for item in (prs_raw if isinstance(prs_raw, list) else [])
+        if isinstance(item, dict)
+    ]
     return {
         "full_name": str(repo.get("full_name") or full_name),
         "html_url": str(repo.get("html_url") or f"https://github.com/{full_name}"),
@@ -164,7 +168,9 @@ def refresh_entry_for_repo(
     from foreshadow.mission import parse_repo_name
 
     full_name = parse_repo_name(full_name)
-    payload = _load_live_payload(full_name, fetch=fetch, preferred_issue=preferred_issue)
+    payload = _load_live_payload(
+        full_name, fetch=fetch, preferred_issue=preferred_issue
+    )
     if not isinstance(payload, dict):
         payload = {}
     payload.setdefault("full_name", full_name)
@@ -181,7 +187,9 @@ def refresh_entry_for_repo(
         not preferred_issue_eligible(features, preferred_issue)
         or strategy.recommended.issue_number != preferred_issue
     ):
-        raise ValueError("confirmed issue is unavailable or ineligible; refusing fallback")
+        raise ValueError(
+            "confirmed issue is unavailable or ineligible; refusing fallback"
+        )
     persist_entry(conn, repo_id, strategy)
     return {
         "source": source,
@@ -210,13 +218,10 @@ def extras_from_issue(issue: dict[str, Any] | None) -> dict[str, Any]:
             expected = text[:400]
             break
     return {
+        "issue_title": title,
         "issue_body": body,
         "expected_behavior": expected or title,
-        "acceptance_criteria": criteria
-        or [
-            "Match the maintainer's 'What a fix looks like' section",
-            "Do not fail when the related tool is not installed",
-        ],
+        "acceptance_criteria": criteria,
         "relevant_files": files,
         "test_commands": tests,
         "issue_url": url,
@@ -255,10 +260,14 @@ def _ensure_repo_row(
         ),
     )
     conn.commit()
-    return int(conn.execute("SELECT id FROM repos WHERE full_name=?", (full,)).fetchone()[0])
+    return int(
+        conn.execute("SELECT id FROM repos WHERE full_name=?", (full,)).fetchone()[0]
+    )
 
 
-def _fetch_issue(client: Any, owner: str, repo: str, number: int) -> dict[str, Any] | None:
+def _fetch_issue(
+    client: Any, owner: str, repo: str, number: int
+) -> dict[str, Any] | None:
     """GET one issue. Missing/closed-as-PR is None so recertification can refuse."""
     from foreshadow.github.client import GitHubError
 
