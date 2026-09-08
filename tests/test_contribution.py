@@ -87,6 +87,28 @@ def test_native_happy_path_fixture_bug_to_ready(tmp_home, tmp_path, monkeypatch)
     assert any("return a + b" in body for body in bodies)
 
 
+def test_quality_gate_accepts_sibling_of_cited_file():
+    job = ContributionJob(
+        full_name="vshulcz/deja-vu",
+        task={
+            "why": "doctor is silent about a stale Grok plugin",
+            "structured": {
+                "task": "report a stale Grok plugin",
+                "why": "doctor is silent about a stale Grok plugin",
+                "relevant_files": ["cmd/deja/kimi_plugin.go"],
+            },
+        },
+    )
+    artifact = PatchArtifact(
+        diff="diff --git a/cmd/deja/grok_plugin.go b/cmd/deja/grok_plugin.go\n+const grokPluginVersion\n",
+        why="doctor is silent about a stale Grok plugin",
+        tests_passed=True,
+        files=["cmd/deja/grok_plugin.go", "cmd/deja/grok_plugin_test.go"],
+    )
+    result = gate(job, artifact)
+    assert result.ok is True
+
+
 def test_quality_gate_rejects_empty_diff():
     job = ContributionJob(
         full_name="acme/toy",

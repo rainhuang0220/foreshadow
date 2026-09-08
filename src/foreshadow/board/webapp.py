@@ -557,6 +557,34 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
   margin: .55rem 0 .9rem;
 }
 .contrib-pack h3, .entry-strat h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.review-head { margin: 0 0 .8rem; }
+.review-head h2 { margin: .15rem 0 .35rem; font-size: 1.35rem; }
+.review-facts { display: flex; flex-wrap: wrap; gap: .35rem .7rem; font-size: .86rem; font-variant-numeric: tabular-nums; }
+.review-tabs { display: flex; flex-wrap: wrap; gap: .3rem; margin: .7rem 0 .8rem; }
+.review-tabs button { border: 1px solid var(--rule); background: transparent; padding: .28rem .65rem; }
+.review-tabs button.on { border-color: var(--ink); background: #fff; }
+.review-hist { list-style: none; padding: 0; margin: .4rem 0 .8rem; }
+.review-hist li { border: 1px solid var(--rule); padding: .45rem .6rem; margin: .3rem 0; cursor: pointer; }
+.review-hist li.on { border-color: var(--ink); }
+.diff-files { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .6rem; }
+.diff-files button { border: 1px solid var(--rule); background: #fff; font-size: .78rem; padding: .2rem .45rem; }
+.diff-pane { overflow-x: auto; border: 1px solid var(--rule); background: #fff; max-width: 100%; }
+.diff-pane pre, .diff-file { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; line-height: 1.45; }
+.diff-line { white-space: pre; padding: 0 .5rem; }
+.diff-line.add { background: #e8f4ea; color: #245c32; }
+.diff-line.del { background: #f8e8e6; color: #8b342c; }
+.diff-line.hunk { color: var(--ink-dim); background: #f1eee6; }
+.pr-md h1,.pr-md h2,.pr-md h3 { font-family: var(--font-display); }
+.pr-md pre { overflow-x: auto; background: #fff; border: 1px solid var(--rule); padding: .5rem; }
+.draft-safety { border: 1px solid var(--rule); padding: .55rem .7rem; margin: 0 0 .8rem; }
+.draft-safety.ok { border-color: #245c32; background: #e8f4ea; color: #245c32; }
+.draft-safety.bad { border-color: #8b342c; background: #f8e8e6; color: #8b342c; }
+.draft-safety ul { margin: .35rem 0 0; padding: 0 0 0 1.1rem; }
+.review-next { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0; }
+@media (max-width: 420px) {
+  .drawer { width: 100%; }
+  .diff-files { max-height: 8rem; overflow: auto; }
+}
 .chips {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -683,6 +711,16 @@ pre.diff {
   .row .act { gap: .35rem; }
   .row .act button { flex: 1 1 auto; width: 100%; }
 }
+html, body { max-width: 100%; overflow-x: hidden; }
+.drawer { max-width: 100vw; }
+@media (max-width: 320px) {
+  .wrap { padding: .8rem .55rem 4.2rem; max-width: 100%; }
+  .drawer { width: 100%; max-width: 100vw; }
+  .review-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .review-tabs button { flex: 0 0 auto; }
+  .diff-pane { max-width: 100%; overflow-x: auto; }
+  .diff-files { max-height: 7rem; overflow: auto; }
+}
 @media (prefers-reduced-motion: reduce) {
   .drawer, .drawer-bg { transition: none; }
 }
@@ -714,6 +752,12 @@ const state = {
   pausedIds: {},
   contributionJobs: [],
   openJob: null,
+  reviewTab: "overview",
+  review: null,
+  reviewHistory: [],
+  reviewMissionId: null,
+  reviewPrMode: "preview",
+  reviewFile: null,
 };
 
 async function api(path, opts={}) {
@@ -870,6 +914,194 @@ function factLine(c) {
   if (f.open_prs != null) bits.push("PRs " + f.open_prs);
   return bits.join(" · ");
 }
+function reviewRow(c) {
+  const r = c.review || {};
+  const ds = r.diff_summary || {};
+  const tests = r.tests_ok ? "Tests passed" : "Tests";
+  return `<div class="sub entry"><span class="pill ok">WAITING FOR YOUR REVIEW</span> #${esc(r.issue_number || "—")} ${esc(r.title || "")}</div>
+    <div class="why">${esc(r.files_changed_n || ds.files || 0)} files · +${esc(ds.added || 0)} · ${tests} · remote writes ${esc(r.remote_writes || 0)}</div>`;
+}
+function reviewQueueView(board) {
+  const q = (board && board.review_queue) || [];
+  if (!q.length) return "";
+  return `<section class="review-queue">
+    <h2>WAITING FOR YOUR REVIEW</h2>
+    ${q.map(c => `
+      <div class="row ${state.open===c.full_name?"active":""}" tabindex="0" role="button" onclick="openCard('${esc(c.full_name)}')" onkeydown="rowKey(event, '${esc(c.full_name)}')">
+        <div class="rk">●</div>
+        <div>
+          <div class="nm">${esc(c.full_name)}</div>
+          ${reviewRow(c)}
+        </div>
+        <div class="act">
+          <button type="button" class="primary" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">Review changes</button>
+        </div>
+      </div>`).join("")}
+  </section>`;
+}
+function cardForOpen(board) {
+  const name = state.open;
+  if (!name) return null;
+  const fromBoard = ((board && board.candidates) || []).find(c => c.full_name === name);
+  if (fromBoard) return fromBoard;
+  const fromQ = ((board && board.review_queue) || []).find(c => c.full_name === name);
+  if (fromQ) return fromQ;
+  if (state.review && (state.review.repository === name || !state.review.repository)) {
+    return {
+      full_name: name,
+      html_url: "https://github.com/" + name,
+      review: state.review,
+      review_history: state.reviewHistory,
+    };
+  }
+  return null;
+}
+function reviewWorkspace(card) {
+  const r = state.review || card.review;
+  if (!r || !r.issue_number) return "";
+  const hist = state.reviewHistory.length ? state.reviewHistory : (card.review_history || []);
+  const ds = r.diff_summary || {};
+  const tab = state.reviewTab || "overview";
+  const tabs = [
+    ["overview", "Overview"],
+    ["changes", "Changes"],
+    ["pr", "PR Preview"],
+    ["checks", "Checks"],
+  ].map(([id, lab]) => `<button type="button" class="${tab===id?"on":""}" onclick="state.reviewTab='${id}';render()">${lab}</button>`).join("");
+  const histHtml = hist.map(h => `<li class="${Number(h.mission_id)===Number(r.mission_id)?"on":""}" onclick="openReviewMission(${esc(h.mission_id)})">
+    <strong>${h.role==="active"?"Active":"History"} #${esc(h.issue_number)}</strong>
+    <span class="meta"> ${esc(h.status || "")} · ${esc(h.files_changed_n || 0)} files · +${esc((h.diff_summary||{}).added || 0)} · ${h.tests_ok?"Tests passed":"Tests"}</span>
+  </li>`).join("");
+  return `<section class="contrib-pack review-head">
+    <p class="meta">${esc(card.full_name)} · ${esc(r.source || "HUMAN CONFIRMED")}</p>
+    <h2>WAITING FOR YOUR REVIEW</h2>
+    <p><strong>#${esc(r.issue_number)}</strong> ${esc(r.title || "")}</p>
+    <div class="review-facts">
+      <span>status ${esc(r.status || "WAITING_USER_APPROVAL")}</span>
+      <span>${esc(ds.files || r.files_changed_n || 0)} files · +${esc(ds.added || 0)} −${esc(ds.deleted || 0)}</span>
+      <span>${r.tests_ok ? "Tests passed" : "Tests"}</span>
+      <span>QA ${esc(r.qa || "—")}</span>
+      <span>REMOTE_WRITES=${esc(r.remote_writes || 0)}</span>
+      <span>${esc((r.executor||{}).backend || "")} ${esc((r.executor||{}).model || "")}</span>
+    </div>
+    <div class="review-next">
+      <button type="button" class="primary" onclick="state.reviewTab='changes';render()">Review changes</button>
+      <button type="button" onclick="state.reviewTab='pr';render()">Preview PR</button>
+      <button type="button" disabled>Approval workflow not enabled yet</button>
+    </div>
+    <h3>Contribution History</h3>
+    <ul class="review-hist">${histHtml}</ul>
+    <div class="review-tabs">${tabs}</div>
+    ${tab==="overview" ? reviewOverview(r) : ""}
+    ${tab==="changes" ? reviewChanges(r) : ""}
+    ${tab==="pr" ? reviewPr(r) : ""}
+    ${tab==="checks" ? reviewChecks(r) : ""}
+  </section>`;
+}
+function reviewOverview(r) {
+  return `<p class="meta">Next: Review changes, then Review PR draft. Remote GitHub writes stay blocked.</p>
+    <details><summary>Technical Details</summary>
+      <p class="meta">mission ${esc(r.mission_id)} · job ${esc(r.job_id)} · artifact ${esc(r.artifact_id)}</p>
+      <p class="meta">package revision ${esc(r.package_revision || r.artifact_id || "—")}</p>
+      <p class="meta">entry revision ${esc(r.entry_revision || "—")}</p>
+      <p class="meta">upstream ${esc(r.upstream_head || "—")}</p>
+      <p class="meta">pre_tree_hash ${esc(r.pre_tree_hash || "—")}</p>
+      <p class="meta">executor ${esc(r.executor_started || "—")} → ${esc(r.executor_finished || "—")}</p>
+      <p class="meta">path ${esc(r.local_path || "—")}</p>
+      ${((r.pr && r.pr.draft_history) || []).map(h => `<p class="meta">draft ${esc(h.draft_status)} · artifact ${esc(h.artifact_id)} · safety ${h.safety_ok===true?"PASS":(h.safety_ok===false?"FAIL":"—")}</p>`).join("")}
+      ${r.raw_package ? `<pre class="diff">${esc(JSON.stringify(r.raw_package, null, 2))}</pre>` : ""}
+    </details>`;
+}
+function reviewChanges(r) {
+  const files = r.diff_files || [];
+  const selected = state.reviewFile || (files[0] && files[0].path);
+  const list = files.map(f => `<button type="button" data-path="${esc(f.path)}" onclick="state.reviewFile=this.dataset.path;render()">${esc(f.path)} +${esc(f.added)} −${esc(f.deleted)}</button>`).join("");
+  const shown = files.filter(f => !selected || f.path === selected);
+  const body = shown.map(renderUnifiedDiff).join("");
+  const raw = `<pre class="diff">${esc(r.diff || "")}</pre>`;
+  return `<div class="diff-files">${list}</div>
+    <p class="meta"><button type="button" onclick="copyPatch()">Copy patch</button> Unified diff · package snapshot</p>
+    <div class="diff-pane">${body || raw}</div>
+    <details><summary>Raw patch</summary>${raw}</details>`;
+}
+function renderUnifiedDiff(file) {
+  const hunks = (file.hunks || []).map(h => {
+    const lines = (h.lines || []).map(l => {
+      const cls = l.kind === "add" ? "add" : (l.kind === "del" ? "del" : "ctx");
+      const mark = l.kind === "add" ? "+" : (l.kind === "del" ? "-" : " ");
+      return `<div class="diff-line ${cls}">${esc(mark + (l.text || ""))}</div>`;
+    }).join("");
+    return `<div class="diff-line hunk">${esc(h.header || "")}</div>${lines}`;
+  }).join("");
+  return `<div class="diff-file"><strong>${esc(file.path)}</strong> +${esc(file.added)} −${esc(file.deleted)}${hunks}</div>`;
+}
+function reviewPr(r) {
+  const pr = r.pr || {};
+  const title = pr.title || r.pr_title || "";
+  const body = pr.body || r.pr_body || "";
+  const html = pr.body_html || "";
+  const mode = state.reviewPrMode || "preview";
+  const safety = pr.safety || r.draft_safety || {};
+  const ok = safety.ok === true;
+  const items = safety.summary || [];
+  const banner = ok
+    ? `<div class="draft-safety ok"><strong>Draft safety</strong><ul>${(items.length?items:["Grounded in issue/diff","Internal metadata clean","Repository style checked"]).map(x=>`<li>✓ ${esc(x)}</li>`).join("")}</ul></div>`
+    : `<div class="draft-safety bad"><strong>Unsafe draft — remote submission blocked</strong></div>`;
+  return `${banner}<p><strong>PR Title</strong></p><p>${esc(title)}</p>
+    <p class="meta">Target ${esc(r.repository)} · base ${esc(pr.base || "main")} · ${esc(pr.closes || ("#"+r.issue_number))} · ${esc(pr.status || "NOT SUBMITTED")} · REMOTE_WRITES=${esc(r.remote_writes || 0)}</p>
+    <div class="review-tabs">
+      <button type="button" class="${mode==="preview"?"on":""}" onclick="state.reviewPrMode='preview';render()">Preview</button>
+      <button type="button" class="${mode==="raw"?"on":""}" onclick="state.reviewPrMode='raw';render()">Raw Markdown</button>
+    </div>
+    ${mode==="raw" ? `<pre class="diff">${esc(body)}</pre>` : `<div class="pr-md">${html || `<p>${esc(body)}</p>`}</div>`}`;
+}
+function reviewChecks(r) {
+  const c = r.checks || {};
+  const live = c.live || {};
+  const tests = (c.tests || r.test_commands || []).map(t => `<details><summary>${t.ok?"Passed":"Failed"} · ${esc(t.label || t.command || "test")} · ${esc(t.duration_s != null ? (Math.round(t.duration_s*10)/10)+"s" : "")}</summary>
+    <p class="meta"><code>${esc(t.command || "")}</code> exit ${esc(t.returncode)}</p>
+    <pre class="diff">${esc(t.log || "")}</pre></details>`).join("");
+  const tl = (c.timeline || []).map(s => `<li>${s.done?"✓":(s.current?"●":"○")} ${esc(s.label)}</li>`).join("");
+  const rec = live.issue_recorded ? "Passed" : "—";
+  return `<h3>Target</h3>
+    <p class="meta">Issue #${esc(live.issue_number || r.issue_number || "—")} recorded · ${rec}</p>
+    <p class="meta">Unassigned / no overlap / live recertification: recorded on package snapshot (not re-fetched)</p>
+    <h3>Provenance</h3>
+    <p class="meta">Fresh clone ${ (c.provenance||{}).fresh_clone ? "Passed" : "—" } · clean_before ${esc((c.provenance||{}).clean_before)} · ${esc((c.provenance||{}).mode || "")}</p>
+    <h3>Tests</h3>${tests || "<p class='meta'>No structured commands</p>"}
+    <h3>QA</h3><p>${(c.qa||{}).ok || r.qa_ok ? "Passed" : "Failed"} · ${esc((c.qa||{}).verdict || r.qa || "—")}</p>
+    <h3>Remote Safety</h3>
+    <p class="meta">Push: blocked · Create PR: blocked · Comments: 0 · REMOTE_WRITES=${esc((c.remote||{}).remote_writes || r.remote_writes || 0)}</p>
+    <h3>Draft safety</h3>
+    <pre class="meta">${esc(JSON.stringify((c.maintainer_output || (r.pr && r.pr.safety && r.pr.safety.checks) || {}), null, 2))}</pre>
+    <ol class="plan">${tl}</ol>`;
+}
+async function loadReview(name, missionId) {
+  if (!state.user) return;
+  try {
+    const q = missionId ? ("mission_id=" + encodeURIComponent(missionId)) : ("full_name=" + encodeURIComponent(name));
+    const data = await api("/api/contribution/review?" + q);
+    state.review = data.review;
+    state.reviewHistory = data.history || [];
+    state.reviewMissionId = data.review && data.review.mission_id;
+    if (state.review) {
+      try { state.review.pr = await api("/api/contribution/pr?mission_id=" + state.review.mission_id); } catch {}
+      try { state.review.checks = await api("/api/contribution/checks?mission_id=" + state.review.mission_id); } catch {}
+    }
+  } catch (e) {
+    if (!state.review) state.review = null;
+  }
+  render();
+}
+function openReviewMission(id) {
+  const name = state.open;
+  state.reviewTab = "overview";
+  loadReview(name, id);
+}
+async function copyPatch() {
+  const text = (state.review && state.review.diff) || "";
+  try { if (navigator.clipboard) await navigator.clipboard.writeText(text); } catch {}
+}
 function entryView(card) {
   const e = card.entry;
   if (!e || !e.recommended) {
@@ -885,7 +1117,8 @@ function entryView(card) {
   const why = (rec.why || []).map(x => `<li>${esc(x)}</li>`).join("");
   const pol = e.policy || {};
   return `<section class="entry-strat">
-    <h3>最佳切入点</h3>
+    <h3>${card.active_entry_target ? "当前切入点" : "最佳切入点"}</h3>
+    <p class="meta">${esc(card.entry_source || "machine discovered")} · #${esc(rec.issue_number || "—")}</p>
     <p><strong>${esc(rec.title || rec.summary_zh)}</strong></p>
     <p class="meta">推荐 ${esc(rec.route)} · 信心 ${esc(conf)} · ${esc(rec.effort || "")} · 风险 ${esc(rec.risk || "")}</p>
     ${why ? `<ul>${why}</ul>` : ""}
@@ -932,10 +1165,11 @@ function contributionView(card) {
   }).join("");
   const filesN = pkg.files_changed_n != null ? pkg.files_changed_n : (art.files||[]).length;
   const testsOk = pkg.tests && pkg.tests.ok != null ? pkg.tests.ok : art.tests_passed;
-  const qa = pkg.qa || (art.qa_ok ? "PASS" : (job.status === "ready" ? "PASS" : (job.status === "failed" ? "FAIL" : "…")));
+  const qa = pkg.qa || (art.qa_ok ? "PASS" : (job.status === "WAITING_USER_APPROVAL" ? "PASS" : (job.status === "failed" ? "FAIL" : "…")));
   const diff = pkg.diff || art.diff || "";
   return `<section class="contrib-pack">
     <h3>贡献准备</h3>
+    <p>Implementation: ${esc((pkg.implementation || {}).mode || "NOT_VALIDATED")} · 下一步：用户审核</p>
     <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(pkg.task || art.why || job.full_name || "")}</p>
     <p class="meta">Files changed: ${esc(filesN)} · Tests: ${testsOk ? "passed" : (testsOk === false ? "failed" : "…")} · QA: ${esc(qa)}</p>
     ${pkg.pr_title ? `<p><strong>PR title:</strong> ${esc(pkg.pr_title)}</p>` : ""}
@@ -1166,12 +1400,12 @@ function listView(board) {
         <div class="nm">${esc(c.full_name)}${obs}
           <a class="gh-mini" href="${esc(c.html_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">打开 GitHub ↗</a>
         </div>
-        ${desc ? `<div class="sub entry">${esc(desc)}</div>` : ""}
-        ${cardWhy(c) ? `<div class="why">为什么现在：${esc(cardWhy(c))}</div>` : ""}
-        ${chipsView(c)}
-        ${eevLine(c)}
-        <p class="meta">置信度：${esc((c.intel && c.intel.eev_confidence_zh) || c.confidence_zh || "低")}</p>
-        ${rankFootnote(c)}
+        ${c.review ? reviewRow(c) : (desc ? `<div class="sub entry">${esc(desc)}</div>` : "")}
+        ${c.review ? "" : (cardWhy(c) ? `<div class="why">为什么现在：${esc(cardWhy(c))}</div>` : "")}
+        ${c.review ? "" : chipsView(c)}
+        ${c.review ? "" : eevLine(c)}
+        ${c.review ? "" : `<p class="meta">置信度：${esc((c.intel && c.intel.eev_confidence_zh) || c.confidence_zh || "低")}</p>`}
+        ${c.review ? "" : rankFootnote(c)}
       </div>
       <div class="act">
         <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
@@ -1311,12 +1545,14 @@ function drawerView(card) {
   <aside class="drawer ${state.open?"on":""}" role="dialog" aria-modal="true" aria-label="项目详情">
     <button class="close" type="button" onclick="closeCard()">关闭</button>
     <p class="meta">${esc(kindLine)}</p>
-    <h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>
+    ${card.review || state.review ? `<h2>${esc(card.full_name)}</h2>` : `<h2>#${esc(card.rank)} ${esc(card.full_name)}</h2>`}
     ${card.observation_zh ? `<section class="obs-panel">
       <h3>${esc(card.observation_zh)}</h3>
       <p class="meta">${esc(card.observation_hint || (card.observation_kind==="yours" ? "这是你标记关注的仓库。" : "伏笔正在连续看这个仓库近几日的变化。"))}</p>
     </section>` : ""}
     ${state.actionError ? `<p class="warn" role="alert">${esc(state.actionError)}</p>` : ""}
+    ${card.review || state.review ? reviewWorkspace(card) : ""}
+    ${card.review || state.review ? `<details class="audit"><summary>Opportunity / History</summary>` : ""}
     <section>
       <h3>项目简介</h3>
       <p class="intro">${esc(intro || "信息不足，无法写简介。")}</p>
@@ -1351,8 +1587,8 @@ function drawerView(card) {
         （${esc(card.strategy_path || "")}） · 预计 ${esc(card.strategy_effort || "—")} · 难度 ${esc(card.strategy_difficulty || "—")}</p>
       <ol class="plan">${(card.strategy_steps_zh||[]).map((x,i) => `<li>${labeledStep(x,i)}</li>`).join("")}</ol>
     </section>
-    ${entryView(card)}
-    ${contributionView(card)}
+    ${card.review || state.review ? "" : entryView(card)}
+    ${card.review || state.review ? "" : contributionView(card)}
     <p>
       ${enterOrMissionBtn(card)}
       <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
@@ -1397,6 +1633,7 @@ function drawerView(card) {
       <ul>${why}</ul>
       <p><strong>风险：</strong>${esc(ch.main_risk || "")}</p>
     </details>
+    ${card.review || state.review ? `</details>` : ""}
   </aside>`;
 }
 
@@ -1425,17 +1662,19 @@ function boardView() {
     <button type="button" onclick="loadMissions()">查看任务</button>
   </div>
   ${state.showMissions ? missionListView() : ""}
+  ${reviewQueueView(b)}
   ${contributionJobsView()}
   <h2 id="board-list">今日候选榜</h2>
   <div class="list">${listView(b)}</div>
-  ${drawerView((b.candidates||[]).find(c => c.full_name === state.open))}
+  ${drawerView(cardForOpen(b))}
   ${jobOnlyDrawer()}
   ${missionView(state.mission)}
   `;
 }
 
 function contributionJobsView() {
-  const rows = state.contributionJobs || [];
+  const reviewed = new Set(((state.board && state.board.review_queue) || []).map(c => c.full_name));
+  const rows = (state.contributionJobs || []).filter(j => !reviewed.has(j.full_name));
   if (!state.user || !rows.length) return "";
   return `<section class="contrib-pack">
     <h3>贡献准备任务</h3>
@@ -1497,7 +1736,7 @@ function startContribPoll(id) {
       const data = await api("/api/contribution?id=" + id);
       applyContribution(data);
       const st = data.job && data.job.status;
-      if (st === "ready" || st === "failed" || st === "refused_remote") stopContribPoll();
+      if (st === "WAITING_USER_APPROVAL" || st === "failed" || st === "refused_remote") stopContribPoll();
       render();
     } catch {}
   }, 1500);
@@ -1838,8 +2077,29 @@ async function logout() {
   render();
 }
 
-function openCard(name) { state.open = name; render(); }
-function closeCard() { state.open = null; render(); }
+function openCard(name) {
+  state.open = name;
+  state.reviewTab = "overview";
+  state.reviewFile = null;
+  const card = ((state.board && state.board.candidates) || []).find(c => c.full_name === name)
+    || ((state.board && state.board.review_queue) || []).find(c => c.full_name === name);
+  if (card && card.review) {
+    state.review = card.review;
+    state.reviewHistory = card.review_history || [];
+    loadReview(name, card.review.mission_id);
+  } else {
+    state.review = null;
+    state.reviewHistory = [];
+    loadReview(name);
+  }
+  render();
+}
+function closeCard() {
+  state.open = null;
+  state.review = null;
+  state.reviewHistory = [];
+  render();
+}
 
 function cloneOkFor(c) {
   if (!c) return false;

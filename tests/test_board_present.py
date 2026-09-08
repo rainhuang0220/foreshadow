@@ -264,3 +264,25 @@ def test_present_intel_na_empty_official_and_rank_is_not_quality():
     by_name = {c.full_name: c.list_rank for c in mixed.shortlist}
     assert by_name["other/high"] == 1
     assert by_name["acme/low"] == 2
+
+
+def test_active_mission_overrides_discovery_cut_in():
+    board = assemble_board(
+        [_row("active")], date="2026-08-25", preview=True, snapshot_days=1
+    )
+    name = (
+        board.candidates[0].full_name if hasattr(board, "candidates") else "acme/active"
+    )
+    original = present_board(board)["candidates"][0]
+    name = original["full_name"]
+    mission = {
+        "id": 1,
+        "entry_source": "HUMAN_CONFIRM",
+        "entry_strategy": {"recommended": {"issue_number": 1828, "title": "Active B"}},
+        "why_now": ["Active B"],
+        "strategy": {"summary_zh": "Active B", "why": ["Active B"]},
+    }
+    card = present_board(board, missions={name: mission})["candidates"][0]
+    assert card["active_entry_target"]["issue_number"] == 1828
+    assert card["entry"]["recommended"]["issue_number"] == 1828
+    assert card["strategy_summary_zh"] == "Active B"

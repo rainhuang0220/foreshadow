@@ -125,7 +125,12 @@ def _touches_task(files: list[str], job: ContributionJob) -> bool:
     for rel in relevant:
         needle = rel.replace("\\", "/").lower()
         base = needle.rsplit("/", 1)[-1]
+        parent = needle.rsplit("/", 1)[0] if "/" in needle else ""
         if any(needle in f or f.endswith(base) for f in lowered):
+            return True
+        # Same package as a cited file: issue bodies often name the model
+        # (kimi_plugin.go) while the fix lands beside it (grok_plugin.go).
+        if parent and any(f.startswith(parent + "/") for f in lowered):
             return True
     return any("/test" in f or f.startswith("test") or "/tests/" in f for f in lowered)
 

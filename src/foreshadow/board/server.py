@@ -202,6 +202,9 @@ class BoardState:
                         name = str(card.get("full_name") or "")
                         if name in latest:
                             card["contribution_job"] = latest[name]
+                    from foreshadow.contribution.review import attach_review_summaries
+
+                    payload = attach_review_summaries(payload, conn, int(user_id))
                 return payload
             finally:
                 conn.close()
@@ -213,7 +216,7 @@ def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
 
 
 def _job_view(job: Any) -> dict[str, Any]:
-    status = job.status.value if hasattr(job.status, "value") else str(job.status)
+    status = job.canonical_status
     return {
         "id": job.id,
         "full_name": job.full_name,
@@ -224,7 +227,7 @@ def _job_view(job: Any) -> dict[str, Any]:
             "implementing": "正在实现",
             "testing": "测试",
             "qa": "质量检查",
-            "ready": "贡献已就绪",
+            "WAITING_USER_APPROVAL": "等待你确认",
             "waiting_approval": "等待你确认",
             "failed": "失败",
             "refused_remote": "远程写入已拒绝",
@@ -238,6 +241,7 @@ def _job_view(job: Any) -> dict[str, Any]:
 
 
 def _package_from_artifacts(arts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    found: dict[str, Any] | None = None
     for item in arts:
         if item.get("kind") != "package" or not item.get("body"):
             continue
@@ -246,8 +250,8 @@ def _package_from_artifacts(arts: list[dict[str, Any]]) -> dict[str, Any] | None
         except json.JSONDecodeError:
             continue
         if isinstance(payload, dict):
-            return payload
-    return None
+            found = payload
+    return found
 
 
 def _spawn_contribution(job_id: int) -> None:
@@ -418,6 +422,96 @@ class BoardHandler(BaseHTTPRequestHandler):
                 force=force,
             )
             return {"full_name": repo, "entry": strategy.as_dict()}
+        finally:
+            conn.close()
+
+    def _contribution_review(self, path: str, parsed) -> None:
+        user = self._user()
+        if user is None:
+            self._send(*_json_bytes({"error": "需要登录"}, 401))
+            return
+        qs = parse_qs(parsed.query)
+        uid = int(user["id"])
+        full_name = (qs.get("full_name") or qs.get("repo") or [""])[0]
+        raw_mid = (qs.get("mission_id") or qs.get("id") or [""])[0]
+        from foreshadow.contribution.review import (
+            active_contribution,
+            checks_view,
+            contribution_for_mission,
+            history_for_repo,
+            pr_draft,
+            public_review,
+        )
+
+        conn = self.state.db()
+        try:
+            review = None
+            if raw_mid:
+                try:
+                    mid = int(raw_mid)
+                except (TypeError, ValueError):
+                    self._send(*_json_bytes({"error": "需要任务 id"}, 400))
+                    return
+                review = contribution_for_mission(conn, uid, mid)
+            elif full_name and "/" in full_name:
+                if path == "/api/contribution/history":
+                    self._send(
+                        *_json_bytes(
+                            {"history": history_for_repo(conn, uid, full_name)}
+                        )
+                    )
+                    return
+                review = active_contribution(conn, uid, full_name)
+            else:
+                self._send(*_json_bytes({"error": "需要 full_name 或 mission_id"}, 400))
+                return
+            if review is None:
+                self._send(
+                    *_json_bytes({"error": "没有可审核的贡献", "review": None}, 404)
+                )
+                return
+            mid = int(review["mission_id"])
+            if path == "/api/contribution/diff":
+                self._send(
+                    *_json_bytes(
+                        {
+                            "diff": review["diff"],
+                            "files": review["diff_files"],
+                            "summary": review["diff_summary"],
+                            "authority": "package",
+                        }
+                    )
+                )
+                return
+            if path == "/api/contribution/pr":
+                self._send(*_json_bytes(pr_draft(conn, uid, mid)))
+                return
+            if path == "/api/contribution/checks":
+                self._send(*_json_bytes(checks_view(conn, uid, mid)))
+                return
+            if path == "/api/contribution/history":
+                self._send(
+                    *_json_bytes(
+                        {
+                            "history": history_for_repo(
+                                conn, uid, str(review["repository"])
+                            )
+                        }
+                    )
+                )
+                return
+            self._send(
+                *_json_bytes(
+                    {
+                        "review": public_review(review, include_package=True),
+                        "history": history_for_repo(
+                            conn, uid, str(review["repository"])
+                        ),
+                    }
+                )
+            )
+        except KeyError:
+            self._send(*_json_bytes({"error": "没有可审核的贡献"}, 404))
         finally:
             conn.close()
 
@@ -596,6 +690,15 @@ class BoardHandler(BaseHTTPRequestHandler):
             if payload is None:
                 return
             self._send(*_json_bytes(payload))
+            return
+        if path in {
+            "/api/contribution/review",
+            "/api/contribution/diff",
+            "/api/contribution/pr",
+            "/api/contribution/checks",
+            "/api/contribution/history",
+        }:
+            self._contribution_review(path, parsed)
             return
         if path == "/api/contribution":
             qs = parse_qs(parsed.query)
@@ -871,7 +974,44 @@ class BoardHandler(BaseHTTPRequestHandler):
 
             action = str(data.get("action") or "")
             if action in {"push", "pr", "draft_pr", "create_pr"}:
-                self._send(*_json_bytes(refuse_remote(action)))
+                from foreshadow.contribution.maintainer import (
+                    evaluate_remote_submission,
+                )
+                from foreshadow.contribution.maintainer.gate import GateResult
+                from foreshadow.contribution.review import (
+                    active_contribution,
+                    pr_draft,
+                )
+
+                out = refuse_remote(action)
+                name = str(data.get("full_name") or data.get("repo") or "")
+                conn = self.state.db()
+                try:
+                    if "/" in name:
+                        review = active_contribution(conn, int(user["id"]), name)
+                        if review and review.get("mission_id") is not None:
+                            draft = pr_draft(
+                                conn, int(user["id"]), int(review["mission_id"])
+                            )
+                            safety = draft.get("safety") or {}
+                            if safety.get("ok") is False:
+                                out = evaluate_remote_submission(
+                                    action,
+                                    gate=GateResult(
+                                        ok=False,
+                                        verdict=str(
+                                            safety.get("verdict")
+                                            or "MAINTAINER_OUTPUT_UNSAFE"
+                                        ),
+                                        checks=dict(safety.get("checks") or {}),
+                                        summary=list(safety.get("summary") or []),
+                                    ),
+                                )
+                except (KeyError, TypeError, ValueError):
+                    out = refuse_remote(action)
+                finally:
+                    conn.close()
+                self._send(*_json_bytes(out))
                 return
             name = str(data.get("full_name") or data.get("repo") or "")
             if "/" not in name:
@@ -927,6 +1067,8 @@ class BoardHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/mission/remote":
+            from foreshadow.contribution.maintainer import evaluate_remote_submission
+            from foreshadow.contribution.review import pr_draft
             from foreshadow.mission import record_remote_refused, refuse_remote_action
 
             action = str(data.get("action") or "")
@@ -941,6 +1083,31 @@ class BoardHandler(BaseHTTPRequestHandler):
                             mid = _mission_id(data)
                     except ValueError:
                         mid = None
+                    if mid is not None:
+                        try:
+                            draft = pr_draft(conn, int(user["id"]), int(mid))
+                        except KeyError:
+                            draft = None
+                        safety = (
+                            draft.get("safety") if isinstance(draft, dict) else None
+                        )
+                        if isinstance(safety, dict) and safety.get("ok") is False:
+                            from foreshadow.contribution.maintainer.gate import (
+                                GateResult,
+                            )
+
+                            out = evaluate_remote_submission(
+                                action,
+                                gate=GateResult(
+                                    ok=False,
+                                    verdict=str(
+                                        safety.get("verdict")
+                                        or "MAINTAINER_OUTPUT_UNSAFE"
+                                    ),
+                                    checks=dict(safety.get("checks") or {}),
+                                    summary=list(safety.get("summary") or []),
+                                ),
+                            )
                     record_remote_refused(
                         conn,
                         user_id=int(user["id"]),

@@ -57,6 +57,12 @@ class ContributionJob:
     created_at: str | None = None
     updated_at: str | None = None
 
+    @property
+    def canonical_status(self) -> str:
+        if self.status in {JobStatus.ready, JobStatus.waiting_approval}:
+            return "WAITING_USER_APPROVAL"
+        return self.status.value
+
     def __post_init__(self) -> None:
         if self.source_dir is not None:
             self.source_dir = Path(self.source_dir)
@@ -118,6 +124,10 @@ def get_executor(name: str | None) -> ContributionExecutor:
         from foreshadow.contribution.native import NativeExecutor
 
         return NativeExecutor()
+    if key in {"workspace", "host", "worktree"}:
+        from foreshadow.contribution.workspace import WorkspaceExecutor
+
+        return WorkspaceExecutor()
     if key in {"mini_swe", "mini_swe_agent", "minisweagent"}:
         from foreshadow.contribution.mini_swe import MiniSweExecutor
 
@@ -163,11 +173,20 @@ def run_contribution(
         worker.analyze(job)
         job.status = JobStatus.implementing
         _save(conn, job)
+        if worker.name == "mini_swe_agent":
+            from foreshadow.contribution.provenance import begin
+
+            begin(job)
+            _save(conn, job)
         worker.implement(job)
         job.status = JobStatus.testing
         _save(conn, job)
         worker.test(job)
         worker.iterate(job)
+        if worker.name == "mini_swe_agent":
+            from foreshadow.contribution.provenance import finish
+
+            finish(job)
         artifact = worker.produce_patch(job)
         job.status = JobStatus.qa
         _save(conn, job)

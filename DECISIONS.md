@@ -148,3 +148,12 @@ Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks
 | PI-15 | Board chips and EEV sort read stored `formula-v1` `intel_scores`. Live rescore is fallback only when that row is missing. |
 
 **K7 / E2-11:** Official Top 5 still needs genuine local v7. EEV is Board sort only. **K10:** LLM remains narrative. **S4-1 / PI-11:** remote GitHub mutations stay refused.
+
+## Maintainer-facing output (accepted 2026-09-09)
+
+| ID | Decision |
+|---|---|
+| MOS-1 | Internal discovery/ranking/executor metadata never enters maintainer-facing PR title/body. Deny-by-default projection through `MaintainerDraftContext`. |
+| MOS-2 | Deterministic `MAINTAINER_OUTPUT_GATE` plus an isolated semantic reviewer. Any FAIL blocks remote submission. False-negative blocks < reputation damage. |
+| MOS-3 | PR draft revisions append a new package artifact. Historical unsafe drafts are not overwritten. |
+| MOS-4 | Third-party auto-submit (YOLO) stays off. The gate is the future reputation lock. |

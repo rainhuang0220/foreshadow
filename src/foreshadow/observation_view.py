@@ -356,7 +356,10 @@ def enrich_board_payload(
 
             stored = load_entry(conn, rid)
             if stored is not None:
-                card["entry"] = stored.as_dict()
+                if card.get("active_entry_target"):
+                    pass  # The mission owns its historical discovery snapshot.
+                else:
+                    card["entry"] = stored.as_dict()
     counts = payload.setdefault("counts", {})
     counts["observing"] = sum(
         1 for c in payload.get("candidates") or [] if c.get("pool") == "observing"

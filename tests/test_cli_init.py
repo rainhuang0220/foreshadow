@@ -147,6 +147,7 @@ def test_same_day_skip_prints_status_and_exits_3(tmp_home, fake_github, monkeypa
 
 
 def test_enter_missing_git_tells_user(tmp_home, monkeypatch):
+    monkeypatch.setattr("foreshadow.mission._apply_live_entry", lambda *a, **kw: None)
     _isolate(monkeypatch, tmp_home)
     monkeypatch.delenv("FORESHADOW_SKIP_CLONE", raising=False)
 

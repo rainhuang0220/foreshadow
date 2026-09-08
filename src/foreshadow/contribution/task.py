@@ -8,11 +8,14 @@ from pydantic import BaseModel, Field
 
 
 class StructuredTask(BaseModel):
+    entry_revision: str | None = None
     repository: str
     task: str
     evidence: list[str] = Field(default_factory=list)
     issue_number: int | None = None
     issue_url: str | None = None
+    issue_title: str = ""
+    issue_body: str = ""
     expected_behavior: str = ""
     acceptance_criteria: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
@@ -31,8 +34,10 @@ class StructuredTask(BaseModel):
             lines.append(f"Related issue: #{self.issue_number}")
         if self.issue_url:
             lines.append(f"Issue URL: {self.issue_url}")
-        if self.why:
-            lines.append(f"Why this task: {self.why}")
+        if self.issue_title:
+            lines.append(f"Issue title: {self.issue_title}")
+        if self.issue_body:
+            lines.append(f"Issue body: {self.issue_body[:2000]}")
         if self.evidence:
             lines.append("Evidence:")
             lines.extend(f"- {item}" for item in self.evidence)
@@ -111,6 +116,9 @@ def from_entry(
         else:
             evidence.append(str(item))
     evidence = [item for item in evidence if item]
+    body = str(extra.get("issue_body") or "").strip()
+    if body and body not in evidence:
+        evidence.append(body[:1200])
     rules = []
     if policy.get("wants_issue_first"):
         rules.append("Repository prefers an issue before a PR. Link the issue.")
@@ -125,11 +133,14 @@ def from_entry(
         issue_url = f"https://github.com/{full_name}/issues/{issue_n_i}"
     task_text = title or summary or str(extra.get("task") or "")
     return StructuredTask(
+        entry_revision=entry.get("revision") if isinstance(entry, dict) else None,
         repository=full_name,
         task=task_text,
         evidence=evidence or [str(x) for x in extra.get("evidence") or []],
         issue_number=issue_n_i,
         issue_url=str(issue_url) if issue_url else None,
+        issue_title=str(extra.get("issue_title") or ""),
+        issue_body=body,
         expected_behavior=str(extra.get("expected_behavior") or ""),
         acceptance_criteria=[str(x) for x in extra.get("acceptance_criteria") or []],
         constraints=[str(x) for x in extra.get("constraints") or []],

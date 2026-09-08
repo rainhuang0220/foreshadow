@@ -83,7 +83,7 @@ USER_MARKED_EVENTS = frozenset(
 USER_EVENTS = SYSTEM_EVENTS | USER_MARKED_EVENTS
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_NUM_RE = re.compile(r"#(\d+)")
-CLONE_TIMEOUT_S = 120
+CLONE_TIMEOUT_S = 300
 
 
 @dataclass
@@ -272,6 +272,9 @@ def create_for_user(
     user_id: int,
     full_name: str,
     data_dir: Path,
+    issue_number: int | None = None,
+    source: str = "DISCOVER",
+    live: bool = False,
 ) -> Mission:
     from foreshadow.pipeline import load_score_input
 
@@ -285,7 +288,7 @@ def create_for_user(
         """,
         (user_id, full_name),
     ).fetchone()
-    if existing:
+    if existing and not live:
         plan = load_mission_plan(conn, int(existing[0]), user_id)
         if plan is not None:
             return mission_from_plan(plan)
@@ -328,6 +331,42 @@ def create_for_user(
         language = str(data.get("language"))
     if data and data.get("description"):
         blurb = str(data.get("description"))
+    historical_entry = None
+    if repo_id is not None:
+        from foreshadow.entry import load_entry
+
+        stored_entry = load_entry(conn, repo_id)
+        historical_entry = stored_entry.as_dict() if stored_entry else None
+    if existing:
+        previous_plan = load_mission_plan(conn, int(existing[0]), user_id) or {}
+        historical_entry = previous_plan.get("historical_entry") or historical_entry
+    live_entry = None
+    if live:
+        live_entry = _apply_live_entry(
+            conn,
+            full_name,
+            issue_number=issue_number,
+            source=source,
+        )
+        if live_entry is not None:
+            raw_live = live_entry.get("features") or {}
+            if isinstance(raw_live, dict) and raw_live:
+                try:
+                    feat = FeaturesBlob.model_validate(
+                        {
+                            k: v
+                            for k, v in raw_live.items()
+                            if hasattr(FeaturesBlob, k)
+                            or k in FeaturesBlob.model_fields
+                        }
+                    )
+                except (TypeError, ValueError):
+                    pass
+                language = str(raw_live.get("language") or language or "") or language
+                if raw_live.get("description"):
+                    blurb = str(raw_live.get("description"))
+            if live_entry.get("repo_id") is not None:
+                repo_id = int(live_entry["repo_id"])
     mission = build_mission(
         full_name,
         feat=feat,
@@ -339,13 +378,62 @@ def create_for_user(
         language=language,
         blurb=blurb,
     )
+    if live_entry is not None:
+        rec = live_entry["strategy"].recommended
+        # A live Entry revision replaces the discovery cut-in, including prose.
+        mission.why_now = [w for w in mission.why_now if "建议先看：" not in w]
+        mission.strategy.why = list(rec.why)
+        mission.strategy.summary_zh = rec.title
+        mission.strategy.steps_zh = [
+            f"阅读实时 issue #{rec.issue_number}：{rec.title}",
+            "检查仓库贡献说明并验证问题；改动保留本地等待用户审核。",
+        ]
+        if rec.issue_number is not None:
+            cite = f"建议先看：#{rec.issue_number} {rec.title}"
+            if cite not in mission.why_now:
+                mission.why_now.insert(0, cite)
+            if cite not in mission.strategy.why:
+                mission.strategy.why.insert(0, cite)
+        if source == "HUMAN_CONFIRM":
+            note = "进入来源：人工确认（非 Official Top 5）"
+            if note not in mission.why_now:
+                mission.why_now.append(note)
     dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
+    if existing and live:
+        from uuid import uuid4
+
+        dest = dest.with_name(dest.name + "__mission_" + uuid4().hex[:12])
+        dest.mkdir(parents=True, exist_ok=False)
     mission.local_path = str(dest)
-    write_mission_doc(dest, mission)
+    write_mission_doc(
+        dest,
+        mission,
+        extra={"entry_strategy": live_entry["strategy"].as_dict()}
+        if live_entry
+        else None,
+    )
     write_issue_draft(dest, mission)
     write_pr_draft(dest, mission)
     write_fork_note(dest, full_name)
     persist_mission(conn, mission, user_id=user_id, repo_id=repo_id)
+    if live_entry is not None and mission.id is not None:
+        rec = live_entry["strategy"].recommended
+        patch_mission_plan(
+            conn,
+            mission.id,
+            user_id,
+            {
+                "entry_source": source,
+                "historical_entry": historical_entry,
+                "entry_strategy": live_entry["strategy"].as_dict(),
+                "active_entry_target": live_entry["strategy"].as_dict()["recommended"],
+                "preferred_issue": rec.issue_number,
+            },
+        )
+    if live_entry is not None:
+        write_mission_doc(
+            dest, mission, extra={"entry_strategy": live_entry["strategy"].as_dict()}
+        )
     record_event(
         conn,
         user_id=user_id,
@@ -365,6 +453,25 @@ def create_for_user(
         next_step=next_step_zh(mission.status),
     )
     return mission
+
+
+def _apply_live_entry(
+    conn: sqlite3.Connection,
+    full_name: str,
+    *,
+    issue_number: int | None,
+    source: str,
+) -> dict[str, Any] | None:
+    from foreshadow.github.live_entry import fetch_live_payload, refresh_entry_for_repo
+
+    return refresh_entry_for_repo(
+        conn,
+        full_name,
+        now=datetime.now(UTC),
+        fetch=fetch_live_payload,
+        preferred_issue=issue_number,
+        source=source,
+    )
 
 
 ALLOWED = {
@@ -691,6 +798,9 @@ def write_mission_doc(
         + "本目录只做本地准备。不会自动 push / 开 Issue / 开 PR。\n"
         + "等待你的确认才能执行任何远程 GitHub 操作。\n"
     )
+    revision = (extra.get("entry_strategy") or {}).get("revision")
+    if revision:
+        text += f"\nActive Entry revision: {revision}\n"
     path = dest / "FORESHADOW.md"
     path.write_text(text, encoding="utf-8")
     return path
@@ -894,14 +1004,16 @@ def inspect_clone(clone_dir: Path | None) -> dict[str, Any]:
     headings = _doc_headings(readme) if readme else []
     contrib_headings = _doc_headings(contrib) if contrib else []
     kind = None
-    if "pyproject.toml" in names or "setup.py" in names or "setup.cfg" in names:
+    # go.mod wins over a root package.json: many Go CLIs ship a docs/plugin
+    # manifest that is not the product toolchain (deja-vu is the example).
+    if "go.mod" in names:
+        kind = "go"
+    elif "pyproject.toml" in names or "setup.py" in names or "setup.cfg" in names:
         kind = "python"
     elif "package.json" in names:
         kind = "node"
     elif "cargo.toml" in names:
         kind = "rust"
-    elif "go.mod" in names:
-        kind = "go"
     return {
         "inspected": True,
         "has_readme": readme is not None,
@@ -1201,6 +1313,8 @@ def detect_local_tests(clone_dir: Path) -> dict[str, Any]:
         (root / n).exists()
         for n in ("pyproject.toml", "pytest.ini", "setup.py", "setup.cfg", "tox.ini")
     )
+    if "go.mod" in names:
+        return {"kind": "go", "reason": "go_test", "command": "go test ./... -count=1"}
     if py:
         return {"kind": "pytest", "reason": "pytest"}
     if "package.json" in names:
@@ -1216,7 +1330,11 @@ def dependency_authorization_gate(clone_dir: Path) -> dict[str, Any] | None:
     if not root.is_dir():
         return None
     names = {p.name.lower() for p in root.iterdir()}
-    if "package.json" in names and not (root / "node_modules").is_dir():
+    if (
+        "package.json" in names
+        and "go.mod" not in names
+        and not (root / "node_modules").is_dir()
+    ):
         return {
             "status": "DEPENDENCY_REQUIRED",
             "kind": "node",
@@ -2187,6 +2305,7 @@ def setup_local_environment(
                 full_name=full_name,
             )
         extra = {
+            "entry_strategy": plan.get("entry_strategy") or {},
             "clone": clone,
             "inspect": inspect,
             "cited_issue": cited or {},

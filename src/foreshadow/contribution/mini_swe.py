@@ -22,11 +22,118 @@ from foreshadow.contribution.executor import (
 from foreshadow.contribution.task import StructuredTask
 
 _EXTRA_NAMES = ("minisweagent",)
-STEP_LIMIT = 24
+STEP_LIMIT = 40
 INSTALL_TIMEOUT_S = 300
+IMAGE_BUILD_TIMEOUT_S = 900
 TEST_TIMEOUT_S = 180
+GO_PACKAGE_TEST_TIMEOUT_S = 300
+GO_SUITE_TEST_TIMEOUT_S = 600
 AGENT_TIMEOUT_S = 900
 DEFAULT_IMAGE = os.environ.get("FORESHADOW_SANDBOX_IMAGE", "python:3.12-slim-bookworm")
+GO_IMAGE = "golang:1.25-bookworm"
+GO_RUNTIME_IMAGE = "foreshadow-go-runtime:1.25-bookworm"
+SANDBOX_USER = "foreshadow"
+
+
+def _image_for(sandbox: Path) -> str:
+    override = os.environ.get("FORESHADOW_SANDBOX_IMAGE")
+    if override:
+        return override
+    if (Path(sandbox) / "go.mod").is_file():
+        return GO_IMAGE
+    return DEFAULT_IMAGE
+
+
+def _go_runtime_dockerfile() -> str:
+    return (
+        f"FROM {GO_IMAGE}\n"
+        "RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 zstd "
+        f"&& useradd -M -d /tmp/foreshadow-home -s /bin/bash {SANDBOX_USER} "
+        "&& rm -rf /var/lib/apt/lists/*\n"
+    )
+
+
+def _runtime_image_for(sandbox: Path) -> str:
+    override = os.environ.get("FORESHADOW_SANDBOX_IMAGE")
+    if override:
+        return override
+    if (Path(sandbox) / "go.mod").is_file():
+        return GO_RUNTIME_IMAGE
+    return DEFAULT_IMAGE
+
+
+def _ensure_runtime_image(sandbox: Path) -> str:
+    image = _runtime_image_for(sandbox)
+    if image != GO_RUNTIME_IMAGE:
+        return image
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        check=False,
+    )
+    if inspect.returncode == 0:
+        return image
+    built = subprocess.run(
+        ["docker", "build", "-t", image, "-"],
+        input=_go_runtime_dockerfile(),
+        text=True,
+        capture_output=True,
+        timeout=IMAGE_BUILD_TIMEOUT_S,
+        check=False,
+    )
+    if built.returncode != 0:
+        raise ContributionError(
+            "go runtime image build failed: "
+            + (built.stderr or built.stdout or "")[-400:]
+        )
+    return image
+
+
+def _test_timeout_s(command: str) -> int:
+    text = command.strip()
+    if text.startswith(("go test ./...", "go test ./... ")):
+        return GO_SUITE_TEST_TIMEOUT_S
+    if text.startswith(("go test", "go vet")):
+        return GO_PACKAGE_TEST_TIMEOUT_S
+    return TEST_TIMEOUT_S
+
+
+def _runtime_interpreter(*, go: bool) -> list[str]:
+    """Agent and tests drop root in Go images so chmod-unreadable tests are real."""
+    if go:
+        return ["su", "-p", "-s", "/bin/bash", SANDBOX_USER, "-c"]
+    return ["bash", "-lc"]
+
+
+def _docker_run_args(sandbox: Path, *, go: bool = False) -> list[str]:
+    return ["--rm", "-v", f"{Path(sandbox).resolve()}:/work"]
+
+
+def _docker_exec_argv(container_id: str, command: str, *, go: bool) -> list[str]:
+    """docker exec with sandbox env. Go uses bash -c so login PATH cannot hide go."""
+    argv = ["docker", "exec", "-w", "/work"]
+    for key, value in sandbox_env_for_container(go=go).items():
+        argv.extend(["-e", f"{key}={value}"])
+    argv.extend([container_id, "bash", "-c" if go else "-lc", command])
+    return argv
+
+
+def _install_command(sandbox: Path) -> str:
+    root = Path(sandbox)
+    if (root / "go.mod").is_file():
+        return (
+            "mkdir -p /tmp/foreshadow-home/go /tmp/foreshadow-home/gocache && "
+            "GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org "
+            "go mod download && "
+            f"chown -R {SANDBOX_USER}:{SANDBOX_USER} /tmp/foreshadow-home && "
+            f"(chown -R {SANDBOX_USER}:{SANDBOX_USER} /work || true) && "
+            "chmod -R a+rwX /work || true"
+        )
+    extras = "pytest pytest-asyncio"
+    return (
+        "python -m pip install -q --upgrade pip && "
+        f"python -m pip install -q -e . {extras}"
+    )
 
 
 def _extra_available() -> bool:
@@ -42,9 +149,9 @@ def _require() -> None:
     )
 
 
-def sandbox_env_for_container() -> dict[str, str]:
+def sandbox_env_for_container(*, go: bool = False) -> dict[str, str]:
     """Env forwarded into the coding sandbox. No tokens, no host secrets."""
-    return {
+    env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": "/tmp/foreshadow-home",
         "PYTHONUNBUFFERED": "1",
@@ -52,6 +159,14 @@ def sandbox_env_for_container() -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         "PAGER": "cat",
     }
+    if go:
+        env["PATH"] = "/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+        env["GOPATH"] = "/tmp/foreshadow-home/go"
+        env["GOCACHE"] = "/tmp/foreshadow-home/gocache"
+        env["GOPROXY"] = "off"
+        env["GOSUMDB"] = "off"
+        env["GOTOOLCHAIN"] = "local"
+    return env
 
 
 class MiniSweExecutor:
@@ -68,6 +183,8 @@ class MiniSweExecutor:
             _require()
         self.agent_factory = agent_factory
         self.use_docker = bool(shutil.which("docker")) if docker is None else docker
+        if agent_factory is None and not self.use_docker:
+            raise ContributionError("Docker is required for a real coding executor")
         self.on_event = on_event
         self.last_sandbox_env: dict[str, str] | None = None
         self.last_network_note: dict[str, str] | None = None
@@ -93,19 +210,33 @@ class MiniSweExecutor:
         if job.source_dir is not None:
             if sandbox.exists():
                 shutil.rmtree(sandbox)
-            shutil.copytree(
-                job.source_dir,
-                sandbox,
-                ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git"),
-                dirs_exist_ok=False,
-            )
-            _git_reinit(sandbox)
+            if (Path(job.source_dir) / ".git").exists():
+                from foreshadow.contribution.provenance import require_clean
+
+                require_clean(Path(job.source_dir))
+                from foreshadow.contribution.clone import clone_from_url
+
+                clone_from_url(str(Path(job.source_dir).resolve()), sandbox)
+            elif self.agent_factory is None:
+                raise ContributionError(
+                    "autonomous executor requires a Git source repository"
+                )
+            else:
+                shutil.copytree(
+                    job.source_dir,
+                    sandbox,
+                    ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git"),
+                    dirs_exist_ok=False,
+                )
+                _git_reinit(sandbox)
         else:
             if sandbox.exists():
                 shutil.rmtree(sandbox)
             clone_public_github(job.full_name, sandbox)
         job.sandbox_path = sandbox
-        self.last_sandbox_env = sandbox_env_for_container()
+        self.last_sandbox_env = sandbox_env_for_container(
+            go=(sandbox / "go.mod").is_file()
+        )
         self._emit(
             job,
             {
@@ -282,6 +413,9 @@ class MiniSweExecutor:
         env = self._ensure_env(job)
         traced = _TracingEnv(env, job, self._emit)
         model_name, model_kwargs = _model_setup()
+        proof = (job.task or {}).setdefault("implementation", {})
+        proof["model"] = model_name
+        proof["backend"] = self.name
         work = Path(job.work_dir) if job.work_dir else Path(job.sandbox_path or ".")
         agent = DefaultAgent(
             LitellmModel(
@@ -319,17 +453,23 @@ class MiniSweExecutor:
         if self.use_docker:
             from minisweagent.environments.docker import DockerEnvironment
 
+            go = (sandbox / "go.mod").is_file()
             self.last_network_note = {
                 "network_enabled": "during dependency install only",
-                "why": "pip install of the cloned repo plus pytest",
+                "why": (
+                    "go mod download of the cloned repo"
+                    if go
+                    else "pip install of the cloned repo plus pytest"
+                ),
             }
             self._env = DockerEnvironment(
-                image=DEFAULT_IMAGE,
+                image=_ensure_runtime_image(sandbox),
                 cwd="/work",
-                env=sandbox_env_for_container(),
+                env=sandbox_env_for_container(go=go),
                 forward_env=[],
-                run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
-                timeout=TEST_TIMEOUT_S,
+                run_args=_docker_run_args(sandbox, go=go),
+                timeout=GO_SUITE_TEST_TIMEOUT_S if go else TEST_TIMEOUT_S,
+                interpreter=_runtime_interpreter(go=go),
             )
             self.container_id = self._env.container_id
             self._install_in_container(job)
@@ -362,13 +502,11 @@ class MiniSweExecutor:
     def _install_in_container(self, job: ContributionJob) -> None:
         if not self.container_id:
             return
-        extras = "pytest pytest-asyncio"
-        cmd = (
-            "python -m pip install -q --upgrade pip && "
-            f"python -m pip install -q -e . {extras}"
-        )
+        sandbox = _require_sandbox(job)
+        cmd = _install_command(sandbox)
+        go = (sandbox / "go.mod").is_file()
         proc = subprocess.run(
-            ["docker", "exec", "-w", "/work", self.container_id, "bash", "-lc", cmd],
+            _docker_exec_argv(self.container_id, cmd, go=go),
             capture_output=True,
             text=True,
             timeout=INSTALL_TIMEOUT_S,
@@ -381,12 +519,17 @@ class MiniSweExecutor:
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,
                 "network": self.last_network_note,
+                "image": _image_for(sandbox),
+                "command": cmd,
                 "log": (proc.stdout + proc.stderr)[-1500:],
             },
         )
         if proc.returncode != 0:
+            kind = (
+                "go mod download" if (sandbox / "go.mod").is_file() else "pip install"
+            )
             raise ContributionError(
-                f"sandbox pip install failed: {(proc.stderr or proc.stdout)[-400:]}"
+                f"sandbox {kind} failed: {(proc.stderr or proc.stdout)[-400:]}"
             )
 
     def _install_on_host(self, job: ContributionJob) -> None:
@@ -453,13 +596,36 @@ class MiniSweExecutor:
                 pass
 
     def _run_tests(self, job: ContributionJob, *, label: str) -> dict[str, Any]:
+        import time
+
         commands = list(
             (job.task or {}).get("test_commands") or ["python -m pytest -o addopts= -q"]
         )
-        command = commands[0]
+        results = []
+        for command in commands:
+            started = time.monotonic()
+            result = self._run_test_command(job, command=command, label=label)
+            result["duration_s"] = time.monotonic() - started
+            results.append(result)
+        failed = next((r for r in results if not r["ok"]), None)
+        return {
+            "ok": failed is None,
+            "returncode": failed["returncode"] if failed else 0,
+            "command": " && ".join(commands),
+            "commands": results,
+            "duration_s": sum(r["duration_s"] for r in results),
+            "log": "\n".join(f"$ {r['command']}\n{r['log']}" for r in results),
+            "label": label,
+        }
+
+    def _run_test_command(
+        self, job: ContributionJob, *, command: str, label: str
+    ) -> dict[str, Any]:
         if self._env is not None:
             try:
-                out = self._env.execute({"command": command}, timeout=TEST_TIMEOUT_S)
+                out = self._env.execute(
+                    {"command": command}, timeout=_test_timeout_s(command)
+                )
             except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as exc:
                 return {
                     "ok": False,
@@ -488,7 +654,7 @@ class MiniSweExecutor:
             cwd=sandbox,
             capture_output=True,
             text=True,
-            timeout=TEST_TIMEOUT_S,
+            timeout=_test_timeout_s(command),
             check=False,
             env=env,
         )
@@ -662,10 +828,6 @@ def _remotes(dest: Path) -> list[str]:
 
 
 def _git_diff(dest: Path) -> str:
-    ignore = dest / ".gitignore"
-    extra = "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n*.egg-info/\n"
-    if not ignore.exists():
-        ignore.write_text(extra, encoding="utf-8")
     subprocess.run(
         ["git", "-C", str(dest), "add", "-A"],
         capture_output=True,

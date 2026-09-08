@@ -21,6 +21,8 @@ def test_structured_task_prompt_contains_issue_and_forbids_push():
     assert "Cyrax321/CONTINUUM" in prompt
     assert "#582" in prompt
     assert "git push" in prompt
+    assert "Why this task:" not in prompt
+    assert "Official Top 5" not in prompt
     assert "fix repo" not in prompt.lower() or "Task:" in prompt
 
 

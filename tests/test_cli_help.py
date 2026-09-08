@@ -58,6 +58,7 @@ def test_help_lists_commands():
         "watchlist",
         "board",
         "enter",
+        "contribute",
         "outcome",
         "missions",
         "sample-access",
