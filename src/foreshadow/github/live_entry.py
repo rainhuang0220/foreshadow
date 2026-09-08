@@ -10,7 +10,22 @@ from typing import Any
 
 from foreshadow.entry import analyze_entry, persist_entry, preferred_issue_eligible
 
-FetchFn = Callable[[str], dict[str, Any]]
+FetchFn = Callable[..., dict[str, Any]]
+
+
+def _load_live_payload(
+    full_name: str,
+    *,
+    fetch: FetchFn | None,
+    preferred_issue: int | None,
+) -> dict[str, Any]:
+    """Call a fetch hook or the live GET. Always forward preferred_issue when possible."""
+    loader = fetch or fetch_live_payload
+    try:
+        payload = loader(full_name, preferred_issue=preferred_issue)
+    except TypeError:
+        payload = loader(full_name)
+    return payload if isinstance(payload, dict) else {}
 
 
 def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
@@ -149,10 +164,7 @@ def refresh_entry_for_repo(
     from foreshadow.mission import parse_repo_name
 
     full_name = parse_repo_name(full_name)
-    if fetch is None:
-        payload = fetch_live_payload(full_name, preferred_issue=preferred_issue)
-    else:
-        payload = fetch(full_name)
+    payload = _load_live_payload(full_name, fetch=fetch, preferred_issue=preferred_issue)
     if not isinstance(payload, dict):
         payload = {}
     payload.setdefault("full_name", full_name)

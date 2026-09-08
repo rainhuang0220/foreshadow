@@ -601,6 +601,33 @@ def test_second_confirmation_creates_separate_mission_without_touching_first(
     )
 
 
+def test_create_for_user_forwards_specified_issue_to_live_fetch(tmp_home, monkeypatch):
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.mission import create_for_user
+
+    seen: dict[str, int | None] = {}
+
+    def fetch(full_name, preferred_issue=None):
+        seen["preferred_issue"] = preferred_issue
+        return _live_payload(preferred=preferred_issue or 1828)
+
+    monkeypatch.setattr("foreshadow.github.live_entry.fetch_live_payload", fetch)
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = ensure_local_user(conn)
+    mission = create_for_user(
+        conn,
+        user_id=uid,
+        full_name="vshulcz/deja-vu",
+        data_dir=tmp_home,
+        issue_number=1551,
+        source="HUMAN_CONFIRM",
+        live=True,
+    )
+    assert seen.get("preferred_issue") == 1551
+    assert mission.id is not None
+
+
 def test_missing_explicit_issue_is_rejected_instead_of_falling_back(tmp_home):
     import pytest
 
