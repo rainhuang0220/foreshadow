@@ -121,3 +121,88 @@ def test_missing_coding_backend_never_silently_selects_existing_workspace(monkey
 
     monkeypatch.setattr("importlib.util.find_spec", lambda _: None)
     assert _default_backend() == "mini_swe_agent"
+
+
+def test_executor_runs_every_configured_test_and_records_each_result(tmp_path):
+    job = ContributionJob(
+        full_name="test/repo",
+        sandbox_path=tmp_path,
+        task={"test_commands": ["printf first", "exit 7"]},
+    )
+    executor = MiniSweExecutor(agent_factory=lambda **kw: None, docker=False)
+    result = executor._run_tests(job, label="tests")
+    assert result["ok"] is False
+    assert [r["returncode"] for r in result["commands"]] == [0, 7]
+    assert all(r["duration_s"] >= 0 for r in result["commands"])
+
+
+def test_real_executor_cannot_fall_back_to_unisolated_host(monkeypatch):
+    monkeypatch.setattr("foreshadow.contribution.mini_swe._require", lambda: None)
+    monkeypatch.setattr("foreshadow.contribution.mini_swe.shutil.which", lambda _: None)
+    with pytest.raises(ContributionError, match="Docker"):
+        MiniSweExecutor()
+
+
+def test_go_root_selects_golang_image_not_python(tmp_path, monkeypatch):
+    from foreshadow.contribution.mini_swe import _image_for
+
+    monkeypatch.delenv("FORESHADOW_SANDBOX_IMAGE", raising=False)
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "go.mod").write_text("module example.org/x\ngo 1.25\n")
+    (sandbox / "package.json").write_text("{}\n")
+    image = _image_for(sandbox)
+    assert image.startswith("golang:")
+    assert "python" not in image
+
+
+def test_python_root_keeps_default_python_image(tmp_path, monkeypatch):
+    from foreshadow.contribution.mini_swe import DEFAULT_IMAGE, _image_for
+
+    monkeypatch.delenv("FORESHADOW_SANDBOX_IMAGE", raising=False)
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "pyproject.toml").write_text("[project]\nname='x'\n")
+    assert _image_for(sandbox) == DEFAULT_IMAGE
+    assert "slim-bookworm" in _image_for(sandbox)
+
+
+def test_go_sandbox_install_is_not_pip(tmp_path):
+    from foreshadow.contribution.mini_swe import _install_command
+
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "go.mod").write_text("module example.org/x\ngo 1.25\n")
+    command = _install_command(sandbox)
+    assert "pip" not in command
+    assert "go mod download" in command
+
+
+def test_python_sandbox_install_still_uses_pip(tmp_path):
+    from foreshadow.contribution.mini_swe import _install_command
+
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "pyproject.toml").write_text("[project]\nname='x'\n")
+    command = _install_command(sandbox)
+    assert "pip install" in command
+
+
+def test_contribution_work_dir_is_mission_scoped(tmp_path):
+    from foreshadow.contribution.local import _contrib_work_dir
+
+    first = _contrib_work_dir(tmp_path, "vshulcz/deja-vu", mission_id=1)
+    second = _contrib_work_dir(tmp_path, "vshulcz/deja-vu", mission_id=3)
+    assert first != second
+    assert first.name.endswith("__m1")
+    assert second.name.endswith("__m3")
+    assert "vshulcz__deja-vu" in first.name
+
+
+def test_go_full_suite_timeout_exceeds_default_python_budget():
+    from foreshadow.contribution.mini_swe import TEST_TIMEOUT_S, _test_timeout_s
+
+    assert _test_timeout_s("python -m pytest -q") == TEST_TIMEOUT_S
+    assert _test_timeout_s("go test ./internal/index -count=1") > TEST_TIMEOUT_S
+    assert _test_timeout_s("go test ./... -count=1") >= 600
+    assert _test_timeout_s("go vet ./...") >= 300

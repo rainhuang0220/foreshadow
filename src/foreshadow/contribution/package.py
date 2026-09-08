@@ -58,6 +58,8 @@ def build_package(
         "diff": artifact.diff,
         "tests": {
             "ok": bool(artifact.tests_passed),
+            "commands": tests.get("commands") or [],
+            "duration_s": tests.get("duration_s"),
             "exit_code": tests.get("returncode"),
             "command": tests.get("command") or tests.get("argv"),
             "log": artifact.test_log or tests.get("log") or "",

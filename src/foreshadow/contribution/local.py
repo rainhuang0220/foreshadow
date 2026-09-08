@@ -53,6 +53,11 @@ def start_local_contribution(
         raise ValueError("confirmed contribution refuses demo_add")
     worker = executor or get_executor(_default_backend())
     source_dir = _mission_repo(conn, user_id, full_name, data_dir)
+    mission_id = plan.get("id") if plan else None
+    try:
+        mission_id = int(mission_id) if mission_id is not None else None
+    except (TypeError, ValueError):
+        mission_id = None
     job = ContributionJob(
         user_id=user_id,
         repo_id=int(row[0]) if row else None,
@@ -62,7 +67,7 @@ def start_local_contribution(
         why=structured.why,
         status=JobStatus.queued,
         source_dir=source_dir,
-        work_dir=data_dir / "contrib" / full_name.replace("/", "__"),
+        work_dir=_contrib_work_dir(data_dir, full_name, mission_id),
     )
     run_contribution(job, executor=worker, conn=conn)
     return job
@@ -71,6 +76,15 @@ def start_local_contribution(
 def _default_backend() -> str:
     # Missing optional dependencies must fail at executor initialization.
     return "mini_swe_agent"
+
+
+def _contrib_work_dir(
+    data_dir: Path, full_name: str, mission_id: int | None
+) -> Path:
+    slug = full_name.replace("/", "__")
+    if mission_id is None:
+        return data_dir / "contrib" / slug
+    return data_dir / "contrib" / f"{slug}__m{int(mission_id)}"
 
 
 def _extras_for(

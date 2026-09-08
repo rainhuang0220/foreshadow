@@ -22,11 +22,46 @@ from foreshadow.contribution.executor import (
 from foreshadow.contribution.task import StructuredTask
 
 _EXTRA_NAMES = ("minisweagent",)
-STEP_LIMIT = 24
+STEP_LIMIT = 40
 INSTALL_TIMEOUT_S = 300
 TEST_TIMEOUT_S = 180
+GO_PACKAGE_TEST_TIMEOUT_S = 300
+GO_SUITE_TEST_TIMEOUT_S = 600
 AGENT_TIMEOUT_S = 900
 DEFAULT_IMAGE = os.environ.get("FORESHADOW_SANDBOX_IMAGE", "python:3.12-slim-bookworm")
+GO_IMAGE = "golang:1.25-bookworm"
+
+
+def _image_for(sandbox: Path) -> str:
+    override = os.environ.get("FORESHADOW_SANDBOX_IMAGE")
+    if override:
+        return override
+    if (Path(sandbox) / "go.mod").is_file():
+        return GO_IMAGE
+    return DEFAULT_IMAGE
+
+
+def _test_timeout_s(command: str) -> int:
+    text = command.strip()
+    if text.startswith(("go test ./...", "go test ./... ")):
+        return GO_SUITE_TEST_TIMEOUT_S
+    if text.startswith(("go test", "go vet")):
+        return GO_PACKAGE_TEST_TIMEOUT_S
+    return TEST_TIMEOUT_S
+
+
+def _install_command(sandbox: Path) -> str:
+    root = Path(sandbox)
+    if (root / "go.mod").is_file():
+        return (
+            "GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org "
+            "go mod download"
+        )
+    extras = "pytest pytest-asyncio"
+    return (
+        "python -m pip install -q --upgrade pip && "
+        f"python -m pip install -q -e . {extras}"
+    )
 
 
 def _extra_available() -> bool:
@@ -42,9 +77,9 @@ def _require() -> None:
     )
 
 
-def sandbox_env_for_container() -> dict[str, str]:
+def sandbox_env_for_container(*, go: bool = False) -> dict[str, str]:
     """Env forwarded into the coding sandbox. No tokens, no host secrets."""
-    return {
+    env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": "/tmp/foreshadow-home",
         "PYTHONUNBUFFERED": "1",
@@ -52,6 +87,11 @@ def sandbox_env_for_container() -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         "PAGER": "cat",
     }
+    if go:
+        env["GOPROXY"] = "off"
+        env["GOSUMDB"] = "off"
+        env["GOTOOLCHAIN"] = "local"
+    return env
 
 
 class MiniSweExecutor:
@@ -68,6 +108,8 @@ class MiniSweExecutor:
             _require()
         self.agent_factory = agent_factory
         self.use_docker = bool(shutil.which("docker")) if docker is None else docker
+        if agent_factory is None and not self.use_docker:
+            raise ContributionError("Docker is required for a real coding executor")
         self.on_event = on_event
         self.last_sandbox_env: dict[str, str] | None = None
         self.last_network_note: dict[str, str] | None = None
@@ -117,7 +159,9 @@ class MiniSweExecutor:
                 shutil.rmtree(sandbox)
             clone_public_github(job.full_name, sandbox)
         job.sandbox_path = sandbox
-        self.last_sandbox_env = sandbox_env_for_container()
+        self.last_sandbox_env = sandbox_env_for_container(
+            go=(sandbox / "go.mod").is_file()
+        )
         self._emit(
             job,
             {
@@ -294,6 +338,9 @@ class MiniSweExecutor:
         env = self._ensure_env(job)
         traced = _TracingEnv(env, job, self._emit)
         model_name, model_kwargs = _model_setup()
+        proof = (job.task or {}).setdefault("implementation", {})
+        proof["model"] = model_name
+        proof["backend"] = self.name
         work = Path(job.work_dir) if job.work_dir else Path(job.sandbox_path or ".")
         agent = DefaultAgent(
             LitellmModel(
@@ -331,17 +378,22 @@ class MiniSweExecutor:
         if self.use_docker:
             from minisweagent.environments.docker import DockerEnvironment
 
+            go = (sandbox / "go.mod").is_file()
             self.last_network_note = {
                 "network_enabled": "during dependency install only",
-                "why": "pip install of the cloned repo plus pytest",
+                "why": (
+                    "go mod download of the cloned repo"
+                    if go
+                    else "pip install of the cloned repo plus pytest"
+                ),
             }
             self._env = DockerEnvironment(
-                image=DEFAULT_IMAGE,
+                image=_image_for(sandbox),
                 cwd="/work",
-                env=sandbox_env_for_container(),
+                env=sandbox_env_for_container(go=go),
                 forward_env=[],
                 run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
-                timeout=TEST_TIMEOUT_S,
+                timeout=GO_SUITE_TEST_TIMEOUT_S if go else TEST_TIMEOUT_S,
             )
             self.container_id = self._env.container_id
             self._install_in_container(job)
@@ -374,11 +426,8 @@ class MiniSweExecutor:
     def _install_in_container(self, job: ContributionJob) -> None:
         if not self.container_id:
             return
-        extras = "pytest pytest-asyncio"
-        cmd = (
-            "python -m pip install -q --upgrade pip && "
-            f"python -m pip install -q -e . {extras}"
-        )
+        sandbox = _require_sandbox(job)
+        cmd = _install_command(sandbox)
         proc = subprocess.run(
             ["docker", "exec", "-w", "/work", self.container_id, "bash", "-lc", cmd],
             capture_output=True,
@@ -393,12 +442,15 @@ class MiniSweExecutor:
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,
                 "network": self.last_network_note,
+                "image": _image_for(sandbox),
+                "command": cmd,
                 "log": (proc.stdout + proc.stderr)[-1500:],
             },
         )
         if proc.returncode != 0:
+            kind = "go mod download" if (sandbox / "go.mod").is_file() else "pip install"
             raise ContributionError(
-                f"sandbox pip install failed: {(proc.stderr or proc.stdout)[-400:]}"
+                f"sandbox {kind} failed: {(proc.stderr or proc.stdout)[-400:]}"
             )
 
     def _install_on_host(self, job: ContributionJob) -> None:
@@ -465,13 +517,36 @@ class MiniSweExecutor:
                 pass
 
     def _run_tests(self, job: ContributionJob, *, label: str) -> dict[str, Any]:
+        import time
+
         commands = list(
             (job.task or {}).get("test_commands") or ["python -m pytest -o addopts= -q"]
         )
-        command = commands[0]
+        results = []
+        for command in commands:
+            started = time.monotonic()
+            result = self._run_test_command(job, command=command, label=label)
+            result["duration_s"] = time.monotonic() - started
+            results.append(result)
+        failed = next((r for r in results if not r["ok"]), None)
+        return {
+            "ok": failed is None,
+            "returncode": failed["returncode"] if failed else 0,
+            "command": " && ".join(commands),
+            "commands": results,
+            "duration_s": sum(r["duration_s"] for r in results),
+            "log": "\n".join(f"$ {r['command']}\n{r['log']}" for r in results),
+            "label": label,
+        }
+
+    def _run_test_command(
+        self, job: ContributionJob, *, command: str, label: str
+    ) -> dict[str, Any]:
         if self._env is not None:
             try:
-                out = self._env.execute({"command": command}, timeout=TEST_TIMEOUT_S)
+                out = self._env.execute(
+                    {"command": command}, timeout=_test_timeout_s(command)
+                )
             except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as exc:
                 return {
                     "ok": False,
@@ -500,7 +575,7 @@ class MiniSweExecutor:
             cwd=sandbox,
             capture_output=True,
             text=True,
-            timeout=TEST_TIMEOUT_S,
+            timeout=_test_timeout_s(command),
             check=False,
             env=env,
         )
