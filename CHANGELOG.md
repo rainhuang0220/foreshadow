@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.1] - 2026-09-09
+
+### Fixed
+
+- Maintainer-facing PR titles take short quoted literals from the patch (for example `undefined symbol`) instead of pasting a whole added Go/test line.
+
 ## [0.5.0] - 2026-09-09
 
 Guarded autonomous contribution, a review workspace, and a maintainer-facing output gate. Remote GitHub writes stay refused.
