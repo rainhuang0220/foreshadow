@@ -23,6 +23,7 @@ _DROP_LINE = re.compile(
 _HTML = re.compile(r"<[^>]+>")
 _ADDED = re.compile(r"^\+[^+].+", re.MULTILINE)
 _TEST_FUNC = re.compile(r"^\+func (Test\w+)", re.MULTILINE)
+_QUOTED = re.compile(r'"([^"]{2,72})"')
 
 
 @dataclass(frozen=True)
@@ -93,14 +94,32 @@ def _title_summary(ctx: MaintainerDraftContext) -> str:
 
 
 def _added_phrases(diff: str) -> list[str]:
+    """Prefer short quoted literals. Skip test-log / path lines."""
     found: list[str] = []
+
+    def add(item: str) -> None:
+        token = item.strip().strip("`")
+        if looks_internal(token):
+            return
+        if not (2 < len(token) < 72):
+            return
+        if token.startswith(("package ", "/")):
+            return
+        if token not in found:
+            found.append(token)
+
     for match in _ADDED.finditer(diff or ""):
-        line = match.group(0)[1:].strip()
-        line = line.strip('`",')
-        if looks_internal(line):
+        raw = match.group(0)[1:].strip()
+        if looks_internal(raw):
             continue
-        if 2 < len(line) < 80 and not line.startswith("package "):
-            found.append(line)
+        quoted = _QUOTED.findall(raw)
+        if quoted:
+            for item in quoted:
+                add(item)
+        elif raw.startswith(("`", "/")) or "://" in raw:
+            continue
+        else:
+            add(raw.strip('`",'))
         if len(found) >= 4:
             break
     return found

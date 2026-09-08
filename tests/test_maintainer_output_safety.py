@@ -388,6 +388,43 @@ def test_small_patch_body_stays_short():
     assert "treat" in draft.title and "friction" in draft.title
 
 
+REAL_1551_PRODUCTION_DIFF = """diff --git a/internal/index/friction.go b/internal/index/friction.go
+--- a/internal/index/friction.go
++++ b/internal/index/friction.go
+@@ -375,6 +375,7 @@
+ 		"failed to connect to", "cannot import name", "symbol(s) not found",
++		"undefined symbol", "undefined reference to", "symbol not found",
+ 		"failed to push some refs",
+diff --git a/internal/index/friction_phrases_test.go b/internal/index/friction_phrases_test.go
+--- a/internal/index/friction_phrases_test.go
++++ b/internal/index/friction_phrases_test.go
+@@ -17,6 +17,9 @@
+ 		`ld: symbol(s) not found for architecture arm64`,
++		`ld: undefined symbol: pthread_setname_np`,
++		`/usr/bin/ld: server.c:(.text+0x1): undefined reference to 'pthread_setname_np'`,
++		`ld: symbol not found for architecture arm64`,
+ 		`error: failed to push some refs to origin`,
+"""
+
+
+def test_production_1551_diff_yields_short_english_draft():
+    from foreshadow.contribution.maintainer import compose_and_gate
+
+    draft, gate = compose_and_gate(_ctx1551(diff=REAL_1551_PRODUCTION_DIFF))
+    blob = f"{draft.title}\n{draft.body}"
+    assert gate.ok is True
+    assert draft.title == "fix(friction): treat undefined symbol as friction"
+    assert "Closes #1551." in draft.body
+    assert "`undefined symbol`" in draft.body
+    assert "`undefined reference to`" in draft.body
+    assert "/usr/bin/ld" not in blob
+    assert "pthread_setname_np" not in draft.title
+    assert "Official Top 5" not in blob
+    assert "人工确认" not in blob
+    assert "related tool is not installed" not in blob.lower()
+    assert len(draft.body) < 280
+
+
 def test_unsafe_gate_blocks_remote_submission():
     from foreshadow.contribution.executor import RemoteWriteRefused
     from foreshadow.contribution.maintainer import (
