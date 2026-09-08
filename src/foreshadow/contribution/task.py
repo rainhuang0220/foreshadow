@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class StructuredTask(BaseModel):
+    entry_revision: str | None = None
     repository: str
     task: str
     evidence: list[str] = Field(default_factory=list)
@@ -111,6 +112,9 @@ def from_entry(
         else:
             evidence.append(str(item))
     evidence = [item for item in evidence if item]
+    body = str(extra.get("issue_body") or "").strip()
+    if body and body not in evidence:
+        evidence.append(body[:1200])
     rules = []
     if policy.get("wants_issue_first"):
         rules.append("Repository prefers an issue before a PR. Link the issue.")
@@ -125,6 +129,7 @@ def from_entry(
         issue_url = f"https://github.com/{full_name}/issues/{issue_n_i}"
     task_text = title or summary or str(extra.get("task") or "")
     return StructuredTask(
+        entry_revision=entry.get("revision") if isinstance(entry, dict) else None,
         repository=full_name,
         task=task_text,
         evidence=evidence or [str(x) for x in extra.get("evidence") or []],

@@ -877,11 +877,11 @@ def test_entry_and_sandbox_contribution_package(tmp_home, frozen_clock):
             )
             assert got.status_code == 200, got.text
             body = got.json()
-            if body["job"]["status"] in {"ready", "failed", "refused_remote"}:
+            if body["job"]["status"] in {"WAITING_USER_APPROVAL", "failed", "refused_remote"}:
                 break
             time.sleep(0.25)
         assert body is not None
-        assert body["job"]["status"] == "ready"
+        assert body["job"]["status"] == "WAITING_USER_APPROVAL"
         pkg = body.get("package") or {}
         diff = pkg.get("diff") or ""
         assert "return a + b" in diff

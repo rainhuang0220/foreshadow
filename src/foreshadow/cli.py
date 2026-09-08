@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from datetime import UTC, date, datetime
 
@@ -352,6 +353,14 @@ def board(
 @app.command(rich_help_panel="Enter")
 def enter(
     repo: str = typer.Argument(..., help="owner/repo"),
+    issue: int | None = typer.Option(
+        None, "--issue", help="Human-confirmed issue number. Does not change Official Top 5."
+    ),
+    contribute: bool = typer.Option(
+        False,
+        "--contribute",
+        help="After local setup, run the local contribution pipeline. Never writes to GitHub.",
+    ),
 ) -> None:
     """Create a local Entry Mission. Never posts to GitHub."""
     from foreshadow.auth import resolve_cli_user
@@ -367,8 +376,15 @@ def enter(
     migrate(conn)
     try:
         uid = resolve_cli_user(conn)
+        live = os.environ.get("FORESHADOW_SKIP_CLONE") != "1"
         mission = create_for_user(
-            conn, user_id=uid, full_name=repo, data_dir=resolve_data_dir()
+            conn,
+            user_id=uid,
+            full_name=repo,
+            data_dir=resolve_data_dir(),
+            issue_number=issue,
+            source="HUMAN_CONFIRM",
+            live=live,
         )
         from foreshadow.mission import setup_local_environment
 
@@ -377,6 +393,20 @@ def enter(
         clone_status = (setup.get("clone") or {}).get("status")
         local_path = setup["mission"].get("local_path") or mission.local_path
         steps = setup["mission"].get("steps_zh") or mission.strategy.steps_zh
+        job_id = None
+        job_status = None
+        if contribute:
+            from foreshadow.contribution.local import start_local_contribution
+
+            job = start_local_contribution(
+                conn,
+                user_id=uid,
+                full_name=repo,
+                data_dir=resolve_data_dir(),
+            )
+            job_id = job.id
+            job_status = job.canonical_status
+            mission_status = "WAITING_USER_APPROVAL"
     finally:
         conn.close()
     lines = [
@@ -389,6 +419,10 @@ def enter(
         f"local {local_path}",
         f"read {local_path}/FORESHADOW.md and {local_path}/ISSUE_DRAFT.md",
     ]
+    if issue is not None:
+        lines.append(f"human-confirmed issue #{issue}")
+    if job_id is not None:
+        lines.append(f"contribution job {job_id} status={job_status}")
     for step in steps or []:
         text = str(step).strip()
         if text:
@@ -398,6 +432,41 @@ def enter(
         lines.append("")
         lines.append(GIT_MISSING)
     sys.stdout.write("\n".join(lines) + "\n")
+
+
+@app.command(rich_help_panel="Enter")
+def contribute(
+    repo: str = typer.Argument(..., help="owner/repo"),
+) -> None:
+    """Run the local contribution pipeline on an existing mission. Never posts."""
+    from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.local import start_local_contribution
+    from foreshadow.mission import parse_repo_name
+
+    try:
+        repo = parse_repo_name(repo)
+    except ValueError:
+        print("need owner/repo", file=sys.stderr)
+        raise SystemExit(2)
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = resolve_cli_user(conn)
+        job = start_local_contribution(
+            conn,
+            user_id=uid,
+            full_name=repo,
+            data_dir=resolve_data_dir(),
+        )
+        status = job.canonical_status
+        sys.stdout.write(
+            f"contribution job {job.id} {repo} status={status} "
+            f"backend={job.backend}\n"
+            "remote GitHub writes are blocked until you approve them.\n"
+        )
+    finally:
+        conn.close()
 
 
 @app.command(rich_help_panel="Enter")

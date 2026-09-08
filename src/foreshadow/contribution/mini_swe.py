@@ -93,13 +93,25 @@ class MiniSweExecutor:
         if job.source_dir is not None:
             if sandbox.exists():
                 shutil.rmtree(sandbox)
-            shutil.copytree(
-                job.source_dir,
-                sandbox,
-                ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git"),
-                dirs_exist_ok=False,
-            )
-            _git_reinit(sandbox)
+            if (Path(job.source_dir) / ".git").exists():
+                from foreshadow.contribution.provenance import require_clean
+
+                require_clean(Path(job.source_dir))
+                from foreshadow.contribution.clone import clone_from_url
+
+                clone_from_url(str(Path(job.source_dir).resolve()), sandbox)
+            elif self.agent_factory is None:
+                raise ContributionError(
+                    "autonomous executor requires a Git source repository"
+                )
+            else:
+                shutil.copytree(
+                    job.source_dir,
+                    sandbox,
+                    ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git"),
+                    dirs_exist_ok=False,
+                )
+                _git_reinit(sandbox)
         else:
             if sandbox.exists():
                 shutil.rmtree(sandbox)
@@ -662,10 +674,6 @@ def _remotes(dest: Path) -> list[str]:
 
 
 def _git_diff(dest: Path) -> str:
-    ignore = dest / ".gitignore"
-    extra = "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n*.egg-info/\n"
-    if not ignore.exists():
-        ignore.write_text(extra, encoding="utf-8")
     subprocess.run(
         ["git", "-C", str(dest), "add", "-A"],
         capture_output=True,

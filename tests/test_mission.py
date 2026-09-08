@@ -1097,10 +1097,15 @@ def test_detect_local_tests_skips_node_and_cargo(tmp_path):
     node_tests.mkdir()
     (node_tests / "package.json").write_text("{}", encoding="utf-8")
     (node_tests / "tests").mkdir()
+    go_docs = tmp_path / "go-with-docs-package"
+    go_docs.mkdir()
+    (go_docs / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    (go_docs / "package.json").write_text("{}", encoding="utf-8")
     assert detect_local_tests(node)["kind"] == "node"
     assert detect_local_tests(cargo)["kind"] == "cargo"
     assert detect_local_tests(py)["kind"] == "pytest"
     assert detect_local_tests(node_tests)["kind"] == "node"
+    assert detect_local_tests(go_docs)["kind"] == "go"
 
 
 def test_dependency_authorization_gate_node_and_cargo(tmp_path):
@@ -1115,6 +1120,12 @@ def test_dependency_authorization_gate_node_and_cargo(tmp_path):
     assert gated["message_zh"] == "需要用户授权安装依赖"
     (node / "node_modules").mkdir()
     assert dependency_authorization_gate(node) is None
+
+    go_docs = tmp_path / "go-docs"
+    go_docs.mkdir()
+    (go_docs / "package.json").write_text("{}", encoding="utf-8")
+    (go_docs / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    assert dependency_authorization_gate(go_docs) is None
 
     cargo = tmp_path / "rs"
     cargo.mkdir()

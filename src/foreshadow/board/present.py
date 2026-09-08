@@ -1091,6 +1091,20 @@ def present_board(
         )
         for card in ranked
     ]
+    for card in candidates:
+        mission = missions.get(card["full_name"]) or {}
+        entry = mission.get("entry_strategy")
+        if isinstance(entry, dict):
+            card["historical_entry"] = mission.get("historical_entry")
+            card["entry"] = entry
+            card["active_entry_target"] = entry.get("recommended")
+            card["entry_source"] = mission.get("entry_source")
+            card["discovery_recommendation"] = {
+                "summary": card.get("strategy_summary_zh"), "why": card.get("strategy_why")}
+            strategy = mission.get("strategy") or {}
+            card["strategy_summary_zh"] = strategy.get("summary_zh")
+            card["strategy_why"] = strategy.get("why") or []
+            card["why_now"] = mission.get("why_now") or []
     preview = board.mode != "official"
     run_view = _run_payload(run)
     empty = _empty_payload(board, run)

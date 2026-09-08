@@ -65,6 +65,10 @@ _HARD_TITLE_RE = re.compile(
     r"(?i)(rewrite|re-?architect|core engine|soundness|"
     r"undefined behaviour|cuda kernel|from scratch)"
 )
+_WINDOWS_ONLY_RE = re.compile(
+    r"(?i)(\bwindows[- ]only\b|\bwin32\b|\bonly (on |for )?windows\b|"
+    r"\bwindows-specific\b)"
+)
 _TODO_RE = re.compile(r"(?i)\b(TODO|FIXME|XXX)\b|error handling|unwrap\(")
 _HASH_ISSUE_RE = re.compile(r"#(\d+)")
 _TEXT_KEYS = (
@@ -164,7 +168,7 @@ class EntryStrategy:
     stale_after: str
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "policy": self.policy.as_dict(),
             "recommended": self.recommended.as_dict(),
             "alternatives": [p.as_dict() for p in self.alternatives],
@@ -172,12 +176,18 @@ class EntryStrategy:
             "stale_after": self.stale_after,
         }
 
+        import hashlib
+
+        out["revision"] = hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest()
+        return out
+
 
 def analyze_entry(
     features: dict | FeaturesBlob,
     *,
     now: datetime,
     language: str | None = None,
+    preferred_issue: int | None = None,
 ) -> EntryStrategy:
     now = _aware(now)
     raw = _raw_map(features)
@@ -212,6 +222,14 @@ def analyze_entry(
         fallback_route=fb_route,
         fallback_why=list(fallback.why),
     )
+    preferred = _preferred_issue_cand(
+        issues,
+        known_issues=known_issues,
+        covered=covered,
+        preferred_issue=preferred_issue,
+    )
+    if preferred is not None:
+        cands["ISSUE"] = preferred
     ranked = sorted(
         cands.values(),
         key=lambda c: (-c["score"], _PRIORITY.get(c["route"], 9)),
@@ -956,6 +974,8 @@ def _best_small_issue(
             continue
         if _HARD_TITLE_RE.search(str(iss.get("title") or "")):
             continue
+        if _is_windows_only(iss):
+            continue
         labels = {str(x).lower() for x in (iss.get("labels") or [])}
         helpish = bool(labels & _HELP_LABELS)
         bug = bool(labels & _BUG_LABELS)
@@ -988,6 +1008,8 @@ def _best_bug_issue(
             continue
         if int(number) in blocked:
             continue
+        if _is_windows_only(iss):
+            continue
         labels = {str(x).lower() for x in (iss.get("labels") or [])}
         title = str(iss.get("title") or "")
         if (
@@ -997,6 +1019,60 @@ def _best_bug_issue(
         ):
             return iss
     return None
+
+
+def _preferred_issue_cand(
+    issues: list[dict[str, Any]],
+    *,
+    known_issues: set[int],
+    covered: set[int],
+    preferred_issue: int | None,
+) -> dict[str, Any] | None:
+    """Human override. Does not invent ids or lock a Windows-only / overlapping issue."""
+    if preferred_issue is None or int(preferred_issue) not in known_issues:
+        return None
+    if int(preferred_issue) in covered:
+        return None
+    iss = next(
+        (
+            item
+            for item in issues
+            if item.get("number") is not None and int(item["number"]) == int(preferred_issue)
+        ),
+        None,
+    )
+    if iss is None or not _is_open(iss) or _is_windows_only(iss):
+        return None
+    if iss.get("assignees_n") not in (None, 0):
+        return None
+    n = int(preferred_issue)
+    labels = {str(x).lower() for x in (iss.get("labels") or [])}
+    return {
+        "route": "ISSUE",
+        "score": 1.2,
+        "issue_number": n,
+        "pr_number": None,
+        "why": [
+            f"人工确认跟进 Issue #{n}：{iss.get('title') or ''}",
+            "与 Official Top 5 分数分离",
+        ],
+        "evidence": _issue_evidence(iss),
+        "title": f"跟进 Issue #{n}：{iss.get('title') or ''}".strip("："),
+        "summary_zh": f"从人工确认的 Issue #{n} 进入，不要改 Official 排名",
+        "help": bool(labels & _HELP_LABELS),
+        "unassigned": True,
+    }
+
+
+def _is_windows_only(iss: dict[str, Any]) -> bool:
+    blob = " ".join(
+        [
+            str(iss.get("title") or ""),
+            str(iss.get("body") or ""),
+            str(iss.get("bodyText") or ""),
+        ]
+    )
+    return bool(_WINDOWS_ONLY_RE.search(blob))
 
 
 def _best_docs_issue(issues: list[dict[str, Any]]) -> dict[str, Any] | None:

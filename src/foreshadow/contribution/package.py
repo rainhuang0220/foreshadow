@@ -28,13 +28,28 @@ def build_package(
         issue = f"#{task.get('issue_number')}"
     title = artifact.title or (structured.task if structured else "") or "Contribution"
     body_lines = [
-        artifact.body or artifact.why or job.why,
+        artifact.why or job.why or (structured.why if structured else ""),
         "",
-        f"Fixes {issue}." if issue else "",
-        "",
-        "This change was prepared locally by Foreshadow. It has not been pushed.",
     ]
+    if structured and structured.expected_behavior:
+        body_lines.append(structured.expected_behavior)
+        body_lines.append("")
+    if structured and structured.acceptance_criteria:
+        body_lines.extend(f"- {item}" for item in structured.acceptance_criteria[:6])
+        body_lines.append("")
+    if issue:
+        body_lines.append(f"Closes {issue}.")
+    implementation = dict(task.get("implementation") or {})
+    if job.backend == "workspace":
+        implementation = {
+            "mode": "existing_worktree",
+            "clean_before": False,
+            "capability": "EXISTING_WORKTREE_VALIDATED",
+        }
     return {
+        "repository": job.full_name,
+        "entry_revision": structured.entry_revision if structured else None,
+        "implementation": implementation,
         "task": structured.task if structured else str(task.get("prompt") or title),
         "why": artifact.why or job.why,
         "evidence": list(structured.evidence) if structured else [],
@@ -63,7 +78,9 @@ def build_package(
         "maintainer_notes": list(structured.contribution_rules) if structured else [],
         "estimated_acceptance_likelihood": _likelihood(structured, qa),
         "backend": job.backend,
-        "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+        "status": "WAITING_USER_APPROVAL"
+        if qa and artifact.tests_passed and artifact.diff.strip()
+        else "failed",
         "log": list(job.log or []),
         "remote_writes": 0,
         "remote_status": "WAITING_USER_APPROVAL",

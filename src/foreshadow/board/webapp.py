@@ -885,7 +885,8 @@ function entryView(card) {
   const why = (rec.why || []).map(x => `<li>${esc(x)}</li>`).join("");
   const pol = e.policy || {};
   return `<section class="entry-strat">
-    <h3>最佳切入点</h3>
+    <h3>${card.active_entry_target ? "当前切入点" : "最佳切入点"}</h3>
+    <p class="meta">${esc(card.entry_source || "machine discovered")} · #${esc(rec.issue_number || "—")}</p>
     <p><strong>${esc(rec.title || rec.summary_zh)}</strong></p>
     <p class="meta">推荐 ${esc(rec.route)} · 信心 ${esc(conf)} · ${esc(rec.effort || "")} · 风险 ${esc(rec.risk || "")}</p>
     ${why ? `<ul>${why}</ul>` : ""}
@@ -932,10 +933,11 @@ function contributionView(card) {
   }).join("");
   const filesN = pkg.files_changed_n != null ? pkg.files_changed_n : (art.files||[]).length;
   const testsOk = pkg.tests && pkg.tests.ok != null ? pkg.tests.ok : art.tests_passed;
-  const qa = pkg.qa || (art.qa_ok ? "PASS" : (job.status === "ready" ? "PASS" : (job.status === "failed" ? "FAIL" : "…")));
+  const qa = pkg.qa || (art.qa_ok ? "PASS" : (job.status === "WAITING_USER_APPROVAL" ? "PASS" : (job.status === "failed" ? "FAIL" : "…")));
   const diff = pkg.diff || art.diff || "";
   return `<section class="contrib-pack">
     <h3>贡献准备</h3>
+    <p>Implementation: ${esc((pkg.implementation || {}).mode || "NOT_VALIDATED")} · 下一步：用户审核</p>
     <p><strong>${esc(job.status_zh || job.status || "")}</strong> · ${esc(pkg.task || art.why || job.full_name || "")}</p>
     <p class="meta">Files changed: ${esc(filesN)} · Tests: ${testsOk ? "passed" : (testsOk === false ? "failed" : "…")} · QA: ${esc(qa)}</p>
     ${pkg.pr_title ? `<p><strong>PR title:</strong> ${esc(pkg.pr_title)}</p>` : ""}
@@ -1497,7 +1499,7 @@ function startContribPoll(id) {
       const data = await api("/api/contribution?id=" + id);
       applyContribution(data);
       const st = data.job && data.job.status;
-      if (st === "ready" || st === "failed" || st === "refused_remote") stopContribPoll();
+      if (st === "WAITING_USER_APPROVAL" || st === "failed" || st === "refused_remote") stopContribPoll();
       render();
     } catch {}
   }, 1500);

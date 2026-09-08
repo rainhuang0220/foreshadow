@@ -213,7 +213,7 @@ def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
 
 
 def _job_view(job: Any) -> dict[str, Any]:
-    status = job.status.value if hasattr(job.status, "value") else str(job.status)
+    status = job.canonical_status
     return {
         "id": job.id,
         "full_name": job.full_name,
@@ -224,7 +224,7 @@ def _job_view(job: Any) -> dict[str, Any]:
             "implementing": "正在实现",
             "testing": "测试",
             "qa": "质量检查",
-            "ready": "贡献已就绪",
+            "WAITING_USER_APPROVAL": "等待你确认",
             "waiting_approval": "等待你确认",
             "failed": "失败",
             "refused_remote": "远程写入已拒绝",
