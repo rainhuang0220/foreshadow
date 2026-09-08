@@ -199,6 +199,19 @@ def test_contribution_work_dir_is_mission_scoped(tmp_path):
     assert "vshulcz__deja-vu" in first.name
 
 
+def test_go_container_install_exec_uses_non_login_shell_and_go_path():
+    from foreshadow.contribution.mini_swe import _docker_exec_argv
+
+    argv = _docker_exec_argv("abc123", "go mod download", go=True)
+    assert argv[:3] == ["docker", "exec", "-w"]
+    assert "bash" in argv
+    assert "-lc" not in argv
+    env_flags = [argv[i + 1] for i, item in enumerate(argv) if item == "-e"]
+    assert any(item.startswith("PATH=") and "/usr/local/go/bin" in item for item in env_flags)
+    assert argv[-2] == "-c"
+    assert argv[-3] == "bash"
+
+
 def test_go_sandbox_path_includes_official_go_bin():
     from foreshadow.contribution.mini_swe import sandbox_env_for_container
 

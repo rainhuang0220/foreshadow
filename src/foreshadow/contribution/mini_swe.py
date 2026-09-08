@@ -50,6 +50,17 @@ def _test_timeout_s(command: str) -> int:
     return TEST_TIMEOUT_S
 
 
+def _docker_exec_argv(container_id: str, command: str, *, go: bool) -> list[str]:
+    """docker exec with sandbox env. Go uses bash -c so login PATH cannot hide go."""
+    argv = ["docker", "exec", "-w", "/work"]
+    for key, value in sandbox_env_for_container(go=go).items():
+        argv.extend(["-e", f"{key}={value}"])
+    argv.extend(
+        [container_id, "bash", "-c" if go else "-lc", command]
+    )
+    return argv
+
+
 def _install_command(sandbox: Path) -> str:
     root = Path(sandbox)
     if (root / "go.mod").is_file():
@@ -432,8 +443,9 @@ class MiniSweExecutor:
             return
         sandbox = _require_sandbox(job)
         cmd = _install_command(sandbox)
+        go = (sandbox / "go.mod").is_file()
         proc = subprocess.run(
-            ["docker", "exec", "-w", "/work", self.container_id, "bash", "-lc", cmd],
+            _docker_exec_argv(self.container_id, cmd, go=go),
             capture_output=True,
             text=True,
             timeout=INSTALL_TIMEOUT_S,
