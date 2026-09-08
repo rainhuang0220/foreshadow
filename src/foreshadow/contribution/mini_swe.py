@@ -88,6 +88,9 @@ def sandbox_env_for_container(*, go: bool = False) -> dict[str, str]:
         "PAGER": "cat",
     }
     if go:
+        env["PATH"] = "/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+        env["GOPATH"] = "/tmp/foreshadow-home/go"
+        env["GOCACHE"] = "/tmp/foreshadow-home/gocache"
         env["GOPROXY"] = "off"
         env["GOSUMDB"] = "off"
         env["GOTOOLCHAIN"] = "local"
@@ -394,6 +397,7 @@ class MiniSweExecutor:
                 forward_env=[],
                 run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
                 timeout=GO_SUITE_TEST_TIMEOUT_S if go else TEST_TIMEOUT_S,
+                interpreter=["bash", "-c"] if go else ["bash", "-lc"],
             )
             self.container_id = self._env.container_id
             self._install_in_container(job)

@@ -199,6 +199,16 @@ def test_contribution_work_dir_is_mission_scoped(tmp_path):
     assert "vshulcz__deja-vu" in first.name
 
 
+def test_go_sandbox_path_includes_official_go_bin():
+    from foreshadow.contribution.mini_swe import sandbox_env_for_container
+
+    env = sandbox_env_for_container(go=True)
+    assert "/usr/local/go/bin" in env["PATH"].split(":")
+    assert "GOPROXY" in env
+    py = sandbox_env_for_container()
+    assert "/usr/local/go/bin" not in py["PATH"].split(":")
+
+
 def test_go_full_suite_timeout_exceeds_default_python_budget():
     from foreshadow.contribution.mini_swe import TEST_TIMEOUT_S, _test_timeout_s
 
