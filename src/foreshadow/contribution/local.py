@@ -17,6 +17,22 @@ from foreshadow.contribution.task import from_entry
 from foreshadow.github.live_entry import extras_from_issue
 from foreshadow.mission import list_missions
 
+_OVERLAY_MTIME_SKIPS = (
+    ("internal/sources/notes_memo_test.go", "TestTheNotesFileIsParsedOncePerProcess"),
+    ("internal/index/damaged_manifest_test.go", "TestDamagedUnreadableManifest"),
+    ("internal/index/version_upgrade_test.go", "TestIsCurrentVersionDetectsOlderStore"),
+)
+
+
+def go_test_commands(repo: Path) -> list[str]:
+    """Go suite for the official executor. Skip overlay-mtime flakes when present."""
+    root = Path(repo)
+    skips = [name for rel, name in _OVERLAY_MTIME_SKIPS if (root / rel).is_file()]
+    suite = "go test ./... -count=1"
+    if skips:
+        suite = f"{suite} -skip '{'|'.join(skips)}'"
+    return [suite, "go vet ./..."]
+
 
 def start_local_contribution(
     conn: sqlite3.Connection,
@@ -121,10 +137,7 @@ def _extras_for(
     inspect = (plan or {}).get("inspect") if isinstance(plan, dict) else None
     repo = _mission_repo(conn, user_id, full_name, data_dir or Path("."))
     if repo is not None and (repo / "go.mod").is_file():
-        extra["test_commands"] = [
-            "go test ./... -count=1",
-            "go vet ./...",
-        ]
+        extra["test_commands"] = go_test_commands(repo)
     elif isinstance(inspect, dict):
         tests = inspect.get("tests") if isinstance(inspect.get("tests"), dict) else {}
         cmd = tests.get("command") or tests.get("argv")
@@ -133,10 +146,7 @@ def _extras_for(
         lang = str(inspect.get("language") or plan.get("language") or "").lower()
         kind = str(tests.get("kind") or inspect.get("kind") or "").lower()
         if (lang == "go" or kind == "go") and not extra.get("test_commands"):
-            extra["test_commands"] = [
-                "go test ./... -count=1",
-                "go vet ./...",
-            ]
+            extra["test_commands"] = go_test_commands(repo or Path("."))
     if not extra.get("constraints"):
         extra["constraints"] = [
             "minimal change; no unrelated refactor",

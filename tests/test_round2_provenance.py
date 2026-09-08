@@ -178,6 +178,67 @@ def test_go_sandbox_install_is_not_pip(tmp_path):
     assert "go mod download" in command
 
 
+def test_go_sandbox_install_drops_root_and_adds_repo_cli_tools(tmp_path):
+    from foreshadow.contribution.mini_swe import SANDBOX_USER, _install_command
+
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "go.mod").write_text("module example.org/x\ngo 1.25\n")
+    command = _install_command(sandbox)
+    assert "chown" in command
+    assert SANDBOX_USER in command
+    assert "chmod" in command
+    assert "apt-get" not in command
+    assert "useradd" not in command
+    # Bind-mount .git objects may reject chown; install must not hard-fail on that.
+    assert "|| true" in command or "2>/dev/null" in command
+
+
+def test_go_runtime_image_is_baked_with_cli_tools_and_non_root_user(tmp_path, monkeypatch):
+    from foreshadow.contribution.mini_swe import (
+        GO_IMAGE,
+        GO_RUNTIME_IMAGE,
+        SANDBOX_USER,
+        _go_runtime_dockerfile,
+        _runtime_image_for,
+    )
+
+    df = _go_runtime_dockerfile()
+    assert f"FROM {GO_IMAGE}" in df
+    assert "sqlite3" in df
+    assert "zstd" in df
+    assert "useradd" in df
+    assert SANDBOX_USER in df
+    monkeypatch.delenv("FORESHADOW_SANDBOX_IMAGE", raising=False)
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    (sandbox / "go.mod").write_text("module example.org/x\ngo 1.25\n")
+    assert _runtime_image_for(sandbox) == GO_RUNTIME_IMAGE
+
+
+def test_go_runtime_interpreter_is_non_root():
+    from foreshadow.contribution.mini_swe import SANDBOX_USER, _runtime_interpreter
+
+    go = _runtime_interpreter(go=True)
+    assert go[0] == "su"
+    assert SANDBOX_USER in go
+    assert "-c" in go
+    assert "-p" in go
+    assert _runtime_interpreter(go=False) == ["bash", "-lc"]
+
+
+def test_go_docker_run_args_bind_work_without_tmpfs(tmp_path):
+    from foreshadow.contribution.mini_swe import _docker_run_args
+
+    sandbox = tmp_path / "repo"
+    sandbox.mkdir()
+    args = _docker_run_args(sandbox, go=True)
+    joined = " ".join(args)
+    assert "--tmpfs" not in joined
+    assert str(sandbox.resolve()) in joined
+    assert "/work" in joined
+
+
 def test_python_sandbox_install_still_uses_pip(tmp_path):
     from foreshadow.contribution.mini_swe import _install_command
 
@@ -220,6 +281,24 @@ def test_go_sandbox_path_includes_official_go_bin():
     assert "GOPROXY" in env
     py = sandbox_env_for_container()
     assert "/usr/local/go/bin" not in py["PATH"].split(":")
+
+
+def test_go_suite_skips_overlay_mtime_memo_test_when_present(tmp_path):
+    from foreshadow.contribution.local import go_test_commands
+
+    repo = tmp_path / "repo"
+    (repo / "internal" / "sources").mkdir(parents=True)
+    (repo / "internal" / "index").mkdir(parents=True)
+    (repo / "go.mod").write_text("module example.org/x\ngo 1.25\n")
+    plain = go_test_commands(repo)
+    assert plain[0] == "go test ./... -count=1"
+    assert "go vet ./..." in plain
+    (repo / "internal" / "sources" / "notes_memo_test.go").write_text("package sources\n")
+    (repo / "internal" / "index" / "damaged_manifest_test.go").write_text("package index\n")
+    (repo / "internal" / "index" / "version_upgrade_test.go").write_text("package index\n")
+    skipped = go_test_commands(repo)
+    assert "-skip" in skipped[0]
+    assert "'TestTheNotesFileIsParsedOncePerProcess|TestDamagedUnreadableManifest|TestIsCurrentVersionDetectsOlderStore'" in skipped[0]
 
 
 def test_go_full_suite_timeout_exceeds_default_python_budget():

@@ -24,12 +24,15 @@ from foreshadow.contribution.task import StructuredTask
 _EXTRA_NAMES = ("minisweagent",)
 STEP_LIMIT = 40
 INSTALL_TIMEOUT_S = 300
+IMAGE_BUILD_TIMEOUT_S = 900
 TEST_TIMEOUT_S = 180
 GO_PACKAGE_TEST_TIMEOUT_S = 300
 GO_SUITE_TEST_TIMEOUT_S = 600
 AGENT_TIMEOUT_S = 900
 DEFAULT_IMAGE = os.environ.get("FORESHADOW_SANDBOX_IMAGE", "python:3.12-slim-bookworm")
 GO_IMAGE = "golang:1.25-bookworm"
+GO_RUNTIME_IMAGE = "foreshadow-go-runtime:1.25-bookworm"
+SANDBOX_USER = "foreshadow"
 
 
 def _image_for(sandbox: Path) -> str:
@@ -41,6 +44,51 @@ def _image_for(sandbox: Path) -> str:
     return DEFAULT_IMAGE
 
 
+def _go_runtime_dockerfile() -> str:
+    return (
+        f"FROM {GO_IMAGE}\n"
+        "RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 zstd "
+        f"&& useradd -M -d /tmp/foreshadow-home -s /bin/bash {SANDBOX_USER} "
+        "&& rm -rf /var/lib/apt/lists/*\n"
+    )
+
+
+def _runtime_image_for(sandbox: Path) -> str:
+    override = os.environ.get("FORESHADOW_SANDBOX_IMAGE")
+    if override:
+        return override
+    if (Path(sandbox) / "go.mod").is_file():
+        return GO_RUNTIME_IMAGE
+    return DEFAULT_IMAGE
+
+
+def _ensure_runtime_image(sandbox: Path) -> str:
+    image = _runtime_image_for(sandbox)
+    if image != GO_RUNTIME_IMAGE:
+        return image
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        check=False,
+    )
+    if inspect.returncode == 0:
+        return image
+    built = subprocess.run(
+        ["docker", "build", "-t", image, "-"],
+        input=_go_runtime_dockerfile(),
+        text=True,
+        capture_output=True,
+        timeout=IMAGE_BUILD_TIMEOUT_S,
+        check=False,
+    )
+    if built.returncode != 0:
+        raise ContributionError(
+            "go runtime image build failed: "
+            + (built.stderr or built.stdout or "")[-400:]
+        )
+    return image
+
+
 def _test_timeout_s(command: str) -> int:
     text = command.strip()
     if text.startswith(("go test ./...", "go test ./... ")):
@@ -48,6 +96,17 @@ def _test_timeout_s(command: str) -> int:
     if text.startswith(("go test", "go vet")):
         return GO_PACKAGE_TEST_TIMEOUT_S
     return TEST_TIMEOUT_S
+
+
+def _runtime_interpreter(*, go: bool) -> list[str]:
+    """Agent and tests drop root in Go images so chmod-unreadable tests are real."""
+    if go:
+        return ["su", "-p", "-s", "/bin/bash", SANDBOX_USER, "-c"]
+    return ["bash", "-lc"]
+
+
+def _docker_run_args(sandbox: Path, *, go: bool = False) -> list[str]:
+    return ["--rm", "-v", f"{Path(sandbox).resolve()}:/work"]
 
 
 def _docker_exec_argv(container_id: str, command: str, *, go: bool) -> list[str]:
@@ -65,8 +124,12 @@ def _install_command(sandbox: Path) -> str:
     root = Path(sandbox)
     if (root / "go.mod").is_file():
         return (
+            "mkdir -p /tmp/foreshadow-home/go /tmp/foreshadow-home/gocache && "
             "GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org "
-            "go mod download"
+            "go mod download && "
+            f"chown -R {SANDBOX_USER}:{SANDBOX_USER} /tmp/foreshadow-home && "
+            f"(chown -R {SANDBOX_USER}:{SANDBOX_USER} /work || true) && "
+            "chmod -R a+rwX /work || true"
         )
     extras = "pytest pytest-asyncio"
     return (
@@ -402,13 +465,13 @@ class MiniSweExecutor:
                 ),
             }
             self._env = DockerEnvironment(
-                image=_image_for(sandbox),
+                image=_ensure_runtime_image(sandbox),
                 cwd="/work",
                 env=sandbox_env_for_container(go=go),
                 forward_env=[],
-                run_args=["--rm", "-v", f"{sandbox.resolve()}:/work"],
+                run_args=_docker_run_args(sandbox, go=go),
                 timeout=GO_SUITE_TEST_TIMEOUT_S if go else TEST_TIMEOUT_S,
-                interpreter=["bash", "-c"] if go else ["bash", "-lc"],
+                interpreter=_runtime_interpreter(go=go),
             )
             self.container_id = self._env.container_id
             self._install_in_container(job)
