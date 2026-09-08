@@ -620,6 +620,21 @@ def test_issue_draft_survives_rewrite(tmp_path):
     assert again.read_text(encoding="utf-8") == "USER EDIT\n"
 
 
+def test_clone_timeout_survives_slow_github(tmp_path):
+    seen: dict[str, int] = {}
+
+    def runner(cmd, **kw):
+        seen["timeout"] = int(kw.get("timeout") or 0)
+        dest = Path(cmd[-1])
+        dest.mkdir(parents=True)
+        _stub_complete_git(dest)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    out = clone_public_repo("acme/toy", tmp_path / "work", runner=runner)
+    assert out["ok"] is True
+    assert seen["timeout"] >= 180
+
+
 def test_clone_uses_depth_one_and_writes_tree(tmp_path):
     seen: list[list[str]] = []
 

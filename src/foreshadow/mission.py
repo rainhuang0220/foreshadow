@@ -83,7 +83,7 @@ USER_MARKED_EVENTS = frozenset(
 USER_EVENTS = SYSTEM_EVENTS | USER_MARKED_EVENTS
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_NUM_RE = re.compile(r"#(\d+)")
-CLONE_TIMEOUT_S = 120
+CLONE_TIMEOUT_S = 300
 
 
 @dataclass
