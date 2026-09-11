@@ -1,6 +1,6 @@
 # ADR: GitHub identity login + durable Foreshadow session
 
-**Status:** Accepted (2026-09-02)
+**Status:** Amended for v0.6 submission closure (2026-09-11)
 **Product:** Foreshadow v0.3
 
 ## Context
@@ -15,7 +15,13 @@ Foreshadow is a GitHub-centered operator tool. The operator already is `rainhuan
 2. **Authorization** = `FORESHADOW_OPERATORS` allowlist of GitHub logins (env, comma-separated). Source never hardcodes a username.
 3. **Session** = existing SQLite `sessions` table (hashed token), lifetime **30 days**, rotate on each successful login, revoke on logout. Cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` iff the request is HTTPS.
 4. **Password login** remains for localhost/dev and the existing `rain` row. Public Board presents **Login with GitHub** first.
-5. **Write permissions** are not granted at login. A future GitHub App installation (Contents, Pull Requests, Issues, Metadata) is the mutation credential. Classic `repo`-scoped PAT is not the write path.
+5. **Write permissions** are not granted at login. For v0.6, the deployable
+   mutation credential is a separate server-side classic PAT with
+   `public_repo`, stored as `FORESHADOW_WRITE_TOKEN`. It is restricted in code
+   to fork (if needed), exact non-force branch push, and PR creation after an
+   explicit Gate-2 click. A GitHub App remains a future option, but is not the
+   v0.6 closure path because its installation and repository access do not
+   automatically span an arbitrary third-party source and the operator's fork.
 6. **HTTPS** target: `https://foreshadow.plainlist.space/` on the existing Baota host (Let's Encrypt already works for `plainlist.space`). `:666` HTTP remains a temporary alias and must not host the OAuth callback.
 
 ## Rejected
@@ -32,5 +38,7 @@ Foreshadow is a GitHub-centered operator tool. The operator already is `rainhuan
 
 - OAuth callback requires a public HTTPS origin (GitHub loopback exception is only for `127.0.0.1` / `localhost`).
 - Deploy needs `FORESHADOW_GITHUB_OAUTH_CLIENT_ID` / `CLIENT_SECRET` and an allowlist.
+- A submission-capable deploy also needs a separately provisioned
+  `FORESHADOW_WRITE_TOKEN`; OAuth login remains identity-only.
 - `/api/me` grows `github_login`, `operator`, `auth_method`.
 - Tests mock the GitHub token endpoint with respx. No live OAuth in CI.

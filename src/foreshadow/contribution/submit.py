@@ -1,9 +1,10 @@
-"""One-shot approved remote submission. Default: refuse. Mocks in tests only."""
+"""One-shot, resumable submission of an exact approved package."""
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -16,6 +17,7 @@ from foreshadow.contribution.approval import (
 from foreshadow.contribution.preflight import GitHubReader, run_preflight
 
 STEPS = ("PREFLIGHT", "FORK", "BRANCH", "PUSH", "CREATE_PR", "PERSIST_RESULT")
+_SUBMISSION_LOCK = threading.Lock()
 
 
 class GitHubWriter(GitHubReader, Protocol):
@@ -66,19 +68,9 @@ def persist_submission(
     snapshot_id: int,
 ) -> int:
     now = datetime.now(UTC).isoformat()
-    existing = conn.execute(
+    conn.execute(
         """
-        SELECT id FROM submissions
-        WHERE user_id=? AND approval_snapshot_id=?
-        ORDER BY id DESC LIMIT 1
-        """,
-        (user_id, snapshot_id),
-    ).fetchone()
-    if existing:
-        return int(existing[0])
-    cur = conn.execute(
-        """
-        INSERT INTO submissions(
+        INSERT OR IGNORE INTO submissions(
           user_id, mission_id, approval_snapshot_id, status, steps_json,
           result_json, created_at, updated_at
         ) VALUES (?,?,?,?,?,?,?,?)
@@ -95,7 +87,17 @@ def persist_submission(
         ),
     )
     conn.commit()
-    return int(cur.lastrowid)
+    existing = conn.execute(
+        """
+        SELECT id FROM submissions
+        WHERE user_id=? AND approval_snapshot_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (user_id, snapshot_id),
+    ).fetchone()
+    if existing is None:
+        raise RuntimeError("submission record was not persisted")
+    return int(existing[0])
 
 
 def _load(conn: sqlite3.Connection, submission_id: int) -> dict[str, Any]:
@@ -136,6 +138,34 @@ def _save(conn: sqlite3.Connection, rec: dict[str, Any]) -> None:
     conn.commit()
 
 
+def _bind_result(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    mission_id: int,
+    submission_id: int,
+    snapshot: dict[str, Any],
+    pr: dict[str, Any],
+) -> None:
+    from foreshadow.mission import patch_mission_plan, set_status
+
+    patch_mission_plan(
+        conn,
+        mission_id,
+        user_id,
+        {
+            "bound_pr": {
+                "number": pr.get("number"),
+                "html_url": pr.get("html_url"),
+                "head_sha": str(snapshot["patch_commit_sha"]),
+            },
+            "submission_id": submission_id,
+            "approval_snapshot_id": int(snapshot["approval_snapshot_id"]),
+        },
+    )
+    set_status(conn, mission_id, user_id, "SUBMITTED")
+
+
 def submit_approved(
     conn: sqlite3.Connection,
     *,
@@ -150,6 +180,29 @@ def submit_approved(
     `allow_real_remote` must stay False for third-party repos during unattended
     work. The Board may set it only after an explicit human Gate-2 click.
     """
+    # The Board server is threaded. Serializing Gate 2 prevents two simultaneous
+    # clicks from racing the remote fork/push/PR sequence. The unique database
+    # index remains the cross-process durable idempotency key.
+    with _SUBMISSION_LOCK:
+        return _submit_approved_unlocked(
+            conn,
+            user_id=user_id,
+            snapshot_id=snapshot_id,
+            current_fields=current_fields,
+            port=port,
+            allow_real_remote=allow_real_remote,
+        )
+
+
+def _submit_approved_unlocked(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    snapshot_id: int,
+    current_fields: dict[str, Any],
+    port: GitHubWriter,
+    allow_real_remote: bool,
+) -> dict[str, Any]:
     snapshot = load_snapshot(conn, snapshot_id, user_id=user_id)
     from foreshadow.mission import load_mission_plan
 
@@ -177,7 +230,14 @@ def submit_approved(
             "status": "APPROVAL_STALE",
             "remote_writes": 0,
         }
-    if str(current_fields.get("maintainer_output_safety") or snapshot.get("maintainer_output_safety") or "").upper() != "PASS":
+    if (
+        str(
+            current_fields.get("maintainer_output_safety")
+            or snapshot.get("maintainer_output_safety")
+            or ""
+        ).upper()
+        != "PASS"
+    ):
         return {
             "ok": False,
             "blocked": True,
@@ -201,6 +261,14 @@ def submit_approved(
     )
     rec = _load(conn, sid)
     if rec["status"] == "SUBMITTED" and rec["result"].get("pr"):
+        _bind_result(
+            conn,
+            user_id=user_id,
+            mission_id=int(snapshot["mission_id"]),
+            submission_id=sid,
+            snapshot=snapshot,
+            pr=rec["result"]["pr"],
+        )
         return {
             "ok": True,
             "status": "SUBMITTED",
@@ -246,9 +314,10 @@ def submit_approved(
         _save(conn, rec)
     existing = rec["result"].get("pr")
     if rec["steps"].get("CREATE_PR") != "DONE" or not existing:
-        head_candidates = [branch]
-        if "/" in fork:
-            head_candidates.append(f"{fork.split('/')[0]}:{branch}")
+        source_owner = str(snapshot["repository"]).split("/", 1)[0]
+        fork_owner = fork.split("/", 1)[0] if "/" in fork else ""
+        pr_head = branch if fork_owner == source_owner else f"{fork_owner}:{branch}"
+        head_candidates = [pr_head]
         existing = None
         for head in head_candidates:
             existing = port.find_pr(
@@ -263,7 +332,7 @@ def submit_approved(
                 str(snapshot["repository"]),
                 title=str(snapshot["pr_title"]),
                 body=str(snapshot["pr_body"]),
-                head=branch,
+                head=pr_head,
                 base=str(snapshot["base_branch"]),
             )
         rec["steps"]["CREATE_PR"] = "DONE"
@@ -273,19 +342,14 @@ def submit_approved(
     rec["steps"]["PERSIST_RESULT"] = "DONE"
     rec["status"] = "SUBMITTED"
     _save(conn, rec)
-    from foreshadow.mission import patch_mission_plan, set_status
-
-    plan = {
-        "bound_pr": {
-            "number": existing.get("number"),
-            "html_url": existing.get("html_url"),
-            "head_sha": sha,
-        },
-        "submission_id": sid,
-        "approval_snapshot_id": snapshot_id,
-    }
-    patch_mission_plan(conn, int(snapshot["mission_id"]), user_id, plan)
-    set_status(conn, int(snapshot["mission_id"]), user_id, "SUBMITTED")
+    _bind_result(
+        conn,
+        user_id=user_id,
+        mission_id=int(snapshot["mission_id"]),
+        submission_id=sid,
+        snapshot=snapshot,
+        pr=existing,
+    )
     return {
         "ok": True,
         "status": "SUBMITTED",

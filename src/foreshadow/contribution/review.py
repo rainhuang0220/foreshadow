@@ -296,8 +296,12 @@ def _review(
         "package": pkg,
         "job_status": job.canonical_status,
         "next_action": "提交到 GitHub",
-        "approval_enabled": True,
-        "display_status": display_status(str(plan.get("status") or "WAITING_USER_APPROVAL")),
+        "approval_enabled": False,
+        "display_status": (
+            "SUBMISSION_CHECK_REQUIRED"
+            if str(plan.get("status") or "") == "WAITING_USER_APPROVAL"
+            else display_status(str(plan.get("status") or ""))
+        ),
         "test_commands": commands,
         "validated_base_sha": pkg.get("validated_base_sha")
         or (impl.get("upstream_head") if isinstance(impl, dict) else None),

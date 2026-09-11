@@ -29,9 +29,33 @@ These require an **authorized GitHub operator** (`FORESHADOW_OPERATORS`):
 
 Login is GitHub OAuth (identity only). The OAuth access token is discarded after `GET /user`. It is not a write grant.
 
+`READY_FOR_HUMAN_SUBMIT` is a live contract, not an alias for
+`WAITING_USER_APPROVAL`. The review endpoint enables the submit button only when
+all four checks pass:
+
+- the exact approved commit is available from the local repository or bundle;
+- the dedicated write credential can perform the required operation;
+- the approval snapshot still matches the package; and
+- upstream still equals the validated base commit.
+
+Any upstream movement is `NEEDS_REFRESH`, including docs-only or otherwise
+non-overlapping movement. The operator must refresh, validate, and approve a new
+snapshot before submission.
+
 `/api/mission/remote` always returns blocked. Public registration is off (`FORESHADOW_BOARD_ALLOW_REGISTER=0`). Anonymous `/api/portfolio` is 401; the SPA must keep the public board visible anyway.
 
-Put the GitHub **read** token only in a `0600` environment file. Classic PAT, **no scopes**. OAuth client secret is a different env var.
+Put GitHub credentials only in a `0600` environment file. `GITHUB_TOKEN` is the
+read-only radar token (classic PAT, **no scopes**). `FORESHADOW_WRITE_TOKEN` is a
+separate server-side classic PAT with `public_repo`; it is used only after the
+operator's Gate-2 click for fork (if missing), exact branch push, and PR creation.
+It is never passed to the contribution sandbox. OAuth client secret is a
+different env var.
+
+The write token must be configured before the Board can display
+`READY_FOR_HUMAN_SUBMIT`; the submit click does not ask for another credential.
+For v0.6 this narrow classic PAT is the deployable path. A GitHub App is not a
+drop-in replacement for arbitrary third-party forks because installation and
+repository access must already cover the relevant source and destination.
 
 ## Files
 
@@ -66,8 +90,8 @@ FORESHADOW_OPERATORS=rainhuang0220
 FORESHADOW_GITHUB_OAUTH_CLIENT_ID=...
 FORESHADOW_GITHUB_OAUTH_CLIENT_SECRET=...
 GITHUB_TOKEN=ghp_...
-# Optional. Radar stays GET-only. Gate 2 submit needs this write token.
-# FORESHADOW_WRITE_TOKEN=
+# Required for READY_FOR_HUMAN_SUBMIT. Dedicated classic PAT with public_repo.
+FORESHADOW_WRITE_TOKEN=ghp_...
 ```
 
 ```bash

@@ -976,13 +976,22 @@ function reviewWorkspace(card) {
   </li>`).join("");
   const digest = (r.approval && r.approval.approval_digest) || r.approval_digest || "";
   const patchSha = r.diff_sha256 || (r.package && r.package.diff_sha256) || "";
+  const readinessNote = r.display_status === "NEEDS_REFRESH"
+    ? "上游已变化；刷新并重新验证后才能提交"
+    : r.display_status === "CREDENTIAL_REQUIRED"
+      ? "写入凭据尚未就绪"
+      : r.display_status === "WRITE_TRANSPORT_UNAVAILABLE"
+        ? "已审核 commit 的写入载体不可用"
+        : r.approval_stale
+          ? "包已变化，请重新审核这一版后再提交"
+          : "你审核的是这一版";
   return `<section class="contrib-pack review-head">
     <p class="meta">${esc(card.full_name)} · <a href="${esc(r.issue_url || ("https://github.com/"+card.full_name+"/issues/"+r.issue_number))}" target="_blank" rel="noreferrer">#${esc(r.issue_number)}</a> · ${esc(r.source || "HUMAN CONFIRMED")}</p>
-    <h2>READY_FOR_HUMAN_SUBMIT</h2>
-    <p><strong>${r.approval_stale ? "包已变化，请重新审核这一版后再提交" : "你审核的是这一版"}</strong></p>
+    <h2>${esc(r.display_status || "SUBMISSION_CHECK_REQUIRED")}</h2>
+    <p><strong>${readinessNote}</strong></p>
     <p><strong>#${esc(r.issue_number)}</strong> ${esc(r.title || "")}</p>
     <div class="review-facts">
-      <span>status ${esc(r.display_status || "READY_FOR_HUMAN_SUBMIT")}</span>
+      <span>status ${esc(r.display_status || "SUBMISSION_CHECK_REQUIRED")}</span>
       <span>${esc(ds.files || r.files_changed_n || 0)} files · +${esc(ds.added || 0)} −${esc(ds.deleted || 0)}</span>
       <span>${r.tests_ok ? "Tests passed" : "Tests"}</span>
       <span>QA ${esc(r.qa || "—")}</span>
@@ -991,7 +1000,7 @@ function reviewWorkspace(card) {
       <span>approval ${esc(String(digest).slice(0,12) || "—")}</span>
     </div>
     <div class="review-next">
-      <button type="button" class="primary" onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>
+      <button type="button" class="primary" ${r.approval_enabled?"":"disabled"} onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>
       <button type="button" onclick="continueContribution(${esc(r.mission_id)})">继续修改</button>
       <button type="button" class="ghost" onclick="markEvent(${esc(r.mission_id)}, 'abandoned')">放弃</button>
     </div>

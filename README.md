@@ -1,6 +1,6 @@
 # Foreshadow (伏笔)
 
-**Beta 0.6.0** — find what the future has already foreshadowed. Then prepare a finished contribution for one human submit click.
+**Beta 0.6.1** — find what the future has already foreshadowed. Then prepare a finished contribution for one human submit click.
 
 Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. **进入** (Gate 1) authorizes local work on one issue. **提交到 GitHub** (Gate 2) authorizes only the immutable package on screen: fork if needed, one branch, one PR. Comments, reviews, merge, and force-push stay denied.
 
@@ -14,17 +14,17 @@ Python **3.12+**. `git` is needed if you will enter a repo.
 
 ```bash
 # uv (recommended) — pin a release tag
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1"
 
 # pip
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"
+pip install "git+https://github.com/rainhuang0220/foreshhadow.git@v0.6.1"
 ```
 
 Update to a newer tag (git installs do **not** follow new tags via `uv tool upgrade`):
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0" --reinstall
-# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1" --reinstall
+# or: uv tool uninstall foreshadow-radar && uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1"
 ```
 
 ## GitHub token
@@ -66,7 +66,9 @@ The Board can still show candidates to watch. Explosion for a repo needs about s
 
 1. Open a candidate. Read **为什么现在** / **进入通道** / **推荐入口**.
 2. Click **进入**. That is Gate 1 — Foreshadow may work locally on that issue. Do not use **记入观察清单** — that only saves a personal stance.
-3. Wait for autonomous local prep to reach **READY_FOR_HUMAN_SUBMIT**.
+3. Wait for autonomous local prep to reach **READY_FOR_HUMAN_SUBMIT**. This is
+   shown only when the exact commit transport, write credential, current
+   approval snapshot, and exact upstream base are all verified.
 4. Review one immutable package. Click **提交到 GitHub** only when that exact snapshot should become one PR.
 5. A draft that leaks internal metadata or ungrounded claims is marked unsafe and cannot be submitted.
 
@@ -74,7 +76,8 @@ CLI equivalent: `foreshadow enter owner/repo`.
 
 ## Safety
 
-- Radar `GITHUB_TOKEN` is GET-only. Gate 2 writes need a separate `FORESHADOW_WRITE_TOKEN`.
+- Radar `GITHUB_TOKEN` is GET-only. Gate 2 writes need a separately provisioned
+  `FORESHADOW_WRITE_TOKEN` (classic PAT with `public_repo` for the v0.6 path).
 - Without a current Gate-2 snapshot, remote writes stay 0.
 - Approved writes are only fork / push one branch / create one PR.
 - The Board binds localhost only unless you deploy it.

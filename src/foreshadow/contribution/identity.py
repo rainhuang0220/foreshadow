@@ -37,7 +37,7 @@ _PRIORITY = (
 
 def display_status(status: str) -> str:
     if str(status or "") == "WAITING_USER_APPROVAL":
-        return "READY_FOR_HUMAN_SUBMIT"
+        return "SUBMISSION_CHECK_REQUIRED"
     return str(status or "")
 
 

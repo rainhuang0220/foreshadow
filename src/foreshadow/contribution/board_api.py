@@ -24,14 +24,138 @@ from foreshadow.contribution.submit import (
 from foreshadow.mission import record_user_event, set_status
 
 
-def review_fields(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+def _real_port(review: dict[str, Any]) -> Any:
+    from foreshadow.github.approved_write import ApprovedGitHubPort
+
+    package = review.get("package") if isinstance(review.get("package"), dict) else {}
+    local_path = str(review.get("local_path") or "")
+    repo_path = os.path.join(local_path, "repo") if local_path else None
+    return ApprovedGitHubPort(
+        bundle_path=package.get("git_bundle"),
+        repo_path=repo_path,
+        validated_base_sha=str(review.get("validated_base_sha") or ""),
+        source_repo=str(review.get("repository") or ""),
+    )
+
+
+def assess_submission_readiness(
+    *,
+    review: dict[str, Any],
+    fields: dict[str, Any],
+    snapshot: dict[str, Any] | None,
+    port: Any,
+) -> dict[str, Any]:
+    """Return the four facts required before the Board may claim READY."""
+    snapshot_current = bool(snapshot and matches_package(snapshot, fields))
+    is_fake = bool(getattr(port, "is_fake", False))
+    transport_ready = is_fake or bool(
+        getattr(port, "transport_ready", lambda _sha: False)(
+            str(fields.get("patch_commit_sha") or "")
+        )
+    )
+    credential_ready = is_fake or bool(
+        getattr(port, "credential_ready", lambda _repo: False)(
+            str(fields.get("repository") or "")
+        )
+    )
+    upstream_fresh = False
+    preflight: dict[str, Any] | None = None
+    if snapshot_current and snapshot is not None:
+        try:
+            from foreshadow.contribution.preflight import run_preflight
+
+            preflight = run_preflight(port, snapshot, current_fields=fields)
+            upstream_fresh = (
+                bool(preflight.get("ok")) and preflight.get("status") == "EXACT"
+            )
+        except (
+            RemoteWriteRefused,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            KeyError,
+        ) as exc:
+            preflight = {
+                "ok": False,
+                "status": "PREFLIGHT_UNAVAILABLE",
+                "error": str(exc),
+            }
+    checks = {
+        "write_transport_ready": transport_ready,
+        "credential_ready": credential_ready,
+        "snapshot_current": snapshot_current,
+        "upstream_fresh": upstream_fresh,
+    }
+    ready = (
+        str(review.get("status") or "") == "WAITING_USER_APPROVAL"
+        and str(fields.get("maintainer_output_safety") or "").upper() == "PASS"
+        and all(checks.values())
+    )
+    if ready:
+        display = "READY_FOR_HUMAN_SUBMIT"
+    elif not snapshot_current:
+        display = "APPROVAL_STALE"
+    elif preflight and preflight.get("status") not in {
+        "EXACT",
+        "PREFLIGHT_UNAVAILABLE",
+    }:
+        display = (
+            "NEEDS_REFRESH"
+            if preflight.get("status")
+            in {"DOCS_ONLY", "NON_OVERLAPPING", "NEEDS_REFRESH"}
+            else str(preflight.get("status"))
+        )
+    elif not transport_ready:
+        display = "WRITE_TRANSPORT_UNAVAILABLE"
+    elif not credential_ready:
+        display = "CREDENTIAL_REQUIRED"
+    elif preflight and preflight.get("status") == "PREFLIGHT_UNAVAILABLE":
+        display = "PREFLIGHT_UNAVAILABLE"
+    elif not upstream_fresh:
+        display = "NEEDS_REFRESH"
+    else:
+        display = "NOT_READY_FOR_SUBMIT"
+    return {
+        "ready_for_human_submit": ready,
+        "display_status": display,
+        "approval_enabled": ready,
+        "checks": checks,
+        "preflight": preflight,
+    }
+
+
+def attach_submission_readiness(
+    review: dict[str, Any], *, port: Any | None = None
+) -> dict[str, Any]:
+    fields = fields_from_review(review, mission_id=int(review["mission_id"]))
+    snap = review.get("approval")
+    if not isinstance(snap, dict) or not snap.get("approval_snapshot_id"):
+        snap = None
+    else:
+        snap = {**fields, **snap}
+    readiness = assess_submission_readiness(
+        review=review,
+        fields=fields,
+        snapshot=snap,
+        port=port or _real_port(review),
+    )
+    review.update(readiness)
+    return review
+
+
+def review_fields(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
     review = contribution_for_mission(conn, user_id, mission_id)
     if review is None:
         raise LookupError("contribution not found")
     return fields_from_review(review, mission_id=mission_id)
 
 
-def submit_preview(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+def submit_preview(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
     review = contribution_for_mission(conn, user_id, mission_id)
     if review is None:
         raise LookupError("contribution not found")
@@ -41,7 +165,9 @@ def submit_preview(conn: sqlite3.Connection, user_id: int, mission_id: int) -> d
         "ok": True,
         "confirm_required": True,
         "you_review_this_version": True,
-        "approval_snapshot_id": None if snap is None else snap.get("approval_snapshot_id"),
+        "approval_snapshot_id": None
+        if snap is None
+        else snap.get("approval_snapshot_id"),
         "approval_digest": None if snap is None else snap.get("approval_digest"),
         "patch_sha": fields.get("diff_sha256"),
         "will": list(ALLOWED_REMOTE_ACTIONS),
@@ -71,9 +197,7 @@ def execute_gate2(
 
     plan = load_mission_plan(conn, mission_id, user_id) or {}
     status = str(plan.get("status") or review.get("status") or "")
-    if status == "SUBMITTED" and (
-        plan.get("bound_pr") or review.get("bound_pr")
-    ):
+    if status == "SUBMITTED" and (plan.get("bound_pr") or review.get("bound_pr")):
         return {
             "ok": True,
             "status": "SUBMITTED",
@@ -93,7 +217,9 @@ def execute_gate2(
     snap = current_snapshot(conn, user_id=user_id, mission_id=mission_id)
     if snap is None:
         return {**refuse("create_pr"), "error": "no current approval snapshot"}
-    if snapshot_id is not None and int(snap["approval_snapshot_id"]) != int(snapshot_id):
+    if snapshot_id is not None and int(snap["approval_snapshot_id"]) != int(
+        snapshot_id
+    ):
         return {
             "ok": False,
             "status": "APPROVAL_STALE",
@@ -121,7 +247,8 @@ def execute_gate2(
         return {
             "ok": True,
             "status": "SUBMITTED",
-            "pr": review.get("bound_pr") or (review.get("package") or {}).get("bound_pr"),
+            "pr": review.get("bound_pr")
+            or (review.get("package") or {}).get("bound_pr"),
             "remote_writes": 0,
             "resumed": True,
         }
@@ -143,9 +270,7 @@ def execute_gate2(
             }
     worker = port if port is not None else (FakeGitHub() if use_fake else None)
     if worker is None:
-        from foreshadow.github.approved_write import ApprovedGitHubPort
-
-        worker = ApprovedGitHubPort()
+        worker = _real_port(review)
     try:
         return submit_approved(
             conn,
@@ -165,7 +290,9 @@ def execute_gate2(
         }
 
 
-def continue_local(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+def continue_local(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
     snap = current_snapshot(conn, user_id=user_id, mission_id=mission_id)
     if snap is not None:
         invalidate_snapshot(conn, int(snap["approval_snapshot_id"]), user_id=user_id)
@@ -173,7 +300,9 @@ def continue_local(conn: sqlite3.Connection, user_id: int, mission_id: int) -> d
     return {"ok": True, "status": "IMPLEMENTING", "remote_writes": 0}
 
 
-def abandon_mission(conn: sqlite3.Connection, user_id: int, mission_id: int) -> dict[str, Any]:
+def abandon_mission(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
     return record_user_event(
         conn, user_id=user_id, mission_id=mission_id, event="abandoned"
     )

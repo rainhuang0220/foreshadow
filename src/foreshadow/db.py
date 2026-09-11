@@ -6,7 +6,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
@@ -18,6 +18,7 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (7, "007_v03.sql"),
     (8, "008_project_intelligence.sql"),
     (9, "009_two_gate.sql"),
+    (10, "010_submission_unique.sql"),
 )
 
 

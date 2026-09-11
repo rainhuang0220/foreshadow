@@ -264,7 +264,7 @@ def list_missions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
             ),
             "repository": row[1],
             "display_status": (
-                "READY_FOR_HUMAN_SUBMIT"
+                "SUBMISSION_CHECK_REQUIRED"
                 if str(row[2]) == "WAITING_USER_APPROVAL"
                 else str(row[2])
             ),
@@ -823,7 +823,7 @@ def status_zh(status: str | None) -> str:
     return {
         "MISSION_READY": "任务已就绪",
         "LOCAL_SETUP": "正在准备本地环境",
-        "WAITING_USER_APPROVAL": "READY_FOR_HUMAN_SUBMIT · 等待你确认这一版",
+        "WAITING_USER_APPROVAL": "待提交资格检查 · 等待你确认这一版",
         "PAUSED": "已暂停",
         "DRAFT_READY": "本地草稿已好",
         "IMPLEMENTING": "本地实现中",
@@ -1918,7 +1918,7 @@ def load_mission_plan(
             ),
             "repository": row[1],
             "display_status": (
-                "READY_FOR_HUMAN_SUBMIT"
+                "SUBMISSION_CHECK_REQUIRED"
                 if str(row[2]) == "WAITING_USER_APPROVAL"
                 else str(row[2])
             ),

@@ -154,7 +154,7 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         "remote_writes": 0,
         "remote_status": "WAITING_USER_APPROVAL",
         "status": "WAITING_USER_APPROVAL",
-        "display_status": "READY_FOR_HUMAN_SUBMIT",
+        "display_status": "SUBMISSION_CHECK_REQUIRED",
         "third_party_submit": "HOLD_FOR_HUMAN",
         "implementation": {
             "mode": "imported_validated_artifact",
@@ -251,7 +251,7 @@ def import_validated_contribution(
             "diff_sha256": pkg["diff_sha256"],
             "freshness": manifest.get("freshness"),
             "persistent_store": str(dest),
-            "display_status": "READY_FOR_HUMAN_SUBMIT",
+            "display_status": "SUBMISSION_CHECK_REQUIRED",
             "third_party_submit": "HOLD_FOR_HUMAN",
             "remote_writes": 0,
         },
