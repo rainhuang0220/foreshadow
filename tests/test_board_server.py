@@ -385,7 +385,7 @@ def test_board_requires_login_then_isolates_reviews(tmp_home, frozen_clock):
             c for c in bob_board["candidates"] if c["full_name"] == first["full_name"]
         )
         assert bob_card["my_action"] in (None, "")
-        assert "开始进入" in page.text
+        assert "进入" in page.text
         assert "row .act" in page.text
         assert "FORESHADOW.md" in page.text
         assert "README：有" in page.text

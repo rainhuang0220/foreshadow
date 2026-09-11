@@ -56,6 +56,7 @@ class ContributionJob:
     why: str = ""
     created_at: str | None = None
     updated_at: str | None = None
+    mission_id: int | None = None
 
     @property
     def canonical_status(self) -> str:

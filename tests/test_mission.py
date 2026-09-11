@@ -261,9 +261,10 @@ def test_persist_mission(tmp_home):
 def test_allowed_never_includes_submitted(tmp_home):
     from foreshadow.mission import ALLOWED
 
+    assert "SUBMITTED" in ALLOWED["WAITING_USER_APPROVAL"]
     for src, dests in ALLOWED.items():
-        assert src != "SUBMITTED"
-        assert "SUBMITTED" not in dests
+        if src != "WAITING_USER_APPROVAL":
+            assert "SUBMITTED" not in dests
         assert "PR_DRAFT" not in dests
 
 

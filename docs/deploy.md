@@ -21,7 +21,8 @@ Anonymous visitors may **read** the daily board.
 
 These require an **authorized GitHub operator** (`FORESHADOW_OPERATORS`):
 
-- 开始进入 / mission create
+- 进入 / mission create
+- Gate 2 submit (requires `FORESHADOW_WRITE_TOKEN`; radar `GITHUB_TOKEN` stays GET-only)
 - clone / local setup
 - reviews
 - mission events
@@ -65,6 +66,8 @@ FORESHADOW_OPERATORS=rainhuang0220
 FORESHADOW_GITHUB_OAUTH_CLIENT_ID=...
 FORESHADOW_GITHUB_OAUTH_CLIENT_SECRET=...
 GITHUB_TOKEN=ghp_...
+# Optional. Radar stays GET-only. Gate 2 submit needs this write token.
+# FORESHADOW_WRITE_TOKEN=
 ```
 
 ```bash
@@ -87,3 +90,20 @@ sudo journalctl -u foreshadow-daily -n 100
 ```
 
 Daily identity remains **UTC** inside Foreshadow. Same-day Official skip still applies.
+
+## Import a validated contribution (ripwire #74)
+
+Copy the persistent store onto the server, then import against the operator account. This does not write to GitHub.
+
+```bash
+sudo mkdir -p /var/lib/foreshadow/contributions
+sudo rsync -a --delete \
+  "$HOME/Library/Application Support/foreshadow/contributions/redhat-et__ripwire__74/" \
+  /var/lib/foreshadow/contributions/redhat-et__ripwire__74/
+sudo -u foreshadow FORESHADOW_HOME=/var/lib/foreshadow \
+  foreshadow import-contribution \
+  --store /var/lib/foreshadow/contributions/redhat-et__ripwire__74 \
+  --github-login rainhuang0220
+```
+
+Leave Gate 2 unclicked. Do not set `FORESHADOW_SUBMIT_FAKE=1` in production.

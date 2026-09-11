@@ -1,8 +1,8 @@
 # Foreshadow（伏笔）
 
-**Beta 0.5.1** — 找出未来已经埋伏下的项目，并在本地准备贡献。
+**Beta 0.6.0** — 找出未来已经埋伏下的项目，并准备好一份完整贡献包，只等你点一次提交。
 
-Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发现新兴的公开 GitHub 仓库，持续观察还来得及进入的项目，在 Board 上告诉你今天值得看什么、以及为什么。点 **开始进入** 后，它只做本地准备（clone 和计划），然后停下。它不会替你在别人的 GitHub 上发 Issue、评论、PR，也不会 push。
+Foreshadow 不是 trending。它是装在你自己机器上的每日雷达：发现新兴的公开 GitHub 仓库，持续观察还来得及进入的项目，在 Board 上告诉你今天值得看什么、以及为什么。**进入**（第一道门）授权本机针对某一个 Issue 工作。**提交到 GitHub**（第二道门）只批准你眼前这一版：必要时 fork、推一个 branch、开一个 PR。评论、review、merge、force push 仍然禁止。
 
 Board 现在展示项目摘要和四项分数（潜力 / 作者先验 / 开放度 / 进入契合），并按期望进入价值排序。名次是序位，不是质量分。正式 Top 5 规则不变；空榜仍是成功。
 
@@ -13,15 +13,15 @@ Board 现在展示项目摘要和四项分数（潜力 / 作者先验 / 开放�
 需要 Python 3.12+。要进入仓库还需要 `git`。
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.5.1"
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"
 # 或
-pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.5.1"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"
 ```
 
 Git 安装不会靠 `uv tool upgrade` 跟到新 tag。换版本：
 
 ```bash
-uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.5.1" --reinstall
+uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0" --reinstall
 ```
 
 ## Token
@@ -43,7 +43,7 @@ foreshadow board               # 打开 http://127.0.0.1:8765/
 
 今天已经跑过会跳过，这是正常的。空的正式 Top 5 是成功，不是故障。Explosion 需要同一仓库大约 7 天的观察。
 
-进入：打开候选 → **开始进入**（不要点「记入观察清单」）→ 等本地 clone → 状态变成「等待你确认远程操作」。点「尝试创建 PR」应被拒绝。
+进入：打开候选 → **进入**（第一道门，不要点「记入观察清单」）→ 等本机准备到 READY_FOR_HUMAN_SUBMIT → 审核这一版 → **提交到 GitHub**（第二道门，只批准眼前快照）。
 
 ```bash
 foreshadow doctor

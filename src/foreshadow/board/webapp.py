@@ -581,6 +581,8 @@ ul.checklist li { margin: .3rem 0; font-variant-numeric: tabular-nums; }
 .draft-safety.bad { border-color: #8b342c; background: #f8e8e6; color: #8b342c; }
 .draft-safety ul { margin: .35rem 0 0; padding: 0 0 0 1.1rem; }
 .review-next { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0; }
+.submit-confirm { border: 1px solid var(--rule-strong); padding: .8rem 1rem; margin: .8rem 0; background: var(--panel); }
+.submit-confirm ul { margin: .2rem 0 .6rem 1.1rem; }
 @media (max-width: 420px) {
   .drawer { width: 100%; }
   .diff-files { max-height: 8rem; overflow: auto; }
@@ -927,14 +929,14 @@ function reviewQueueView(board) {
   return `<section class="review-queue">
     <h2>WAITING FOR YOUR REVIEW</h2>
     ${q.map(c => `
-      <div class="row ${state.open===c.full_name?"active":""}" tabindex="0" role="button" onclick="openCard('${esc(c.full_name)}')" onkeydown="rowKey(event, '${esc(c.full_name)}')">
+      <div class="row ${state.open===c.full_name || Number(state.reviewMissionId)===Number(c.mission_id || (c.review&&c.review.mission_id))?"active":""}" tabindex="0" role="button" onclick="openCard('${esc(c.full_name)}', ${esc(c.mission_id || (c.review && c.review.mission_id) || 0)})" onkeydown="rowKey(event, '${esc(c.full_name)}', ${esc(c.mission_id || (c.review && c.review.mission_id) || 0)})">
         <div class="rk">●</div>
         <div>
           <div class="nm">${esc(c.full_name)}</div>
           ${reviewRow(c)}
         </div>
         <div class="act">
-          <button type="button" class="primary" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')">Review changes</button>
+          <button type="button" class="primary" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}', ${esc(c.mission_id || (c.review && c.review.mission_id) || 0)})">Review changes</button>
         </div>
       </div>`).join("")}
   </section>`;
@@ -972,23 +974,28 @@ function reviewWorkspace(card) {
     <strong>${h.role==="active"?"Active":"History"} #${esc(h.issue_number)}</strong>
     <span class="meta"> ${esc(h.status || "")} · ${esc(h.files_changed_n || 0)} files · +${esc((h.diff_summary||{}).added || 0)} · ${h.tests_ok?"Tests passed":"Tests"}</span>
   </li>`).join("");
+  const digest = (r.approval && r.approval.approval_digest) || r.approval_digest || "";
+  const patchSha = r.diff_sha256 || (r.package && r.package.diff_sha256) || "";
   return `<section class="contrib-pack review-head">
-    <p class="meta">${esc(card.full_name)} · ${esc(r.source || "HUMAN CONFIRMED")}</p>
-    <h2>WAITING FOR YOUR REVIEW</h2>
+    <p class="meta">${esc(card.full_name)} · <a href="${esc(r.issue_url || ("https://github.com/"+card.full_name+"/issues/"+r.issue_number))}" target="_blank" rel="noreferrer">#${esc(r.issue_number)}</a> · ${esc(r.source || "HUMAN CONFIRMED")}</p>
+    <h2>READY_FOR_HUMAN_SUBMIT</h2>
+    <p><strong>${r.approval_stale ? "包已变化，请重新审核这一版后再提交" : "你审核的是这一版"}</strong></p>
     <p><strong>#${esc(r.issue_number)}</strong> ${esc(r.title || "")}</p>
     <div class="review-facts">
-      <span>status ${esc(r.status || "WAITING_USER_APPROVAL")}</span>
+      <span>status ${esc(r.display_status || "READY_FOR_HUMAN_SUBMIT")}</span>
       <span>${esc(ds.files || r.files_changed_n || 0)} files · +${esc(ds.added || 0)} −${esc(ds.deleted || 0)}</span>
       <span>${r.tests_ok ? "Tests passed" : "Tests"}</span>
       <span>QA ${esc(r.qa || "—")}</span>
       <span>REMOTE_WRITES=${esc(r.remote_writes || 0)}</span>
-      <span>${esc((r.executor||{}).backend || "")} ${esc((r.executor||{}).model || "")}</span>
+      <span>patch ${esc(String(patchSha).slice(0,12) || "—")}</span>
+      <span>approval ${esc(String(digest).slice(0,12) || "—")}</span>
     </div>
     <div class="review-next">
-      <button type="button" class="primary" onclick="state.reviewTab='changes';render()">Review changes</button>
-      <button type="button" onclick="state.reviewTab='pr';render()">Preview PR</button>
-      <button type="button" disabled>Approval workflow not enabled yet</button>
+      <button type="button" class="primary" onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>
+      <button type="button" onclick="continueContribution(${esc(r.mission_id)})">继续修改</button>
+      <button type="button" class="ghost" onclick="markEvent(${esc(r.mission_id)}, 'abandoned')">放弃</button>
     </div>
+    ${state.submitConfirm ? submitConfirmView(r) : ""}
     <h3>Contribution History</h3>
     <ul class="review-hist">${histHtml}</ul>
     <div class="review-tabs">${tabs}</div>
@@ -998,8 +1005,70 @@ function reviewWorkspace(card) {
     ${tab==="checks" ? reviewChecks(r) : ""}
   </section>`;
 }
+function submitConfirmView(r) {
+  const digest = (r.approval && r.approval.approval_digest) || r.approval_digest || "";
+  const patchSha = r.diff_sha256 || "";
+  return `<div class="submit-confirm">
+    <p><strong>将执行：</strong></p>
+    <ul>
+      <li>✓ fork（如需要）</li>
+      <li>✓ push 一个贡献 branch</li>
+      <li>✓ 创建一个 PR</li>
+    </ul>
+    <p><strong>不会执行：</strong></p>
+    <ul>
+      <li>× 评论</li>
+      <li>× review</li>
+      <li>× merge</li>
+      <li>× force push</li>
+    </ul>
+    <p class="meta">patch SHA ${esc(patchSha || "—")}</p>
+    <p class="meta">approval digest ${esc(digest || "—")}</p>
+    <p>
+      <button type="button" class="primary" ${state.busy?"disabled":""} onclick="doSubmit(${esc(r.mission_id)})">确认提交这一版</button>
+      <button type="button" onclick="state.submitConfirm=false;render()">取消</button>
+    </p>
+  </div>`;
+}
+function whyBlock(r) {
+  const w = r.why || {};
+  if (typeof w === "string") return `<p>${esc(w)}</p>`;
+  return `<ul>
+    <li>技术：${esc(w.technical || r.title || "—")}</li>
+    <li>维护者意图：${esc(w.maintainer_intent || "—")}</li>
+    <li>范围：${esc(w.scope || (r.files_changed || []).join(", ") || "—")}</li>
+  </ul>`;
+}
+function evidenceBlock(r) {
+  const e = r.evidence || {};
+  const env = (e.environmental_failures || []).map(x => `<li>${esc(x.gate || x)} · ${esc(x.class || e.environmental_class || "")}</li>`).join("");
+  const targeted = (e.targeted || []).map(x => `<li>${esc(x)}</li>`).join("");
+  return `<ul>
+    <li>RED：${esc(e.red || "—")}</li>
+    ${targeted || "<li>targeted：见 Checks</li>"}
+    <li>plain：${esc(typeof e.plain === "object" ? JSON.stringify(e.plain) : (e.plain || "—"))}</li>
+    <li>ASan：${esc(e.asan || "—")}</li>
+    <li>determinism：${esc(e.determinism || "—")}</li>
+    ${env}
+  </ul>`;
+}
 function reviewOverview(r) {
-  return `<p class="meta">Next: Review changes, then Review PR draft. Remote GitHub writes stay blocked.</p>
+  return `<p class="meta">你审核的是这一版。Gate 2 只批准当前快照。</p>
+    <h3>WHY THIS CONTRIBUTION</h3>
+    ${whyBlock(r)}
+    <h3>PATCH</h3>
+    <p class="meta">${(r.files_changed||[]).map(esc).join(" · ") || (r.files_changed_n + " files")}</p>
+    <p class="meta">patch SHA ${esc(r.diff_sha256 || "—")}</p>
+    <h3>EVIDENCE</h3>
+    ${evidenceBlock(r)}
+    <h3>FRESHNESS</h3>
+    <p class="meta">validated base ${esc(r.validated_base_sha || "—")}</p>
+    <p class="meta">upstream ${esc(r.upstream_head || "—")} · ${esc(r.freshness || "—")}</p>
+    <h3>SUBMISSION</h3>
+    <p class="meta">branch ${esc(r.branch_name || "foreshadow/entry")} · base ${esc(r.base_branch || "main")}</p>
+    <p><strong>${esc(r.pr_title || "")}</strong></p>
+    <h3>REMOTE PLAN</h3>
+    <p class="meta">将执行 fork / push branch / 创建一个 PR。不会评论、review、merge、force push。</p>
     <details><summary>Technical Details</summary>
       <p class="meta">mission ${esc(r.mission_id)} · job ${esc(r.job_id)} · artifact ${esc(r.artifact_id)}</p>
       <p class="meta">package revision ${esc(r.package_revision || r.artifact_id || "—")}</p>
@@ -1124,7 +1193,7 @@ function entryView(card) {
     ${why ? `<ul>${why}</ul>` : ""}
     <p class="meta">贡献规范：${pol.wants_issue_first ? "先 Issue 后 PR" : "未强制先 Issue"} · CLA ${pol.cla == null ? "未知" : (pol.cla ? "需要" : "不需要")} · DCO ${pol.dco == null ? "未知" : (pol.dco ? "需要" : "不需要")}</p>
     ${alts ? `<ul>${alts}</ul>` : ""}
-    ${state.user ? `<button type="button" class="primary" onclick="startContribution('${esc(card.full_name)}')">开始准备贡献（沙箱，不推送）</button>` : ""}
+    ${state.user ? `<button type="button" class="primary" onclick="startContribution('${esc(card.full_name)}', ${esc(card.mission_id || (card.review && card.review.mission_id) || 0)})">开始准备贡献（沙箱，不推送）</button>` : ""}
   </section>`;
 }
 function logLabel(step) {
@@ -1370,14 +1439,14 @@ function enterOrMissionBtn(c) {
   if (id && (cloneOkFor(c) || missionIsOpen(c))) {
     return `<button type="button" class="primary" onclick="event.stopPropagation(); openExisting(${id})" aria-label="查看任务 ${esc(c.full_name)}">查看任务</button>`;
   }
-  return `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')" aria-label="开始进入 ${esc(c.full_name)}，在本机准备项目">开始进入</button>`;
+  return `<button type="button" class="primary" ${state.busy?"disabled":""} onclick="event.stopPropagation(); startEnter('${esc(c.full_name)}')" aria-label="进入 ${esc(c.full_name)}，授权本地准备贡献">进入</button>`;
 }
 
-function rowKey(ev, name) {
+function rowKey(ev, name, missionId) {
   if (ev.target !== ev.currentTarget) return;
   if (ev.key === "Enter" || ev.key === " ") {
     ev.preventDefault();
-    openCard(name);
+    openCard(name, missionId);
   }
 }
 
@@ -1394,7 +1463,7 @@ function listView(board) {
       ? `<span class="obs ${c.observation_kind==="yours"?"yours":"watching"}">${esc(c.observation_zh)}</span>`
       : "";
     return `
-    <div class="row ${state.open===c.full_name?"active":""}" tabindex="0" role="button" aria-expanded="${state.open===c.full_name?"true":"false"}" onclick="openCard('${esc(c.full_name)}')" onkeydown="rowKey(event, '${esc(c.full_name)}')">
+    <div class="row ${state.open===c.full_name?"active":""}" tabindex="0" role="button" aria-expanded="${state.open===c.full_name?"true":"false"}" onclick="openCard('${esc(c.full_name)}', ${esc(c.mission_id || 0)})" onkeydown="rowKey(event, '${esc(c.full_name)}', ${esc(c.mission_id || 0)})">
       <div class="rk">#${esc(c.rank)}</div>
       <div>
         <div class="nm">${esc(c.full_name)}${obs}
@@ -1408,7 +1477,7 @@ function listView(board) {
         ${c.review ? "" : rankFootnote(c)}
       </div>
       <div class="act">
-        <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}')" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
+        <button type="button" class="ghost" onclick="event.stopPropagation(); openCard('${esc(c.full_name)}', ${esc(c.mission_id || 0)})" aria-label="查看详情 ${esc(c.full_name)}">查看详情</button>
         ${state.open===c.full_name ? "" : enterOrMissionBtn(c)}
       </div>
     </div>`;
@@ -1593,9 +1662,9 @@ function drawerView(card) {
       ${enterOrMissionBtn(card)}
       <a class="gh" href="${esc(card.html_url)}" target="_blank" rel="noopener noreferrer">查看项目 ↗</a>
     </p>
-    <p class="meta">「开始进入」只在本机准备项目，不会向 GitHub 发内容。「记入观察清单」不会创建任务，只记个人立场。</p>
+    <p class="meta">「进入」授权本机准备贡献，不会向 GitHub 发内容。「记入观察清单」不会创建任务，只记个人立场。</p>
     <h3>我的决定</h3>
-    <p class="meta">下面只记个人立场。「记入观察清单」不会创建任务。要进入请点「开始进入」。</p>
+    <p class="meta">下面只记个人立场。「记入观察清单」不会创建任务。要进入请点「进入」。</p>
     <div class="decide">${actions}</div>
     <details class="audit">
       <summary>评分依据</summary>
@@ -1743,7 +1812,7 @@ function startContribPoll(id) {
 }
 function missionListView() {
   const rows = state.missions || [];
-  if (!rows.length) return `<p class="empty">还没有进入任务。在榜上点「开始进入」。</p>`;
+  if (!rows.length) return `<p class="empty">还没有进入任务。在榜上点「进入」。</p>`;
   return `<div class="mission-list">${rows.map(m => `
     <div class="row">
       <div>
@@ -2035,9 +2104,13 @@ async function loadBoard() {
         const jobs = await api("/api/contribution");
         state.contributionJobs = jobs.jobs || [];
         const latest = {};
-        for (const j of state.contributionJobs) latest[j.full_name] = j;
+        for (const j of state.contributionJobs) {
+          const key = j.mission_id ? ("m" + j.mission_id) : j.full_name;
+          latest[key] = j;
+        }
         for (const c of (state.board.candidates || [])) {
-          if (latest[c.full_name]) c.contribution_job = latest[c.full_name];
+          const key = c.mission_id ? ("m" + c.mission_id) : c.full_name;
+          if (latest[key] || latest[c.full_name]) c.contribution_job = latest[key] || latest[c.full_name];
         }
       } catch { state.contributionJobs = state.contributionJobs || []; }
     } else {
@@ -2077,20 +2150,23 @@ async function logout() {
   render();
 }
 
-function openCard(name) {
+function openCard(name, missionId) {
   state.open = name;
   state.reviewTab = "overview";
   state.reviewFile = null;
-  const card = ((state.board && state.board.candidates) || []).find(c => c.full_name === name)
-    || ((state.board && state.board.review_queue) || []).find(c => c.full_name === name);
+  state.submitConfirm = false;
+  const q = (state.board && state.board.review_queue) || [];
+  const card = q.find(c => Number(c.mission_id || (c.review && c.review.mission_id)) === Number(missionId))
+    || ((state.board && state.board.candidates) || []).find(c => c.full_name === name)
+    || q.find(c => c.full_name === name);
   if (card && card.review) {
     state.review = card.review;
     state.reviewHistory = card.review_history || [];
-    loadReview(name, card.review.mission_id);
+    loadReview(name, missionId || card.review.mission_id);
   } else {
     state.review = null;
     state.reviewHistory = [];
-    loadReview(name);
+    loadReview(name, missionId);
   }
   render();
 }
@@ -2114,6 +2190,11 @@ function stampMissionOnCards(m) {
   if (!m || !state.board) return;
   const card = (state.board.candidates || []).find(c => c.full_name === m.full_name);
   if (!card) return;
+  const incoming = String(m.status || "");
+  const current = String(card.mission_status || "");
+  const terminal = incoming === "MERGED" || incoming === "ABANDONED";
+  const currentOpen = current && current !== "MERGED" && current !== "ABANDONED";
+  if (terminal && currentOpen) return;
   if (m.id) card.mission_id = m.id;
   if (m.status) card.mission_status = m.status;
   if (m.clone) card.clone = m.clone;
@@ -2134,13 +2215,14 @@ async function analyzeEntry(name) {
   } catch (e) { state.actionError = e.message || String(e); }
   state.busy = false; render();
 }
-async function startContribution(name) {
+async function startContribution(name, missionId) {
   state.busy = true; state.actionError = ""; render();
   try {
     const card0 = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     const entry = card0 && card0.entry;
     const rec = entry && entry.recommended;
     const evidence = (rec && rec.evidence || []).map(e => (e && (e.url || e.id)) || e).filter(Boolean);
+    const mid = Number(missionId || (card0 && card0.mission_id) || 0) || undefined;
     const task = rec ? {
       structured: {
         repository: name,
@@ -2155,6 +2237,7 @@ async function startContribution(name) {
     } : { fixture: "demo_add", why: "no entry analysis; native demo only" };
     const data = await api("/api/contribution", { method: "POST", body: JSON.stringify({
       full_name: name,
+      mission_id: mid,
       backend: rec ? "mini_swe_agent" : "native",
       task,
     }) });
@@ -2169,7 +2252,9 @@ async function startEnter(name) {
   state.actionError = "";
   render();
   try {
-    const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name }) });
+    const cardIssue = ((state.board && state.board.candidates) || []).find(c => c.full_name === name);
+    const issue = cardIssue && cardIssue.entry && cardIssue.entry.recommended && cardIssue.entry.recommended.issue_number;
+    const data = await api("/api/mission", { method: "POST", body: JSON.stringify({ full_name: name, issue_number: issue || undefined }) });
     state.mission = data.mission;
     stampMissionOnCards(data.mission);
     render();
@@ -2177,6 +2262,7 @@ async function startEnter(name) {
     const card = (state.board && state.board.candidates || []).find(c => c.full_name === name);
     if (card && data.mission && data.mission.id) card.mission_id = data.mission.id;
     if (data.mission && data.mission.id && !missionPaused(data.mission) && !alreadyLocal(data.mission)) await setupLocal(data.mission.id);
+    if (data.mission && data.mission.id && !missionPaused(data.mission)) await startContribution(name, data.mission.id);
     try { await loadBoard(); } catch {}
   } catch (e) { state.actionError = e.message || String(e); }
   finally { state.busy = false; render(); }
@@ -2299,6 +2385,41 @@ async function resumeMission(id) {
   }
 }
 
+function confirmSubmit(id) {
+  state.submitConfirm = true;
+  state.reviewMissionId = id;
+  render();
+}
+async function doSubmit(id) {
+  if (state.busy) return;
+  state.busy = true; state.actionError = ""; render();
+  try {
+    const snap = state.review && (state.review.approval_snapshot_id || (state.review.approval && state.review.approval.approval_snapshot_id));
+    const data = await api("/api/contribution/submit", { method: "POST", body: JSON.stringify({
+      mission_id: id,
+      approval_snapshot_id: snap,
+      confirm: true,
+    })});
+    state.submitConfirm = false;
+    if (data && data.ok) {
+      state.actionError = "已按批准快照提交。";
+    } else {
+      state.actionError = (data && (data.error || data.status)) || "提交被拒绝";
+    }
+    try { await loadBoard(); } catch {}
+    await loadReview(state.open, id);
+  } catch (e) { state.actionError = e.message || String(e); }
+  state.busy = false; render();
+}
+async function continueContribution(id) {
+  state.actionError = "";
+  try {
+    await api("/api/contribution/continue", { method: "POST", body: JSON.stringify({ mission_id: id }) });
+    state.submitConfirm = false;
+    try { await loadBoard(); } catch {}
+  } catch (e) { state.actionError = e.message || String(e); }
+  render();
+}
 async function refuseRemote() {
   const body = { action: "create_pr" };
   if (state.mission && state.mission.id) body.id = state.mission.id;

@@ -23,8 +23,8 @@ def persist_job(conn: sqlite3.Connection, job: ContributionJob) -> int:
             """
             INSERT INTO contribution_jobs(
               user_id, repo_id, full_name, status, backend, task_json, log_json,
-              created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?)
+              created_at, updated_at, mission_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 job.user_id,
@@ -36,6 +36,7 @@ def persist_job(conn: sqlite3.Connection, job: ContributionJob) -> int:
                 log_json,
                 job.created_at,
                 job.updated_at,
+                job.mission_id,
             ),
         )
         job.id = int(cur.lastrowid)
@@ -44,7 +45,7 @@ def persist_job(conn: sqlite3.Connection, job: ContributionJob) -> int:
             """
             UPDATE contribution_jobs
             SET repo_id=?, full_name=?, status=?, backend=?, task_json=?,
-                log_json=?, updated_at=?
+                log_json=?, updated_at=?, mission_id=?
             WHERE id=? AND user_id=?
             """,
             (
@@ -55,6 +56,7 @@ def persist_job(conn: sqlite3.Connection, job: ContributionJob) -> int:
                 task_json,
                 log_json,
                 job.updated_at,
+                job.mission_id,
                 job.id,
                 job.user_id,
             ),
@@ -99,7 +101,7 @@ def load_job(
         row = conn.execute(
             """
             SELECT id, user_id, repo_id, full_name, status, backend, task_json,
-                   log_json, created_at, updated_at
+                   log_json, created_at, updated_at, mission_id
             FROM contribution_jobs WHERE id=?
             """,
             (job_id,),
@@ -108,7 +110,7 @@ def load_job(
         row = conn.execute(
             """
             SELECT id, user_id, repo_id, full_name, status, backend, task_json,
-                   log_json, created_at, updated_at
+                   log_json, created_at, updated_at, mission_id
             FROM contribution_jobs WHERE id=? AND user_id=?
             """,
             (job_id, user_id),
@@ -122,7 +124,7 @@ def list_jobs(conn: sqlite3.Connection, user_id: int) -> list[ContributionJob]:
     rows = conn.execute(
         """
         SELECT id, user_id, repo_id, full_name, status, backend, task_json,
-               log_json, created_at, updated_at
+               log_json, created_at, updated_at, mission_id
         FROM contribution_jobs WHERE user_id=? ORDER BY id DESC
         """,
         (user_id,),
@@ -170,6 +172,12 @@ def _row_to_job(row: tuple[Any, ...]) -> ContributionJob:
         task = {}
     if not isinstance(log, list):
         log = []
+    mission_id = None
+    if len(row) > 10 and row[10] is not None:
+        try:
+            mission_id = int(row[10])
+        except (TypeError, ValueError):
+            mission_id = None
     return ContributionJob(
         id=int(row[0]),
         user_id=int(row[1]),
@@ -181,4 +189,5 @@ def _row_to_job(row: tuple[Any, ...]) -> ContributionJob:
         log=list(log),
         created_at=str(row[8]) if row[8] is not None else None,
         updated_at=str(row[9]) if row[9] is not None else None,
+        mission_id=mission_id,
     )

@@ -41,9 +41,11 @@ def start_local_contribution(
     full_name: str,
     data_dir: Path,
     executor: ContributionExecutor | None = None,
+    mission_id: int | None = None,
 ) -> ContributionJob:
     """Run prepare→analyze→implement→test→QA→package. Never pushes."""
     from foreshadow.entry import load_entry
+    from foreshadow.mission import load_mission_plan
 
     row = conn.execute(
         "SELECT id FROM repos WHERE full_name=?", (full_name,)
@@ -52,10 +54,15 @@ def start_local_contribution(
     if row:
         stored = load_entry(conn, int(row[0]))
         entry = stored.as_dict() if stored else None
-    plan = next(
-        (m for m in list_missions(conn, user_id) if m.get("full_name") == full_name),
-        None,
-    )
+    plan = None
+    if mission_id is not None:
+        plan = load_mission_plan(conn, int(mission_id), user_id)
+    if plan is None:
+        from foreshadow.contribution.identity import pick_active_for_repo
+
+        plan = pick_active_for_repo(
+            [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
+        )
     if plan and isinstance(plan.get("entry_strategy"), dict):
         entry = plan["entry_strategy"]
     extra = _extras_for(conn, user_id, full_name, entry, data_dir=data_dir)
@@ -84,6 +91,7 @@ def start_local_contribution(
         status=JobStatus.queued,
         source_dir=source_dir,
         work_dir=_contrib_work_dir(data_dir, full_name, mission_id),
+        mission_id=mission_id,
     )
     run_contribution(job, executor=worker, conn=conn)
     return job
@@ -114,9 +122,10 @@ def _extras_for(
         rec = entry["recommended"]
     issue_n = rec.get("issue_number")
     extra: dict[str, Any] = {}
-    plan = next(
-        (m for m in list_missions(conn, user_id) if m.get("full_name") == full_name),
-        None,
+    from foreshadow.contribution.identity import pick_active_for_repo
+
+    plan = pick_active_for_repo(
+        [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
     )
     cited = (plan or {}).get("cited_issue") if isinstance(plan, dict) else None
     if isinstance(cited, dict) and str(cited.get("number")) == str(issue_n):
@@ -156,9 +165,10 @@ def _extras_for(
 def _mission_repo(
     conn: sqlite3.Connection, user_id: int, full_name: str, data_dir: Path
 ) -> Path | None:
-    plan = next(
-        (m for m in list_missions(conn, user_id) if m.get("full_name") == full_name),
-        None,
+    from foreshadow.contribution.identity import pick_active_for_repo
+
+    plan = pick_active_for_repo(
+        [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
     )
     local = Path(str((plan or {}).get("local_path") or ""))
     repo = local / "repo"

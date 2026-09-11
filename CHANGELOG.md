@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.6.0] - 2026-09-11
+
+Two human gates. Mission identity is `mission_id` + issue, never “latest row for this repo.”
+
+### Added
+
+- Gate 1 **进入** authorizes local work on one issue. Local phases (investigate → package) do not stop for extra approval.
+- Gate 2 **提交到 GitHub** authorizes only the immutable approval snapshot on screen (`approval_digest`).
+- Approval snapshots hash patch, base, title, body, and the remote action plan. Any change invalidates approval.
+- One-shot submission engine (fork / push branch / create one PR) with GET-only preflight and idempotent retries. Comments, review, merge, and force-push stay denied.
+- Outcome reconciliation binds the exact submitted PR to `mission_id`. A merged PR moves the mission to `MERGED` (the #1551 stale-state class).
+- Import path for a validated contribution store. ripwire #74 is the golden review package.
+
+### Changed
+
+- Board review queue is one card per mission, not one card per repository.
+- `WAITING_USER_APPROVAL` renders as `READY_FOR_HUMAN_SUBMIT`.
+- Schema 9: `contribution_jobs.mission_id`, `approval_snapshots`, `submissions`.
+- Radar `GITHUB_TOKEN` stays GET-only. Gate 2 writes require a separate `FORESHADOW_WRITE_TOKEN`.
+
+### Safety
+
+- Gate 2 refuses drafts that fail maintainer-output leak / privacy / AI-attribution checks.
+- Same-repo Board actions pass `mission_id`. Gate 1 without an issue refuses when multiple open missions exist.
+- Submit is step-resumable. A second click after success does not write again.
+- Import will not resurrect a `MERGED`/`ABANDONED` mission. `set_status` honors `ALLOWED` unless forced for abandon/merge events.
+- Third-party remote writes remain 0 until a human confirms Gate 2 on one snapshot.
+- This release does not submit ripwire #74.
+
 ## [0.5.1] - 2026-09-09
 
 ### Fixed

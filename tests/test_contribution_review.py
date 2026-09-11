@@ -326,7 +326,8 @@ def test_webapp_has_review_workspace_chrome():
     assert "function renderUnifiedDiff" in APP_HTML
     assert "function reviewQueueView" in APP_HTML
     assert "review_queue" in APP_HTML
-    assert "Approval workflow not enabled yet" in APP_HTML
+    assert "提交到 GitHub" in APP_HTML
+    assert "Approval workflow not enabled yet" not in APP_HTML
     assert "max-width: 320px" in APP_HTML
     assert "Raw patch" in APP_HTML
 

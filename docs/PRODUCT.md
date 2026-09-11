@@ -4,7 +4,7 @@ Local daily radar. Not trending. You decide. It does not write to GitHub for you
 
 ## Path
 
-Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.5.1"`) → token → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **开始进入** → local prep → **等待你确认远程操作**.
+Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"`) → token → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **进入** → autonomous local prep → **READY_FOR_HUMAN_SUBMIT** → review the snapshot → **提交到 GitHub**.
 
 ## Empty Top 5
 
@@ -12,7 +12,7 @@ Success. The Board may still list candidates. Official Top 5 stays empty until a
 
 ## Safety
 
-No auto Issue / PR / comment / push. **尝试创建 PR（应被拒绝）** is refused. Board is localhost only. Token stays on this machine.
+Radar token is GET-only. Gate 2 is the only remote-write exception, and it is bound to one approval snapshot (fork / one branch / one PR). Comments, review, merge, and force-push stay denied.
 
 ## Honest
 
@@ -28,7 +28,7 @@ foreshadow board        # http://127.0.0.1:8765/
 
 1. Look at observation / empty Official Top 5.
 2. Open a candidate. Read 为什么现在.
-3. **开始进入**. Wait for clone + `FORESHADOW.md`.
-4. Confirm remote write is blocked.
+3. **进入**. Wait for the local package to reach READY_FOR_HUMAN_SUBMIT.
+4. Review the snapshot. Click **提交到 GitHub** only for that exact version.
 
 CLI: `foreshadow enter owner/repo`
