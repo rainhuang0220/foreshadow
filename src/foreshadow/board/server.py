@@ -174,13 +174,21 @@ class BoardState:
                 stances = latest_action_map(conn, user_id=user_id) if user_id else {}
                 missions: dict[str, dict] = {}
                 if user_id:
+                    from foreshadow.contribution.board_api import reconcile_user_safe
+                    from foreshadow.contribution.identity import pick_active_for_repo
                     from foreshadow.mission import list_missions
 
+                    reconcile_user_safe(conn, int(user_id))
+                    by_repo: dict[str, list[dict]] = {}
                     for row in list_missions(conn, int(user_id)):
                         name = str(row.get("full_name") or "")
                         if not name or str(row.get("status") or "") == "ABANDONED":
                             continue
-                        missions.setdefault(name, row)
+                        by_repo.setdefault(name, []).append(row)
+                    for name, rows in by_repo.items():
+                        chosen = pick_active_for_repo(rows)
+                        if chosen is not None:
+                            missions[name] = chosen
                 payload = present_board(doc, stances=stances, missions=missions)
                 payload["date"] = as_of_date or current
                 payload["current_date"] = current
@@ -237,6 +245,7 @@ def _job_view(job: Any) -> dict[str, Any]:
         "task": dict(job.task or {}),
         "updated_at": job.updated_at,
         "remote_status": "WAITING_USER_APPROVAL",
+        "mission_id": job.mission_id,
     }
 
 
@@ -284,7 +293,9 @@ def _spawn_contribution(job_id: int) -> None:
 
 
 def _mission_id(data: dict[str, Any]) -> int:
-    raw = data.get("id")
+    raw = data.get("mission_id")
+    if raw in (None, "", 0, "0", False):
+        raw = data.get("id")
     try:
         mid = int(raw) if raw is not None and raw is not False else 0
     except (TypeError, ValueError):
@@ -650,6 +661,9 @@ class BoardHandler(BaseHTTPRequestHandler):
 
             conn = self.state.db()
             try:
+                from foreshadow.contribution.board_api import reconcile_user_safe
+
+                reconcile_user_safe(conn, int(user["id"]))
                 items = list_missions(conn, int(user["id"]))
             finally:
                 conn.close()
@@ -888,6 +902,11 @@ class BoardHandler(BaseHTTPRequestHandler):
             except ValueError:
                 self._send(*_json_bytes({"error": "需要合法的 owner/repo"}, 400))
                 return
+            issue = data.get("issue_number") or data.get("issue")
+            try:
+                issue_n = int(issue) if issue not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                issue_n = None
             conn = self.state.db()
             try:
                 mission = create_for_user(
@@ -895,6 +914,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                     user_id=int(user["id"]),
                     full_name=name,
                     data_dir=resolve_data_dir(),
+                    issue_number=issue_n,
+                    source="HUMAN_CONFIRM",
                 )
             except ValueError as exc:
                 self._send(*_json_bytes({"error": str(exc)}, 400))
@@ -960,6 +981,61 @@ class BoardHandler(BaseHTTPRequestHandler):
             if payload is None:
                 return
             self._send(*_json_bytes(payload))
+            return
+        if path in {"/api/contribution/submit", "/api/contribution/approve"}:
+            user = self._require_operator()
+            if user is None:
+                return
+            from foreshadow.contribution.board_api import execute_gate2, submit_preview
+
+            try:
+                mid = _mission_id(data)
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
+            raw_confirm = data.get("confirm")
+            confirm = raw_confirm in (True, 1, "1", "true", "True")
+            snap_id = data.get("approval_snapshot_id") or data.get("snapshot_id")
+            try:
+                snap_n = int(snap_id) if snap_id not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                snap_n = None
+            conn = self.state.db()
+            try:
+                if path == "/api/contribution/approve" or not confirm:
+                    out = submit_preview(conn, int(user["id"]), mid)
+                else:
+                    out = execute_gate2(
+                        conn,
+                        user_id=int(user["id"]),
+                        mission_id=mid,
+                        snapshot_id=snap_n,
+                        confirm=True,
+                    )
+            except LookupError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 404))
+                return
+            finally:
+                conn.close()
+            self._send(*_json_bytes(out))
+            return
+        if path == "/api/contribution/continue":
+            user = self._require_operator()
+            if user is None:
+                return
+            from foreshadow.contribution.board_api import continue_local
+
+            try:
+                mid = _mission_id(data)
+            except ValueError as exc:
+                self._send(*_json_bytes({"error": str(exc)}, 400))
+                return
+            conn = self.state.db()
+            try:
+                out = continue_local(conn, int(user["id"]), mid)
+            finally:
+                conn.close()
+            self._send(*_json_bytes(out))
             return
         if path == "/api/contribution":
             user = self._require_operator()
@@ -1042,6 +1118,19 @@ class BoardHandler(BaseHTTPRequestHandler):
                         backend = "native"
                     else:
                         backend = "mini_swe_agent"
+                raw_mid = data.get("mission_id") or data.get("id")
+                mission_id = None
+                if raw_mid not in (None, "", 0, "0"):
+                    try:
+                        mission_id = int(raw_mid)
+                    except (TypeError, ValueError):
+                        mission_id = None
+                structured = task.get("structured") if isinstance(task.get("structured"), dict) else {}
+                if mission_id is None and structured.get("mission_id") not in (None, "", 0, "0"):
+                    try:
+                        mission_id = int(structured["mission_id"])
+                    except (TypeError, ValueError):
+                        mission_id = None
                 job = ContributionJob(
                     user_id=int(user["id"]),
                     repo_id=int(row[0]) if row else None,
@@ -1050,6 +1139,7 @@ class BoardHandler(BaseHTTPRequestHandler):
                     task=task,
                     why=str(task.get("why") or ""),
                     status=JobStatus.queued,
+                    mission_id=mission_id,
                 )
                 persist_job(conn, job)
             finally:
@@ -1223,7 +1313,7 @@ def serve_board(
         print(f"public  {public_url}", flush=True)
     if is_public:
         print(
-            "公网只读；开始进入 / clone 需要登录。远程 GitHub 写入仍需人工批准。",
+            "公网只读；进入 / clone 需要登录。远程 GitHub 写入只在 Gate 2 批准快照后执行。",
             flush=True,
         )
     else:

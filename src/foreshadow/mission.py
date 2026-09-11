@@ -33,6 +33,8 @@ Status = Literal[
     "REPRODUCING",
     "DISCUSSING",
     "IMPLEMENTING",
+    "VALIDATING",
+    "PACKAGING",
     "DRAFT_READY",
     "WAITING_USER_APPROVAL",
     "PAUSED",
@@ -84,6 +86,14 @@ USER_EVENTS = SYSTEM_EVENTS | USER_MARKED_EVENTS
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_NUM_RE = re.compile(r"#(\d+)")
 CLONE_TIMEOUT_S = 300
+
+
+def _issue_number_from_plan(plan: dict[str, Any] | None) -> int | None:
+    if not isinstance(plan, dict):
+        return None
+    from foreshadow.contribution.identity import issue_from_plan
+
+    return issue_from_plan(plan)
 
 
 @dataclass
@@ -243,8 +253,22 @@ def list_missions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
                 "status": row[2],
                 "status_zh": status_zh(str(row[2])),
                 "next_step_zh": next_step_zh(str(row[2])),
-                "needs_user_approval": True,
-                "local_path": row[7],
+            "needs_user_approval": str(row[2])
+            in {"WAITING_USER_APPROVAL", "MISSION_READY"},
+            "issue_number": _issue_number_from_plan(plan),
+            "issue_url": plan.get("issue_url")
+            or (
+                f"https://github.com/{row[1]}/issues/{_issue_number_from_plan(plan)}"
+                if _issue_number_from_plan(plan)
+                else None
+            ),
+            "repository": row[1],
+            "display_status": (
+                "READY_FOR_HUMAN_SUBMIT"
+                if str(row[2]) == "WAITING_USER_APPROVAL"
+                else str(row[2])
+            ),
+            "local_path": row[7],
                 "created_at": row[8],
                 "updated_at": row[9],
             }
@@ -254,16 +278,87 @@ def list_missions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
 
 
 def set_status(
-    conn: sqlite3.Connection, mission_id: int, user_id: int, status: Status
+    conn: sqlite3.Connection,
+    mission_id: int,
+    user_id: int,
+    status: Status,
+    *,
+    force: bool = False,
 ) -> None:
+    row = conn.execute(
+        "SELECT status FROM entry_missions WHERE id=? AND user_id=?",
+        (mission_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError("mission not found")
+    current = str(row[0])
+    dest = str(status)
+    if current == dest:
+        return
+    if not force and dest not in ALLOWED.get(current, set()):
+        raise ValueError(f"cannot {current} -> {dest}")
     conn.execute(
         """
         UPDATE entry_missions SET status=?, updated_at=?
         WHERE id=? AND user_id=?
         """,
-        (status, datetime.now(UTC).isoformat(), mission_id, user_id),
+        (dest, datetime.now(UTC).isoformat(), mission_id, user_id),
     )
     conn.commit()
+
+
+def _existing_mission_row(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    full_name: str,
+    issue_number: int | None,
+) -> tuple[Any, ...] | None:
+    rows = conn.execute(
+        """
+        SELECT id, plan_json FROM entry_missions
+        WHERE user_id=? AND full_name=?
+          AND status NOT IN ('ABANDONED', 'MERGED')
+        ORDER BY id DESC
+        """,
+        (user_id, full_name),
+    ).fetchall()
+    if not rows:
+        return None
+    if issue_number is None:
+        if len(rows) > 1:
+            return None
+        return rows[0]
+    from foreshadow.contribution.identity import issue_from_plan
+
+    for row in rows:
+        try:
+            plan = json.loads(row[1] or "{}")
+        except json.JSONDecodeError:
+            plan = {}
+        if not isinstance(plan, dict):
+            plan = {}
+        plan["id"] = row[0]
+        if issue_from_plan(plan) == int(issue_number):
+            return row
+    return None
+
+
+def _should_reuse_mission(
+    existing: tuple[Any, ...], issue_number: int | None, live: bool
+) -> bool:
+    if existing is None:
+        return False
+    try:
+        plan = json.loads(existing[1] or "{}")
+    except json.JSONDecodeError:
+        plan = {}
+    from foreshadow.contribution.identity import issue_from_plan
+
+    found = issue_from_plan(plan if isinstance(plan, dict) else {})
+    if issue_number is None:
+        return not live
+    return found == int(issue_number)
 
 
 def create_for_user(
@@ -279,16 +374,23 @@ def create_for_user(
     from foreshadow.pipeline import load_score_input
 
     full_name = parse_repo_name(full_name)
-    existing = conn.execute(
-        """
-        SELECT id FROM entry_missions
-        WHERE user_id=? AND full_name=?
-          AND status NOT IN ('ABANDONED', 'MERGED')
-        ORDER BY id DESC LIMIT 1
-        """,
-        (user_id, full_name),
-    ).fetchone()
-    if existing and not live:
+    if issue_number is None:
+        open_n = conn.execute(
+            """
+            SELECT COUNT(*) FROM entry_missions
+            WHERE user_id=? AND full_name=?
+              AND status NOT IN ('ABANDONED', 'MERGED')
+            """,
+            (user_id, full_name),
+        ).fetchone()[0]
+        if int(open_n or 0) > 1:
+            raise ValueError(
+                f"{full_name} has {open_n} open missions; pass issue_number"
+            )
+    existing = _existing_mission_row(
+        conn, user_id=user_id, full_name=full_name, issue_number=issue_number
+    )
+    if existing is not None and _should_reuse_mission(existing, issue_number, live):
         plan = load_mission_plan(conn, int(existing[0]), user_id)
         if plan is not None:
             return mission_from_plan(plan)
@@ -337,8 +439,17 @@ def create_for_user(
 
         stored_entry = load_entry(conn, repo_id)
         historical_entry = stored_entry.as_dict() if stored_entry else None
-    if existing:
-        previous_plan = load_mission_plan(conn, int(existing[0]), user_id) or {}
+    latest_open = conn.execute(
+        """
+        SELECT id FROM entry_missions
+        WHERE user_id=? AND full_name=?
+          AND status NOT IN ('ABANDONED', 'MERGED')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (user_id, full_name),
+    ).fetchone()
+    if latest_open:
+        previous_plan = load_mission_plan(conn, int(latest_open[0]), user_id) or {}
         historical_entry = previous_plan.get("historical_entry") or historical_entry
     live_entry = None
     if live:
@@ -399,7 +510,7 @@ def create_for_user(
             if note not in mission.why_now:
                 mission.why_now.append(note)
     dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
-    if existing and live:
+    if latest_open and live:
         from uuid import uuid4
 
         dest = dest.with_name(dest.name + "__mission_" + uuid4().hex[:12])
@@ -416,6 +527,23 @@ def create_for_user(
     write_pr_draft(dest, mission)
     write_fork_note(dest, full_name)
     persist_mission(conn, mission, user_id=user_id, repo_id=repo_id)
+    if live_entry is None and issue_number and mission.id is not None:
+        patch_mission_plan(
+            conn,
+            mission.id,
+            user_id,
+            {
+                "entry_source": source,
+                "repository": full_name,
+                "issue_number": int(issue_number),
+                "preferred_issue": int(issue_number),
+                "issue_url": f"https://github.com/{full_name}/issues/{int(issue_number)}",
+                "active_entry_target": {
+                    "issue_number": int(issue_number),
+                    "route": "ISSUE",
+                },
+            },
+        )
     if live_entry is not None and mission.id is not None:
         rec = live_entry["strategy"].recommended
         patch_mission_plan(
@@ -428,6 +556,13 @@ def create_for_user(
                 "entry_strategy": live_entry["strategy"].as_dict(),
                 "active_entry_target": live_entry["strategy"].as_dict()["recommended"],
                 "preferred_issue": rec.issue_number,
+                "issue_number": rec.issue_number,
+                "repository": full_name,
+                "issue_url": (
+                    f"https://github.com/{full_name}/issues/{rec.issue_number}"
+                    if rec.issue_number
+                    else None
+                ),
             },
         )
     if live_entry is not None:
@@ -479,6 +614,9 @@ ALLOWED = {
     "LOCAL_SETUP": {
         "WAITING_USER_APPROVAL",
         "DRAFT_READY",
+        "INVESTIGATING",
+        "REPRODUCING",
+        "IMPLEMENTING",
         "ABANDONED",
         "BLOCKED",
         "PAUSED",
@@ -487,20 +625,47 @@ ALLOWED = {
         "ABANDONED",
         "BLOCKED",
         "WAITING_MAINTAINER",
+        "SUBMITTED",
         "DRAFT_READY",
         "IMPLEMENTING",
         "PAUSED",
     },
     "DRAFT_READY": {"WAITING_USER_APPROVAL", "ABANDONED", "PAUSED"},
-    "INVESTIGATING": {"MISSION_READY", "ABANDONED", "PAUSED"},
+    "INVESTIGATING": {
+        "MISSION_READY",
+        "REPRODUCING",
+        "IMPLEMENTING",
+        "LOCAL_SETUP",
+        "WAITING_USER_APPROVAL",
+        "ABANDONED",
+        "PAUSED",
+    },
     "IMPLEMENTING": {
         "DRAFT_READY",
+        "VALIDATING",
+        "PACKAGING",
         "WAITING_USER_APPROVAL",
         "ABANDONED",
         "BLOCKED",
         "PAUSED",
     },
-    "REPRODUCING": {"PAUSED", "ABANDONED"},
+    "VALIDATING": {
+        "PACKAGING",
+        "IMPLEMENTING",
+        "WAITING_USER_APPROVAL",
+        "ABANDONED",
+        "BLOCKED",
+        "PAUSED",
+    },
+    "PACKAGING": {"WAITING_USER_APPROVAL", "DRAFT_READY", "ABANDONED", "PAUSED"},
+    "REPRODUCING": {
+        "IMPLEMENTING",
+        "VALIDATING",
+        "WAITING_USER_APPROVAL",
+        "PAUSED",
+        "ABANDONED",
+        "BLOCKED",
+    },
     "DISCUSSING": {"PAUSED", "ABANDONED"},
     "PAUSED": {
         "LOCAL_SETUP",
@@ -508,9 +673,19 @@ ALLOWED = {
         "DRAFT_READY",
         "IMPLEMENTING",
         "REPRODUCING",
+        "INVESTIGATING",
+        "VALIDATING",
+        "PACKAGING",
         "DISCUSSING",
     },
-    "WAITING_MAINTAINER": {"FOLLOW_UP", "ABANDONED", "BLOCKED", "REVIEWING"},
+    "SUBMITTED": {
+        "WAITING_MAINTAINER",
+        "REVIEWING",
+        "MERGED",
+        "BLOCKED",
+        "ABANDONED",
+    },
+    "WAITING_MAINTAINER": {"FOLLOW_UP", "ABANDONED", "BLOCKED", "REVIEWING", "MERGED"},
     "REVIEWING": {"FOLLOW_UP", "MERGED", "ABANDONED", "BLOCKED"},
     "FOLLOW_UP": {"ABANDONED", "MERGED"},
 }
@@ -573,10 +748,26 @@ def portfolio(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
         "missions": len(missions),
         "by_status": by_status,
         "events": {str(k): int(v) for k, v in ev},
-        "entered": by_status.get("MISSION_READY", 0)
-        + by_status.get("LOCAL_SETUP", 0)
-        + by_status.get("WAITING_USER_APPROVAL", 0),
+        "entered": sum(
+            by_status.get(name, 0)
+            for name in (
+                "MISSION_READY",
+                "LOCAL_SETUP",
+                "WAITING_USER_APPROVAL",
+                "INVESTIGATING",
+                "REPRODUCING",
+                "IMPLEMENTING",
+                "VALIDATING",
+                "PACKAGING",
+                "DRAFT_READY",
+            )
+        ),
         "merged": by_status.get("MERGED", 0),
+        "active": sum(
+            count
+            for name, count in by_status.items()
+            if name not in {"MERGED", "ABANDONED", "BLOCKED"}
+        ),
         "note": "Portfolio tracks our missions. It does not scrape third-party GitHub.",
     }
 
@@ -632,13 +823,15 @@ def status_zh(status: str | None) -> str:
     return {
         "MISSION_READY": "任务已就绪",
         "LOCAL_SETUP": "正在准备本地环境",
-        "WAITING_USER_APPROVAL": "等待你确认远程操作",
+        "WAITING_USER_APPROVAL": "READY_FOR_HUMAN_SUBMIT · 等待你确认这一版",
         "PAUSED": "已暂停",
         "DRAFT_READY": "本地草稿已好",
         "IMPLEMENTING": "本地实现中",
+        "VALIDATING": "本地验证中",
+        "PACKAGING": "正在打包提交物",
         "WAITING_MAINTAINER": "等待维护者",
         "REVIEWING": "按反馈修改",
-        "SUBMITTED": "你已自行提交",
+        "SUBMITTED": "已按批准快照提交到 GitHub",
         "MERGED": "已合并，可继续跟进",
         "FOLLOW_UP": "后续跟进",
         "ABANDONED": "已停止",
@@ -651,10 +844,13 @@ def next_step_zh(status: str | None) -> str:
     return {
         "MISSION_READY": "准备本地环境（clone / 读文档），不要发 Issue 或 PR",
         "LOCAL_SETUP": "看本地仓库与第一步，确认后再决定是否沟通",
-        "WAITING_USER_APPROVAL": "等待你的确认才能执行任何远程 GitHub 操作",
+        "WAITING_USER_APPROVAL": "审核这一版提交包，再决定是否提交到 GitHub",
         "PAUSED": "可以继续任务；暂停不会向 GitHub 发请求",
         "DRAFT_READY": "草稿已在本地。远程发送仍需你确认",
         "IMPLEMENTING": "在本地实现最小改动，不要 push",
+        "VALIDATING": "继续本地验证，无需再确认",
+        "PACKAGING": "继续打包，无需再确认",
+        "REPRODUCING": "继续本地复现，无需再确认",
         "WAITING_MAINTAINER": "等待维护者。不要反复催促或自动评论",
         "REVIEWING": "按反馈改本地补丁，再请你确认是否提交",
         "SUBMITTED": "你已自行提交。Foreshadow 没有代发",
@@ -1701,6 +1897,7 @@ def load_mission_plan(
         plan = json.loads(row[6] or "{}")
     except json.JSONDecodeError:
         plan = {}
+    issue_n = _issue_number_from_plan(plan)
     plan.update(
         {
             "id": row[0],
@@ -1709,10 +1906,22 @@ def load_mission_plan(
             "local_path": row[7],
             "created_at": row[8],
             "updated_at": row[9],
-            "needs_user_approval": True,
+            "needs_user_approval": str(row[2])
+            in {"WAITING_USER_APPROVAL", "MISSION_READY"},
             "remote_blocked": "等待你的确认才能执行任何远程 GitHub 操作。",
             "next_step_zh": next_step_zh(str(row[2])),
             "status_zh": status_zh(str(row[2])),
+            "issue_number": issue_n,
+            "issue_url": plan.get("issue_url")
+            or (
+                f"https://github.com/{row[1]}/issues/{issue_n}" if issue_n else None
+            ),
+            "repository": row[1],
+            "display_status": (
+                "READY_FOR_HUMAN_SUBMIT"
+                if str(row[2]) == "WAITING_USER_APPROVAL"
+                else str(row[2])
+            ),
         }
     )
     return plan
@@ -2427,9 +2636,9 @@ def record_user_event(
     if dest and dest in ALLOWED.get(current, set()):
         transition(conn, mission_id, user_id, dest)
     elif event == "abandoned":
-        set_status(conn, mission_id, user_id, "ABANDONED")
+        set_status(conn, mission_id, user_id, "ABANDONED", force=True)
     elif event == "pr_merged":
-        set_status(conn, mission_id, user_id, "MERGED")
+        set_status(conn, mission_id, user_id, "MERGED", force=True)
     updated = load_mission_plan(conn, mission_id, user_id) or plan
     local = updated.get("local_path") or plan.get("local_path")
     if local:

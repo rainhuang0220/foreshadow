@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import typer
 
@@ -597,9 +599,14 @@ def outcome(
         "--event",
         help="maintainer_replied / pr_merged / abandoned / …",
     ),
+    mission_id: int | None = typer.Option(
+        None, "--mission-id", "--mission", help="Required when the repo has multiple missions"
+    ),
+    issue: int | None = typer.Option(None, "--issue", help="Issue number when mission id is unknown"),
 ) -> None:
     """Record a manual contribution outcome. Never talks to GitHub."""
     from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.identity import require_mission_id
     from foreshadow.mission import USER_MARKED_EVENTS, list_missions, record_user_event
 
     if event not in USER_MARKED_EVENTS:
@@ -611,12 +618,13 @@ def outcome(
     try:
         uid = resolve_cli_user(conn)
         items = list_missions(conn, uid)
-        found = next((m for m in items if m.get("full_name") == repo), None)
-        if found is None:
-            print(
-                "no mission for that repo — run foreshadow enter first", file=sys.stderr
+        try:
+            found = require_mission_id(
+                items, full_name=repo, mission_id=mission_id, issue_number=issue
             )
-            raise SystemExit(2)
+        except LookupError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2) from exc
         plan = record_user_event(
             conn, user_id=uid, mission_id=int(found["id"]), event=event
         )
@@ -626,6 +634,110 @@ def outcome(
         f"recorded {event} on {repo} status={plan.get('status')}\n"
         "this does not post to GitHub.\n"
     )
+
+
+@app.command("import-contribution", rich_help_panel="Enter")
+def import_contribution_cmd(
+    store: str | None = typer.Argument(
+        None, help="Persistent store directory with MANIFEST.json"
+    ),
+    github_login: str | None = typer.Option(
+        None, "--github-login", help="Board operator to attach the mission to"
+    ),
+) -> None:
+    """Import a validated local package. Does not write to third-party GitHub."""
+    from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.import_store import (
+        default_ripwire74_store,
+        import_validated_contribution,
+    )
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = resolve_cli_user(conn)
+        if github_login:
+            row = conn.execute(
+                "SELECT id FROM users WHERE github_login=? COLLATE NOCASE",
+                (github_login.strip(),),
+            ).fetchone()
+            if row is None:
+                print("github login not found", file=sys.stderr)
+                raise SystemExit(2)
+            uid = int(row[0])
+        src = Path(store) if store else default_ripwire74_store()
+        out = import_validated_contribution(
+            conn, user_id=uid, store=src, data_dir=resolve_data_dir()
+        )
+    finally:
+        conn.close()
+    sys.stdout.write(
+        f"imported mission={out['mission_id']} "
+        f"status={out['mission'].get('display_status') or out['mission'].get('status')} "
+        f"reused={out['reused']} remote_writes=0\n"
+    )
+
+
+@app.command(rich_help_panel="Enter")
+def submit(
+    mission_id: int = typer.Option(..., "--mission-id", "--mission"),
+    confirm: bool = typer.Option(False, "--confirm", help="Required to perform Gate 2"),
+) -> None:
+    """Preview or execute the approved snapshot. Default: preview only."""
+    from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.board_api import execute_gate2, submit_preview
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = resolve_cli_user(conn)
+        if confirm:
+            out = execute_gate2(
+                conn, user_id=uid, mission_id=mission_id, snapshot_id=None, confirm=True
+            )
+        else:
+            out = submit_preview(conn, uid, mission_id)
+    finally:
+        conn.close()
+    sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
+
+
+@app.command(rich_help_panel="Enter")
+def reconcile(
+    mission_id: int | None = typer.Option(None, "--mission-id", "--mission"),
+) -> None:
+    """GET-only outcome reconciliation for bound PRs."""
+    from foreshadow.auth import resolve_cli_user
+    from foreshadow.contribution.board_api import reconcile_user_safe
+    from foreshadow.contribution.reconcile import reconcile_mission
+    from foreshadow.github.approved_write import ClientPullReader
+    from foreshadow.github.client import GitHubClient, resolve_token
+
+    path = resolve_data_dir() / "foreshadow.sqlite3"
+    conn = connect(path)
+    migrate(conn)
+    try:
+        uid = resolve_cli_user(conn)
+        if mission_id is None:
+            out = reconcile_user_safe(conn, uid)
+        else:
+            token = resolve_token()
+            if not token:
+                print("no GitHub token for GET-only reconcile", file=sys.stderr)
+                raise SystemExit(2)
+            out = [
+                reconcile_mission(
+                    conn,
+                    user_id=uid,
+                    mission_id=mission_id,
+                    reader=ClientPullReader(GitHubClient(token=token)),
+                )
+            ]
+    finally:
+        conn.close()
+    sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
 
 
 @app.command(rich_help_panel="Advanced")

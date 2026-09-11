@@ -82,6 +82,14 @@ def test_sql_packaged():
     assert "DROP TABLE" not in v8
     assert "ALTER TABLE" not in v8
     assert "CREATE VIEW" not in v8
+    v9 = (
+        importlib.resources.files("foreshadow")
+        .joinpath("sql/009_two_gate.sql")
+        .read_text()
+    )
+    assert "approval_snapshots" in v9
+    assert "submissions" in v9
+    assert "mission_id" in v9
 
 
 def test_migrate_adds_users_and_backfills_reviews(tmp_home):

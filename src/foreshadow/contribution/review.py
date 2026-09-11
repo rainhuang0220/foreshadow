@@ -9,6 +9,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from foreshadow.contribution.identity import (
+    display_status,
+    is_queueable,
+    pick_active_for_repo,
+)
+from foreshadow.contribution.import_store import sha256_text
 from foreshadow.contribution.jobs import list_artifacts, list_jobs
 from foreshadow.mission import list_missions, load_mission_plan
 
@@ -80,6 +86,12 @@ def issue_from_text(value: Any) -> int | None:
 def issue_from_mission(plan: dict[str, Any] | None) -> int | None:
     if not isinstance(plan, dict):
         return None
+    n = issue_from_text(plan.get("issue_number"))
+    if n:
+        return n
+    n = issue_from_text(plan.get("issue_url"))
+    if n:
+        return n
     for key in ("preferred_issue",):
         n = issue_from_text(plan.get(key))
         if n:
@@ -175,7 +187,17 @@ def _bind_job(
     full_name: str,
 ) -> tuple[Any, dict[str, Any], int] | None:
     issue = issue_from_mission(plan)
+    mission_id = plan.get("id")
     jobs = [j for j in list_jobs(conn, uid) if j.full_name == full_name]
+    bound = [
+        j
+        for j in jobs
+        if mission_id is not None
+        and getattr(j, "mission_id", None) is not None
+        and int(j.mission_id or 0) == int(mission_id)
+    ]
+    if bound:
+        jobs = bound
     matches: list[tuple[Any, dict[str, Any], int]] = []
     for job in jobs:
         packed = latest_package(conn, int(job.id or 0))
@@ -224,7 +246,7 @@ def _review(
     )
     tests = pkg.get("tests") if isinstance(pkg.get("tests"), dict) else {}
     commands = list(tests.get("commands") or [])
-    return {
+    out = {
         "authority": "package",
         "role": role,
         "repository": full_name,
@@ -235,7 +257,7 @@ def _review(
         "issue_url": pkg.get("issue_url")
         or (f"https://github.com/{full_name}/issues/{issue}" if issue else None),
         "title": _title_from(plan, pkg, issue),
-        "status": pkg.get("status") or job.canonical_status,
+        "status": plan.get("status") or pkg.get("status") or job.canonical_status,
         "source": _source_label(plan),
         "package_revision": art_id,
         "executor": {
@@ -273,10 +295,67 @@ def _review(
         "local_path": plan.get("local_path"),
         "package": pkg,
         "job_status": job.canonical_status,
-        "next_action": "Review changes",
-        "approval_enabled": False,
+        "next_action": "提交到 GitHub",
+        "approval_enabled": True,
+        "display_status": display_status(str(plan.get("status") or "WAITING_USER_APPROVAL")),
         "test_commands": commands,
+        "validated_base_sha": pkg.get("validated_base_sha")
+        or (impl.get("upstream_head") if isinstance(impl, dict) else None),
+        "patch_commit_sha": pkg.get("patch_commit_sha")
+        or (impl.get("patch_commit_sha") if isinstance(impl, dict) else None),
+        "diff_sha256": sha256_text(diff) if diff else pkg.get("diff_sha256"),
+        "freshness": pkg.get("freshness"),
+        "why": pkg.get("why"),
+        "evidence": pkg.get("evidence"),
+        "remote_plan": pkg.get("remote_plan")
+        or {
+            "will": ["fork (if needed)", "push one contribution branch", "create one PR"],
+            "will_not": ["comment", "review", "merge", "force push"],
+        },
+        "persistent_store": pkg.get("persistent_store"),
+        "branch_name": (impl.get("branch") if isinstance(impl, dict) else None)
+        or (f"foreshadow/entry-{issue}" if issue else "foreshadow/entry"),
+        "base_branch": pkg.get("base_branch") or "main",
     }
+    snap = _attach_snapshot(conn, uid, out, plan)
+    if snap is not None:
+        out["approval_snapshot_id"] = snap.get("approval_snapshot_id")
+        out["approval_digest"] = snap.get("approval_digest")
+        stale = bool(out.get("approval_stale"))
+        out["approval"] = {
+            "approval_snapshot_id": snap.get("approval_snapshot_id"),
+            "approval_digest": snap.get("approval_digest"),
+            "status": "stale" if stale else snap.get("status"),
+            "you_review_this_version": not stale,
+        }
+    return out
+
+
+def _attach_snapshot(
+    conn: sqlite3.Connection,
+    uid: int,
+    review: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any] | None:
+    from foreshadow.contribution.approval import (
+        create_snapshot,
+        current_snapshot,
+        fields_from_review,
+        matches_package,
+    )
+
+    mid = review.get("mission_id")
+    issue = review.get("issue_number")
+    if mid is None or issue is None:
+        return None
+    fields = fields_from_review(review, mission_id=int(mid))
+    current = current_snapshot(conn, user_id=uid, mission_id=int(mid))
+    if current is None:
+        return create_snapshot(conn, user_id=uid, fields=fields)
+    if not matches_package(current, fields):
+        review["approval_stale"] = True
+        return current
+    return current
 
 
 def history_for_repo(
@@ -284,16 +363,19 @@ def history_for_repo(
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     rows = [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
+    rows = [m for m in rows if str(m.get("status") or "") != "ABANDONED"]
+    active = pick_active_for_repo(rows)
+    active_id = int(active["id"]) if active and active.get("id") is not None else None
     rows.sort(key=lambda m: int(m.get("id") or 0), reverse=True)
-    first = True
     for plan in rows:
-        if str(plan.get("status") or "") == "ABANDONED":
-            continue
-        review = _review(conn, user_id, plan, role="active" if first else "history")
+        role = (
+            "active"
+            if active_id is not None and int(plan.get("id") or 0) == active_id
+            else "history"
+        )
+        review = _review(conn, user_id, plan, role=role)
         if review is None:
             continue
-        role = "active" if first else "history"
-        first = False
         out.append(
             {
                 "role": role,
@@ -322,10 +404,10 @@ def active_contribution(
 ) -> dict[str, Any] | None:
     rows = [m for m in list_missions(conn, user_id) if m.get("full_name") == full_name]
     rows = [m for m in rows if str(m.get("status") or "") != "ABANDONED"]
-    rows.sort(key=lambda m: int(m.get("id") or 0), reverse=True)
-    if not rows:
+    chosen = pick_active_for_repo(rows)
+    if not chosen:
         return None
-    return _review(conn, user_id, rows[0], role="active", worktree=worktree)
+    return _review(conn, user_id, chosen, role="active", worktree=worktree)
 
 
 def contribution_for_mission(
@@ -576,23 +658,30 @@ def attach_review_summaries(
     payload: dict[str, Any], conn: sqlite3.Connection, user_id: int
 ) -> dict[str, Any]:
     queue: list[dict[str, Any]] = []
-    seen: set[str] = set()
     by_name: dict[str, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
     for plan in list_missions(conn, user_id):
         name = str(plan.get("full_name") or "")
-        if not name or name in seen or str(plan.get("status") or "") == "ABANDONED":
+        if not name or str(plan.get("status") or "") == "ABANDONED":
             continue
-        hist = history_for_repo(conn, user_id, name)
-        if not hist:
+        if name not in by_name:
+            hist = history_for_repo(conn, user_id, name)
+            if not hist:
+                continue
+            active = next((h for h in hist if h["role"] == "active"), hist[0])
+            by_name[name] = (hist, active)
+        if not is_queueable(str(plan.get("status") or "")):
             continue
-        active = next((h for h in hist if h["role"] == "active"), hist[0])
-        seen.add(name)
-        by_name[name] = (hist, active)
+        review = contribution_for_mission(conn, user_id, int(plan["id"]))
+        if review is None:
+            continue
+        hist, active = by_name[name]
         queue.append(
             {
                 "full_name": name,
                 "html_url": f"https://github.com/{name}",
-                "review": active,
+                "mission_id": review.get("mission_id"),
+                "issue_number": review.get("issue_number"),
+                "review": review,
                 "review_history": hist,
             }
         )

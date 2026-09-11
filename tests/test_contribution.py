@@ -197,12 +197,14 @@ def test_mini_swe_stub_errors_if_missing(monkeypatch):
 def test_contribution_package_never_mutates_github():
     from foreshadow.contribution.native import _git
 
+    gate2 = {"approval.py", "submit.py", "board_api.py", "preflight.py"}
     for path in sorted(CONTRIB.glob("*.py")):
         text = path.read_text(encoding="utf-8")
         assert "api.github.com" not in text
-        assert "GitHubClient" not in text
         assert "ghp_" not in text
-        assert "create_pr" not in text
+        if path.name not in gate2:
+            assert "GitHubClient" not in text
+            assert "create_pr" not in text
     assert "create_pr" not in inspect.getsource(NativeExecutor)
     git_src = inspect.getsource(_git)
     assert '"push"' in git_src

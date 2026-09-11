@@ -6,7 +6,7 @@ S2 进入通道（Access）已经稳定，明天早上**不调权重、不重跑
 
 ## 明天早上
 
-在工作树里启动**交互 Board**。必须用这条命令；不要用 Trae 打开的 :8765 静态页，也不要打开 `--export-html` 写出的 `preview/…/board.html`（那一页没有「开始进入」，不会建任务）。
+在工作树里启动**交互 Board**。必须用这条命令；不要用 Trae 打开的 :8765 静态页，也不要打开 `--export-html` 写出的 `preview/…/board.html`（那一页没有「进入」，不会建任务）。
 
 ```bash
 cd .worktrees/p0-implementation
@@ -16,7 +16,7 @@ FORESHADOW_HOME=dogfood/local/home uv run foreshadow board --preview
 浏览器会打开 **http://127.0.0.1:8765/**。登录，看今日候选榜。
 
 1. 看 **阶段 / 机会 / 通道 / 推荐入口**（不是 Star 榜）。
-2. 点 **开始进入**。不要点评审里的「记入观察清单」——那只是个人立场，不会创建任务。
+2. 点 **进入**。不要点评审里的「记入观察清单」——那只是个人立场，不会创建任务。
 3. 等本地 `git clone --depth 1`。工作目录在 `$FORESHADOW_HOME/work/{owner}__{repo}/`。
 4. 你会看到**该项目自己的行动计划**（第一步 / 第二步），以及本地 `FORESHADOW.md` 和 `ISSUE_DRAFT.md`。按第一步、第二步做，不要把它理解成「去开 PR」。
 5. 系统会停在 **等待你的确认才能执行任何远程 GitHub 操作**。任何第三方 GitHub 写入都不会发生。点「尝试创建 PR」会被拒绝。
