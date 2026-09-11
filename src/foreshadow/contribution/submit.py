@@ -40,6 +40,28 @@ class RemoteWriteRefused(RuntimeError):
     pass
 
 
+def _approved_pr(
+    pr: dict[str, Any] | None, *, branch: str, sha: str
+) -> dict[str, Any] | None:
+    """Drop a GitHub row that is not this approved branch/commit."""
+    if not isinstance(pr, dict):
+        return None
+    head = pr.get("head")
+    ref = ""
+    got_sha = str(pr.get("head_sha") or "")
+    if isinstance(head, dict):
+        ref = str(head.get("label") or head.get("ref") or "")
+        got_sha = str(head.get("sha") or got_sha)
+    elif head is not None:
+        ref = str(head)
+    tail = ref.split(":")[-1]
+    if tail != branch and ref != branch:
+        return None
+    if got_sha and got_sha != sha:
+        return None
+    return pr
+
+
 def refuse(action: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -277,21 +299,26 @@ def _submit_approved_unlocked(
             "remote_writes": 0,
             "resumed": True,
         }
-    if rec["steps"].get("PREFLIGHT") != "DONE":
+    needs_remote = rec["steps"].get("CREATE_PR") != "DONE" or not rec["result"].get(
+        "pr"
+    )
+    if needs_remote:
+        # Recertify until the PR exists. A stale PREFLIGHT=DONE must not skip
+        # EXACT after a crash or an upstream move.
         pre = run_preflight(port, snapshot, current_fields=current_fields)
-        rec["steps"]["PREFLIGHT"] = "DONE" if pre.get("ok") else "FAILED"
+        exact = bool(pre.get("ok")) and pre.get("status") == "EXACT"
+        rec["steps"]["PREFLIGHT"] = "DONE" if exact else "FAILED"
         rec["result"]["preflight"] = pre
-        if not pre.get("ok"):
+        if not exact:
             rec["status"] = str(pre.get("status") or "PREFLIGHT_FAILED")
             _save(conn, rec)
-            return {**pre, "submission_id": sid, "remote_writes": 0}
+            return {
+                **pre,
+                "ok": False,
+                "submission_id": sid,
+                "remote_writes": 0,
+            }
         _save(conn, rec)
-    elif not (rec["result"].get("preflight") or {}).get("ok", True):
-        return {
-            **(rec["result"].get("preflight") or {}),
-            "submission_id": sid,
-            "remote_writes": 0,
-        }
 
     fork = rec["result"].get("fork")
     if rec["steps"].get("FORK") != "DONE" or not fork:
@@ -317,16 +344,16 @@ def _submit_approved_unlocked(
         source_owner = str(snapshot["repository"]).split("/", 1)[0]
         fork_owner = fork.split("/", 1)[0] if "/" in fork else ""
         pr_head = branch if fork_owner == source_owner else f"{fork_owner}:{branch}"
-        head_candidates = [pr_head]
-        existing = None
-        for head in head_candidates:
-            existing = port.find_pr(
+        lookup_head = f"{fork_owner}:{branch}"
+        existing = _approved_pr(
+            port.find_pr(
                 str(snapshot["repository"]),
-                head=head,
+                head=lookup_head,
                 base=str(snapshot["base_branch"]),
-            )
-            if existing is not None:
-                break
+            ),
+            branch=branch,
+            sha=sha,
+        )
         if existing is None:
             existing = port.create_pr(
                 str(snapshot["repository"]),

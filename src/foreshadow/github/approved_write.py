@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,7 @@ from foreshadow.contribution.submit import RemoteWriteRefused
 from foreshadow.github.client import redact
 
 _API_VERSION = "2022-11-28"
+_POST_PATH = re.compile(r"^/repos/[^/]+/[^/]+/(forks|pulls)$")
 
 
 def write_token() -> str | None:
@@ -92,7 +94,7 @@ class ApprovedGitHubPort:
         method = method.upper()
         if method not in {"GET", "POST"}:
             raise RemoteWriteRefused(f"GitHub method {method} is outside Gate 2")
-        if method == "POST" and not path.endswith(("/forks", "/pulls")):
+        if method == "POST" and _POST_PATH.match(path) is None:
             raise RemoteWriteRefused(f"GitHub endpoint {path} is outside Gate 2")
         if not self._token:
             raise RemoteWriteRefused("FORESHADOW_WRITE_TOKEN is missing")
@@ -335,12 +337,7 @@ class ApprovedGitHubPort:
                 encoding="utf-8",
             )
             askpass.chmod(0o700)
-            env = {
-                **os.environ,
-                "GIT_ASKPASS": str(askpass),
-                "GIT_TERMINAL_PROMPT": "0",
-                "FORESHADOW_GIT_TOKEN": str(self._token or ""),
-            }
+            env = self._push_env(askpass)
             self._git(
                 [
                     "git",
@@ -355,6 +352,23 @@ class ApprovedGitHubPort:
             )
         return sha
 
+    def _push_env(self, askpass: Path) -> dict[str, str]:
+        from foreshadow.contribution.clone import git_env_without_tokens
+
+        env = git_env_without_tokens()
+        env["GIT_ASKPASS"] = str(askpass)
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        env["GIT_CONFIG_SYSTEM"] = os.devnull
+        env["GIT_CONFIG_COUNT"] = "2"
+        env["GIT_CONFIG_KEY_0"] = "credential.helper"
+        env["GIT_CONFIG_VALUE_0"] = ""
+        env["GIT_CONFIG_KEY_1"] = "core.hooksPath"
+        env["GIT_CONFIG_VALUE_1"] = "/dev/null"
+        env["FORESHADOW_GIT_TOKEN"] = str(self._token or "")
+        return env
+
     def _git(self, args: list[str], **kwargs: Any) -> Any:
         result = self._git_runner(
             args, check=False, capture_output=True, text=True, **kwargs
@@ -366,12 +380,24 @@ class ApprovedGitHubPort:
 
     def find_pr(self, repo: str, *, head: str, base: str) -> dict[str, Any] | None:
         self.calls.append(f"find_pr:{repo}:{head}")
+        owner = repo.split("/", 1)[0]
+        qualified = head if ":" in str(head) else f"{owner}:{head}"
+        want_ref = qualified.split(":", 1)[1]
         data = self._api(
             "GET",
             f"/repos/{repo}/pulls",
-            params={"state": "open", "head": head, "base": base, "per_page": 10},
+            params={"state": "open", "head": qualified, "base": base, "per_page": 10},
         ).json()
-        return dict(data[0]) if isinstance(data, list) and data else None
+        if not isinstance(data, list):
+            return None
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            ref, _sha = _pull_head(item)
+            tail = ref.split(":")[-1]
+            if tail == want_ref or ref == want_ref:
+                return dict(item)
+        return None
 
     def create_pr(
         self, repo: str, *, title: str, body: str, head: str, base: str
@@ -394,6 +420,18 @@ class ApprovedGitHubPort:
             if existing is not None:
                 return existing
             raise
+
+
+def _pull_head(pr: dict[str, Any]) -> tuple[str, str]:
+    head = pr.get("head")
+    ref = ""
+    sha = str(pr.get("head_sha") or pr.get("sha") or "")
+    if isinstance(head, dict):
+        ref = str(head.get("label") or head.get("ref") or "")
+        sha = str(head.get("sha") or sha)
+    elif head is not None:
+        ref = str(head)
+    return ref, sha
 
 
 def assert_action_allowed(action: str) -> None:

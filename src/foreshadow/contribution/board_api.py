@@ -47,6 +47,12 @@ def assess_submission_readiness(
 ) -> dict[str, Any]:
     """Return the four facts required before the Board may claim READY."""
     snapshot_current = bool(snapshot and matches_package(snapshot, fields))
+    package_complete = bool(
+        str(fields.get("patch_commit_sha") or "").strip()
+        and str(fields.get("validated_base_sha") or "").strip()
+        and str(fields.get("repository") or "").strip()
+        and str(fields.get("pr_title") or "").strip()
+    )
     is_fake = bool(getattr(port, "is_fake", False))
     transport_ready = is_fake or bool(
         getattr(port, "transport_ready", lambda _sha: False)(
@@ -86,6 +92,7 @@ def assess_submission_readiness(
         "credential_ready": credential_ready,
         "snapshot_current": snapshot_current,
         "upstream_fresh": upstream_fresh,
+        "package_complete": package_complete,
     }
     ready = (
         str(review.get("status") or "") == "WAITING_USER_APPROVAL"
@@ -112,6 +119,8 @@ def assess_submission_readiness(
         display = "CREDENTIAL_REQUIRED"
     elif preflight and preflight.get("status") == "PREFLIGHT_UNAVAILABLE":
         display = "PREFLIGHT_UNAVAILABLE"
+    elif not package_complete:
+        display = "PACKAGE_INCOMPLETE"
     elif not upstream_fresh:
         display = "NEEDS_REFRESH"
     else:
