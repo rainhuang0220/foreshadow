@@ -15,10 +15,11 @@ from foreshadow.contribution.approval import (
 )
 from foreshadow.contribution.submit import (
     FakeGitHub,
+    RemoteWriteRefused,
     persist_submission,
     submit_approved,
 )
-from foreshadow.github.approved_write import ApprovedGitHubPort
+from foreshadow.github.approved_write import ApprovedGitHubPort, assert_action_allowed
 
 
 def _fields() -> dict:
@@ -60,11 +61,13 @@ def test_ready_requires_transport_credential_snapshot_and_exact_upstream():
         port=port,
     )
     assert ready["display_status"] == "READY_FOR_HUMAN_SUBMIT"
+    assert ready["approval_enabled"] is True
     assert ready["checks"] == {
         "write_transport_ready": True,
         "credential_ready": True,
         "snapshot_current": True,
         "upstream_fresh": True,
+        "package_complete": True,
     }
 
     port.refs["main"] = "new-base"
@@ -384,7 +387,18 @@ def test_create_pr_recovers_when_post_response_is_lost():
         if request.url.path == "/repos/upstream/toy/pulls" and post_attempted:
             return httpx.Response(
                 200,
-                json=[{"number": 9, "html_url": "https://example/pr/9"}],
+                json=[
+                    {
+                        "number": 9,
+                        "html_url": "https://example/pr/9",
+                        "head": {
+                            "ref": "foreshadow/entry-7",
+                            "sha": "patch",
+                            "label": "operator:foreshadow/entry-7",
+                        },
+                        "base": {"ref": "main"},
+                    }
+                ],
             )
         raise AssertionError(f"unexpected request {request.method} {request.url}")
 
@@ -627,3 +641,495 @@ def test_retry_after_persisted_pr_binds_mission_before_return(tmp_home):
     assert out["resumed"] is True
     assert plan["status"] == "SUBMITTED"
     assert plan["bound_pr"]["number"] == 9
+
+
+def _waiting_mission(tmp_home):
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.db import connect, migrate
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = ensure_local_user(conn)
+    conn.execute(
+        """
+        INSERT INTO entry_missions(
+          user_id, full_name, status, entry_path, difficulty, effort,
+          plan_json, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            uid,
+            "upstream/toy",
+            "WAITING_USER_APPROVAL",
+            "ISSUE",
+            "Easy",
+            "1h",
+            "{}",
+            "now",
+            "now",
+        ),
+    )
+    mid = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    fields = {**_fields(), "mission_id": mid}
+    snapshot = create_snapshot(conn, user_id=uid, fields=fields)
+    return conn, uid, mid, fields, snapshot
+
+
+def _exact_port() -> FakeGitHub:
+    port = FakeGitHub()
+    port.refs["main"] = "base"
+    return port
+
+
+def test_submit_refuses_non_exact_upstream_with_zero_writes(tmp_home):
+    conn, uid, _mid, fields, snapshot = _waiting_mission(tmp_home)
+    port = _exact_port()
+    port.refs["main"] = "moved"
+    port.files = ["docs/README.md"]
+    out = submit_approved(
+        conn,
+        user_id=uid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+        current_fields=fields,
+        port=port,
+        allow_real_remote=True,
+    )
+    assert out["ok"] is False
+    assert out["remote_writes"] == 0
+    assert port.created_prs == 0
+    assert port.pushes == []
+    assert out["status"] != "SUBMITTED"
+
+
+def test_submit_re_preflights_when_create_pr_not_finished(tmp_home):
+    conn, uid, mid, fields, snapshot = _waiting_mission(tmp_home)
+    sid = persist_submission(
+        conn,
+        user_id=uid,
+        mission_id=mid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+    )
+    conn.execute(
+        "UPDATE submissions SET status='PUSH', steps_json=?, result_json=? WHERE id=?",
+        (
+            json.dumps(
+                {
+                    "PREFLIGHT": "DONE",
+                    "FORK": "DONE",
+                    "BRANCH": "DONE",
+                    "PUSH": "DONE",
+                    "CREATE_PR": "NOT_STARTED",
+                    "PERSIST_RESULT": "NOT_STARTED",
+                }
+            ),
+            json.dumps({"fork": "tester/toy", "preflight": {"ok": True, "status": "EXACT"}}),
+            sid,
+        ),
+    )
+    conn.commit()
+    port = _exact_port()
+    port.refs["main"] = "moved"
+    port.files = ["queries/java/tags.scm"]
+    out = submit_approved(
+        conn,
+        user_id=uid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+        current_fields=fields,
+        port=port,
+        allow_real_remote=True,
+    )
+    assert out["ok"] is False
+    assert out["remote_writes"] == 0
+    assert port.created_prs == 0
+
+
+def test_wrong_branch_sha_refuses_without_force_or_push(tmp_path):
+    requests: list[tuple[str, str]] = []
+    commands: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path.endswith("/git/ref/heads/foreshadow/entry-7"):
+            return httpx.Response(
+                200, json={"object": {"sha": "someone-elses-commit"}}
+            )
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    def run_git(args: list[str], **_kwargs):
+        commands.append(args)
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    port = ApprovedGitHubPort(
+        token="test-token",
+        client=httpx.Client(
+            base_url="https://api.github.com",
+            transport=httpx.MockTransport(handler),
+        ),
+        git_runner=run_git,
+    )
+    with pytest.raises(RemoteWriteRefused, match="force-push is forbidden"):
+        port.ensure_branch("operator/toy", "foreshadow/entry-7", "patch")
+    assert commands == []
+    assert not any(method != "GET" for method, _path in requests)
+
+
+def test_approved_port_refuses_forbidden_http_mutations():
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json={})
+
+    port = ApprovedGitHubPort(
+        token="test-token",
+        client=httpx.Client(
+            base_url="https://api.github.com",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    forbidden = [
+        ("POST", "/repos/upstream/toy/issues/1/comments"),
+        ("POST", "/repos/upstream/toy/pulls/1/reviews"),
+        ("POST", "/repos/upstream/toy/issues/1/reactions"),
+        ("PUT", "/repos/upstream/toy/pulls/1/merge"),
+        ("PATCH", "/repos/upstream/toy/git/refs/heads/x"),
+        ("POST", "/graphql"),
+        ("POST", "/evil/pulls"),
+        ("DELETE", "/repos/upstream/toy/pulls/1"),
+        ("POST", "/repos/upstream/toy/pulls/1/comments"),
+    ]
+    for method, path in forbidden:
+        with pytest.raises(RemoteWriteRefused):
+            port._api(method, path, json={})
+    assert seen == []
+    with pytest.raises(RemoteWriteRefused):
+        assert_action_allowed("force_push")
+    with pytest.raises(RemoteWriteRefused):
+        assert_action_allowed("comment")
+    with pytest.raises(RemoteWriteRefused):
+        assert_action_allowed("review")
+    with pytest.raises(RemoteWriteRefused):
+        assert_action_allowed("reaction")
+    with pytest.raises(RemoteWriteRefused):
+        assert_action_allowed("merge")
+
+
+def test_push_commit_does_not_inherit_radar_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "radar-token")
+    monkeypatch.setenv("GH_TOKEN", "gh-token")
+    captured: dict[str, object] = {}
+
+    def run_git(args: list[str], **kwargs):
+        captured["args"] = args
+        captured["env"] = kwargs.get("env") or {}
+        stdout = "base\n" if "rev-parse" in args else "patch HEAD\n"
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    bundle = tmp_path / "patch.bundle"
+    bundle.write_bytes(b"bundle")
+    port = ApprovedGitHubPort(
+        token="write-token",
+        bundle_path=bundle,
+        validated_base_sha="base",
+        source_repo="upstream/toy",
+        git_runner=run_git,
+    )
+    port.push_commit("operator/toy", "foreshadow/entry-7", "patch")
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert "GITHUB_TOKEN" not in env
+    assert "GH_TOKEN" not in env
+    assert env.get("FORESHADOW_GIT_TOKEN") == "write-token"
+    argv = " ".join(str(part) for part in captured["args"])
+    assert "write-token" not in argv
+    assert "radar-token" not in argv
+    assert "--force" not in argv
+    assert "https://github.com/operator/toy.git" in argv
+
+
+def test_readiness_false_when_any_required_fact_is_false():
+    from foreshadow.contribution.approval import compute_digest
+
+    fields = _fields()
+    snapshot = {**fields, "status": "current", "approval_digest": compute_digest(fields)}
+
+    class ReadyPort(FakeGitHub):
+        is_fake = False
+
+        def transport_ready(self, sha):
+            return True
+
+        def credential_ready(self, repo):
+            return True
+
+    def assess(**overrides):
+        review = {"status": "WAITING_USER_APPROVAL", "package": {}, **overrides}
+        return board_api.assess_submission_readiness(
+            review=review,
+            fields=overrides.get("fields", fields),
+            snapshot=overrides.get("snapshot", snapshot),
+            port=overrides.get("port", ReadyPort()),
+        )
+
+    class NoTransport(ReadyPort):
+        def transport_ready(self, sha):
+            return False
+
+    class NoCred(ReadyPort):
+        def credential_ready(self, repo):
+            return False
+
+    class Boom(ReadyPort):
+        def get_issue(self, repo, number):
+            raise OSError("github unavailable")
+
+    missing_transport = assess(port=NoTransport())
+    assert missing_transport["approval_enabled"] is False
+    assert missing_transport["display_status"] != "READY_FOR_HUMAN_SUBMIT"
+    assert missing_transport["display_status"] == "WRITE_TRANSPORT_UNAVAILABLE"
+
+    missing_cred = assess(port=NoCred())
+    assert missing_cred["approval_enabled"] is False
+    assert missing_cred["display_status"] == "CREDENTIAL_REQUIRED"
+
+    unavailable = assess(port=Boom())
+    assert unavailable["approval_enabled"] is False
+    assert unavailable["display_status"] == "PREFLIGHT_UNAVAILABLE"
+
+    unsafe = assess(
+        fields={**fields, "maintainer_output_safety": "FAIL"},
+        snapshot={
+            **fields,
+            "maintainer_output_safety": "FAIL",
+            "status": "current",
+            "approval_digest": compute_digest(
+                {**fields, "maintainer_output_safety": "FAIL"}
+            ),
+        },
+    )
+    assert unsafe["approval_enabled"] is False
+    assert unsafe["display_status"] != "READY_FOR_HUMAN_SUBMIT"
+
+    not_waiting = assess(status="IMPLEMENTING")
+    assert not_waiting["approval_enabled"] is False
+    assert not_waiting["display_status"] != "READY_FOR_HUMAN_SUBMIT"
+
+    incomplete = _fields()
+    incomplete["patch_commit_sha"] = ""
+    incomplete_snap = {
+        **incomplete,
+        "status": "current",
+        "approval_digest": compute_digest(incomplete),
+    }
+    empty_sha = board_api.assess_submission_readiness(
+        review={"status": "WAITING_USER_APPROVAL", "package": {}},
+        fields=incomplete,
+        snapshot=incomplete_snap,
+        port=ReadyPort(),
+    )
+    assert empty_sha["approval_enabled"] is False
+    assert empty_sha["display_status"] != "READY_FOR_HUMAN_SUBMIT"
+
+
+def test_existing_pr_is_resumed_without_second_create(tmp_home):
+    conn, uid, mid, fields, snapshot = _waiting_mission(tmp_home)
+    sid = persist_submission(
+        conn,
+        user_id=uid,
+        mission_id=mid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+    )
+    conn.execute(
+        "UPDATE submissions SET status='PUSH', steps_json=?, result_json=? WHERE id=?",
+        (
+            json.dumps(
+                {
+                    "PREFLIGHT": "DONE",
+                    "FORK": "DONE",
+                    "BRANCH": "DONE",
+                    "PUSH": "DONE",
+                    "CREATE_PR": "NOT_STARTED",
+                    "PERSIST_RESULT": "NOT_STARTED",
+                }
+            ),
+            json.dumps({"fork": "tester/toy"}),
+            sid,
+        ),
+    )
+    conn.commit()
+    port = _exact_port()
+    port.prs.append(
+        {
+            "number": 9,
+            "html_url": "https://github.com/upstream/toy/pull/9",
+            "head": "tester:foreshadow/entry-7",
+            "base": "main",
+        }
+    )
+    out = submit_approved(
+        conn,
+        user_id=uid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+        current_fields=fields,
+        port=port,
+        allow_real_remote=True,
+    )
+    assert out["ok"] is True
+    assert port.created_prs == 0
+    assert out["pr"]["number"] == 9
+
+
+def test_db_failure_after_pr_create_retries_without_second_pr(tmp_home, monkeypatch):
+    from foreshadow.contribution import submit as submit_mod
+    from foreshadow.mission import load_mission_plan
+
+    conn, uid, mid, fields, snapshot = _waiting_mission(tmp_home)
+    port = _exact_port()
+    real_save = submit_mod._save
+    failed = {"once": False}
+
+    def flaky_save(connection, rec):
+        if (
+            rec["steps"].get("CREATE_PR") == "DONE"
+            and rec["status"] == "CREATE_PR"
+            and not failed["once"]
+        ):
+            failed["once"] = True
+            raise sqlite3.OperationalError("disk I/O error")
+        return real_save(connection, rec)
+
+    monkeypatch.setattr(submit_mod, "_save", flaky_save)
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        submit_approved(
+            conn,
+            user_id=uid,
+            snapshot_id=int(snapshot["approval_snapshot_id"]),
+            current_fields=fields,
+            port=port,
+            allow_real_remote=True,
+        )
+    assert port.created_prs == 1
+    out = submit_approved(
+        conn,
+        user_id=uid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+        current_fields=fields,
+        port=port,
+        allow_real_remote=True,
+    )
+    plan = load_mission_plan(conn, mid, uid)
+    assert out["ok"] is True
+    assert port.created_prs == 1
+    assert plan["bound_pr"]["number"] == 99
+
+
+def test_branch_already_at_approved_sha_does_not_force(tmp_path):
+    commands: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/git/ref/heads/foreshadow/entry-7"):
+            return httpx.Response(200, json={"object": {"sha": "patch"}})
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    def run_git(args: list[str], **_kwargs):
+        commands.append(args)
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    port = ApprovedGitHubPort(
+        token="test-token",
+        client=httpx.Client(
+            base_url="https://api.github.com",
+            transport=httpx.MockTransport(handler),
+        ),
+        git_runner=run_git,
+    )
+    assert port.ensure_branch("operator/toy", "foreshadow/entry-7", "patch") == "patch"
+    assert commands == []
+    assert "--force" not in " ".join(part for command in commands for part in command)
+
+
+def test_find_pr_qualifies_head_and_ignores_unrelated_open_pr():
+    """GitHub only filters pulls when head is owner:branch. An unqualified
+    branch must not bind whatever open PR happens to be first."""
+    queries: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/repos/upstream/toy/pulls":
+            queries.append({k: v for k, v in request.url.params.multi_items()})
+            head = request.url.params.get("head")
+            unrelated = {
+                "number": 1,
+                "html_url": "https://github.com/upstream/toy/pull/1",
+                "head": {
+                    "ref": "other-branch",
+                    "sha": "not-the-approved-sha",
+                    "label": "upstream:other-branch",
+                },
+                "base": {"ref": "main"},
+            }
+            approved = {
+                "number": 9,
+                "html_url": "https://github.com/upstream/toy/pull/9",
+                "head": {
+                    "ref": "foreshadow/entry-7",
+                    "sha": "patch",
+                    "label": "upstream:foreshadow/entry-7",
+                },
+                "base": {"ref": "main"},
+            }
+            if head == "upstream:foreshadow/entry-7":
+                return httpx.Response(200, json=[approved])
+            return httpx.Response(200, json=[unrelated, approved])
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    port = ApprovedGitHubPort(
+        token="test-token",
+        client=httpx.Client(
+            base_url="https://api.github.com",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    found = port.find_pr(
+        "upstream/toy", head="foreshadow/entry-7", base="main"
+    )
+    assert found is not None
+    assert found["number"] == 9
+    assert queries and queries[0].get("head") == "upstream:foreshadow/entry-7"
+
+
+def test_same_owner_submit_does_not_bind_unrelated_open_pr(tmp_home):
+    conn, uid, _mid, fields, snapshot = _waiting_mission(tmp_home)
+
+    class SameOwner(FakeGitHub):
+        def ensure_fork(self, repo):
+            self.calls.append(f"ensure_fork:{repo}")
+            return repo
+
+        def find_pr(self, repo, *, head, base):
+            self.calls.append(f"find_pr:{head}")
+            assert head == "upstream:foreshadow/entry-7"
+            return super().find_pr(repo, head=head, base=base)
+
+    port = SameOwner()
+    port.refs["main"] = "base"
+    port.prs.append(
+        {
+            "number": 1,
+            "html_url": "https://github.com/upstream/toy/pull/1",
+            "head": "upstream:other-branch",
+            "base": "main",
+            "head_sha": "not-the-approved-sha",
+        }
+    )
+    out = submit_approved(
+        conn,
+        user_id=uid,
+        snapshot_id=int(snapshot["approval_snapshot_id"]),
+        current_fields=fields,
+        port=port,
+        allow_real_remote=True,
+    )
+    assert out["ok"] is True
+    assert out["pr"]["number"] == 99
+    assert port.created_prs == 1
+    assert "find_pr:upstream:foreshadow/entry-7" in port.calls
