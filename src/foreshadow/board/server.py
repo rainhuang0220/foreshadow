@@ -511,6 +511,9 @@ class BoardHandler(BaseHTTPRequestHandler):
                     )
                 )
                 return
+            from foreshadow.contribution.board_api import attach_submission_readiness
+
+            attach_submission_readiness(review)
             self._send(
                 *_json_bytes(
                     {

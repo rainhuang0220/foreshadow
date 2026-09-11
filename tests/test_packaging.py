@@ -94,7 +94,7 @@ def test_runtime_package_resources_load():
     first = root.joinpath("sql/001_init.sql").read_text(encoding="utf-8")
     latest = root.joinpath(f"sql/{MIGRATIONS[-1][1]}").read_text(encoding="utf-8")
     assert "CREATE TABLE" in first
-    assert "CREATE TABLE" in latest
+    assert "CREATE" in latest
     directions = root.joinpath("directions.toml").read_text(encoding="utf-8")
     assert "[" in directions
     jpg = root.joinpath("board/assets/board-bg.jpg").read_bytes()

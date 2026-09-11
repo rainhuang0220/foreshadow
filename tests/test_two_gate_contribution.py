@@ -139,9 +139,9 @@ def _job(conn, uid, repo, pkg, mission_id=None):
     return int(job.id)
 
 
-def test_schema_is_nine(tmp_home):
+def test_schema_is_ten(tmp_home):
     conn, _ = _conn(tmp_home)
-    assert SCHEMA_VERSION == 9
+    assert SCHEMA_VERSION == 10
     tables = {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
@@ -225,8 +225,8 @@ def test_package_ends_waiting_user_approval(tmp_home):
     mid = _mission(conn, uid, "acme/toy", 4)
     _job(conn, uid, "acme/toy", _pkg("acme/toy", 4, "fix", "diff --git a/x b/x\n"), mid)
     review = contribution_for_mission(conn, uid, mid)
-    assert review["display_status"] == "READY_FOR_HUMAN_SUBMIT"
-    assert review["approval_enabled"] is True
+    assert review["display_status"] == "SUBMISSION_CHECK_REQUIRED"
+    assert review["approval_enabled"] is False
     assert review["approval_digest"]
 
 
@@ -436,7 +436,7 @@ def test_ripwire74_import_appears_on_board(tmp_home):
     review = contribution_for_mission(conn, uid, mid)
     assert review["repository"] == "redhat-et/ripwire"
     assert review["issue_number"] == 74
-    assert review["display_status"] == "READY_FOR_HUMAN_SUBMIT"
+    assert review["display_status"] == "SUBMISSION_CHECK_REQUIRED"
     assert "/tmp/" not in str(review.get("persistent_store") or "")
     assert "提交到 GitHub" in review["next_action"]
     payload = {"candidates": []}

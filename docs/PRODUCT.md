@@ -4,7 +4,7 @@ Local daily radar. Not trending. You decide. It does not write to GitHub for you
 
 ## Path
 
-Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.0"`) → token → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **进入** → autonomous local prep → **READY_FOR_HUMAN_SUBMIT** → review the snapshot → **提交到 GitHub**.
+Install (`uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1"`) → tokens → `foreshadow init` → `foreshadow schedule install` (optional) or `foreshadow run` → `foreshadow board` → read why → **进入** → autonomous local prep → **READY_FOR_HUMAN_SUBMIT** → review the snapshot → **提交到 GitHub**. READY means the exact commit transport, dedicated write credential, current approval snapshot, and exact upstream base have all been verified.
 
 ## Empty Top 5
 

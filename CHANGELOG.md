@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.1] - 2026-09-11
+
+Live Gate-2 readiness. One human Submit click may create exactly one PR.
+
+### Changed
+
+- `READY_FOR_HUMAN_SUBMIT` is computed, not an alias for `WAITING_USER_APPROVAL`. The Board shows it only when the exact approved commit is available, the dedicated write credential can perform the allowed operations, the approval snapshot still matches the package, and upstream still equals the validated base.
+- `ApprovedGitHubPort` performs the three allowed writes: fork if needed, exact non-force branch push, and PR create. Lost-response recovery reuses the existing fork or PR.
+- Schema 10: one durable submission row per approval snapshot.
+- Historical `MERGED` / non-queueable missions stay out of the actionable review queue.
+
+### Safety
+
+- Submit remains user-scoped, snapshot-matched, and maintainer-output gated.
+- Force-push, comments, review, and merge stay denied.
+- `FORESHADOW_WRITE_TOKEN` is required before READY. Radar `GITHUB_TOKEN` stays GET-only. OAuth stays identity-only.
+- This release does not submit ripwire #74.
+
 ## [0.6.0] - 2026-09-11
 
 Two human gates. Mission identity is `mission_id` + issue, never “latest row for this repo.”
