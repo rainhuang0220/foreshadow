@@ -288,7 +288,7 @@ def test_board_html_renders_pipeline_states_in_chinese():
     assert "观察时间线" in html
     assert "state.filter='observing'" in html
     assert "最佳切入点" in html
-    assert "批准并创建 Draft PR（本版关闭）" in html
+    assert "批准并创建 Draft PR（本版关闭）" not in html
     assert "startContribution" in html
     js = html[
         html.index("function renderPipelineStep") : html.index(

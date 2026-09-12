@@ -1234,6 +1234,10 @@ function contributionView(card) {
   const pack = (card && card.contribution) || {};
   const job = pack.job || (card && card.contribution_job) || {};
   if (!job.id && !pack.package && !job.status) return "";
+  // WAITING_USER_APPROVAL has exactly one review surface. The live, mission-bound
+  // readiness assessment is loaded by openCard; this legacy progress view must not
+  // present a competing approval affordance or stale status.
+  if (job.status === "WAITING_USER_APPROVAL" && job.mission_id) return "";
   const art = pack.artifact || {};
   const pkg = pack.package || {};
   const log = (job.log || []).map(x => {
@@ -1256,7 +1260,6 @@ function contributionView(card) {
     ${log ? `<ol class="job-log">${log}</ol>` : ""}
     ${diff ? `<details open><summary>Diff</summary><pre class="diff">${esc(String(diff).slice(0, 12000))}</pre></details>` : ""}
     <p class="meta">${esc(pkg.risk || art.risk || "远程 GitHub 写入仍关闭。")} · remote writes: 0 · ${esc(pkg.remote_status || job.remote_status || "WAITING_USER_APPROVAL")}</p>
-    <button type="button" disabled>批准并创建 Draft PR（本版关闭）</button>
   </section>`;
 }
 function timelineView(events) {
@@ -1773,6 +1776,7 @@ function contributionJobsView() {
 function jobOnlyDrawer() {
   if (!state.openJob) return "";
   const job = state.openJob;
+  if (job.status === "WAITING_USER_APPROVAL" && job.mission_id) return "";
   const card = { full_name: job.full_name, contribution: job.payload || { job }, contribution_job: job };
   return `<div class="drawer-bg on" onclick="state.openJob=null;render()"></div>
   <aside class="drawer on" role="dialog" aria-modal="true" aria-label="贡献结果">
@@ -1784,8 +1788,13 @@ function jobOnlyDrawer() {
 async function openContributionJob(id) {
   try {
     const data = await api("/api/contribution?id=" + id);
-    state.openJob = Object.assign({}, data.job || {}, { payload: data });
     applyContribution(data);
+    if (data.job && data.job.status === "WAITING_USER_APPROVAL" && data.job.mission_id) {
+      state.openJob = null;
+      openCard(data.job.full_name, data.job.mission_id);
+      return;
+    }
+    state.openJob = Object.assign({}, data.job || {}, { payload: data });
     render();
   } catch (e) { state.actionError = e.message || String(e); render(); }
 }
@@ -1816,7 +1825,13 @@ function startContribPoll(id) {
       const data = await api("/api/contribution?id=" + id);
       applyContribution(data);
       const st = data.job && data.job.status;
-      if (st === "WAITING_USER_APPROVAL" || st === "failed" || st === "refused_remote") stopContribPoll();
+      if (st === "WAITING_USER_APPROVAL" && data.job.mission_id) {
+        stopContribPoll();
+        state.openJob = null;
+        openCard(data.job.full_name, data.job.mission_id);
+        return;
+      }
+      if (st === "failed" || st === "refused_remote") stopContribPoll();
       render();
     } catch {}
   }, 1500);

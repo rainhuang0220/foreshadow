@@ -165,8 +165,8 @@ def test_explosion_is_not_aliased_as_potential():
     assert view["detail"]["p0"]["explosion"] == 80
 
 
-def test_disabled_draft_pr_string_still_in_app_html():
-    assert "批准并创建 Draft PR（本版关闭）" in APP_HTML
+def test_obsolete_disabled_draft_pr_action_is_absent():
+    assert "批准并创建 Draft PR（本版关闭）" not in APP_HTML
 
 
 def test_board_shows_data_as_of_not_process_start_date():

@@ -129,6 +129,16 @@ def test_review_ui_distinguishes_refresh_from_intentional_editing():
     assert 'r.display_status === "NEEDS_REFRESH" ? "refreshContribution" : "continueContribution"' in APP_HTML
 
 
+def test_waiting_contribution_job_routes_to_authoritative_live_review():
+    from foreshadow.board.webapp import APP_HTML
+
+    assert 'data.job.status === "WAITING_USER_APPROVAL" && data.job.mission_id' in APP_HTML
+    assert "state.openJob = null" in APP_HTML
+    assert "openCard(data.job.full_name, data.job.mission_id)" in APP_HTML
+    assert 'r.display_status || "SUBMISSION_CHECK_REQUIRED"' in APP_HTML
+    assert 'onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>' in APP_HTML
+
+
 def test_approval_snapshot_binds_package_revision():
     from foreshadow.contribution.approval import compute_digest, matches_package
 
