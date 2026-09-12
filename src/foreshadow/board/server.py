@@ -1022,11 +1022,11 @@ class BoardHandler(BaseHTTPRequestHandler):
                 conn.close()
             self._send(*_json_bytes(out))
             return
-        if path == "/api/contribution/continue":
+        if path in {"/api/contribution/continue", "/api/contribution/refresh"}:
             user = self._require_operator()
             if user is None:
                 return
-            from foreshadow.contribution.board_api import continue_local
+            from foreshadow.contribution.board_api import continue_local, refresh_local
 
             try:
                 mid = _mission_id(data)
@@ -1035,7 +1035,8 @@ class BoardHandler(BaseHTTPRequestHandler):
                 return
             conn = self.state.db()
             try:
-                out = continue_local(conn, int(user["id"]), mid)
+                action = refresh_local if path.endswith("/refresh") else continue_local
+                out = action(conn, int(user["id"]), mid)
             finally:
                 conn.close()
             self._send(*_json_bytes(out))

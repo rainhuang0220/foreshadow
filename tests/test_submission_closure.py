@@ -122,6 +122,26 @@ def test_review_ui_uses_computed_readiness_and_disables_submit():
     assert 'status ${esc(r.display_status || "SUBMISSION_CHECK_REQUIRED")}' in APP_HTML
 
 
+def test_review_ui_distinguishes_refresh_from_intentional_editing():
+    from foreshadow.board.webapp import APP_HTML
+
+    assert 'r.display_status === "NEEDS_REFRESH" ? "刷新并重新验证" : "继续修改"' in APP_HTML
+    assert 'r.display_status === "NEEDS_REFRESH" ? "refreshContribution" : "continueContribution"' in APP_HTML
+
+
+def test_approval_snapshot_binds_package_revision():
+    from foreshadow.contribution.approval import compute_digest, matches_package
+
+    fields = {**_fields(), "package_revision": 19}
+    snapshot = {
+        **fields,
+        "status": "current",
+        "approval_digest": compute_digest(fields),
+    }
+    assert matches_package(snapshot, fields)
+    assert not matches_package(snapshot, {**fields, "package_revision": 20})
+
+
 def test_one_submission_record_per_approval_snapshot(tmp_home):
     from foreshadow.auth import ensure_local_user
     from foreshadow.db import connect, migrate

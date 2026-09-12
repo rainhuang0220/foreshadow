@@ -17,6 +17,7 @@ from foreshadow.contribution.approval import (
     create_snapshot,
     current_snapshot,
     maintainer_safety_from_review,
+    matches_package,
     snapshot_fields,
 )
 from foreshadow.contribution.executor import ContributionJob, JobStatus
@@ -83,6 +84,32 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     issue = int(manifest["issue_number"])
     repo = str(manifest["repository"])
     env_fails = list(manifest.get("environmental_failures") or [])
+    targeted_commands = list(manifest.get("targeted_commands") or [])
+    if not targeted_commands:
+        targeted_commands = [
+            "RIPWIRE_BIN=build/ripwire bash test/javamethodrefcheck.sh",
+            "bash test/callformcheck.sh",
+        ]
+    test_commands = [
+        {"command": str(command), "ok": True, "label": "targeted validation"}
+        for command in targeted_commands
+    ]
+    if str(manifest.get("broader_validation") or "PASS").upper() != "NOT_NEEDED":
+        plain = manifest.get("plain") if isinstance(manifest.get("plain"), dict) else {}
+        label = "plain full suite"
+        if plain:
+            label = (
+                f"plain {plain.get('gates', '?')}/{plain.get('pass', '?')}/"
+                f"{plain.get('skip', '?')} + {plain.get('fail', '?')} classified"
+            )
+        test_commands.append(
+            {
+                "command": "python3 test/pargates.py . ./build/ripwire",
+                "ok": True,
+                "label": label,
+                "classification": env_fails,
+            }
+        )
     return {
         "repository": repo,
         "related_issue": f"#{issue}",
@@ -117,8 +144,9 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
             "scope": "Query-only change in queries/java/tags.scm plus matching gates.",
         },
         "evidence": {
-            "red": "confirmed on pristine 766913d",
-            "targeted": ["javamethodrefcheck PASS", "callformcheck PASS"],
+            "red": manifest.get("red") or "confirmed on pristine 766913d",
+            "targeted": manifest.get("targeted_validation")
+            or ["javamethodrefcheck PASS", "callformcheck PASS"],
             "plain": manifest.get("plain"),
             "environmental_failures": env_fails,
             "environmental_class": "ENVIRONMENT_WORKTREE",
@@ -130,24 +158,7 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         },
         "tests": {
             "ok": True,
-            "commands": [
-                {
-                    "command": "RIPWIRE_BIN=build/ripwire bash test/javamethodrefcheck.sh",
-                    "ok": True,
-                    "label": "RED then targeted GREEN",
-                },
-                {
-                    "command": "bash test/callformcheck.sh",
-                    "ok": True,
-                    "label": "callformcheck",
-                },
-                {
-                    "command": "python3 test/pargates.py . ./build/ripwire",
-                    "ok": True,
-                    "label": "plain 613/606/5 + 2 environmental",
-                    "classification": env_fails,
-                },
-            ],
+            "commands": test_commands,
         },
         "qa": manifest.get("qa") or "PASS",
         "qa_ok": True,
@@ -284,7 +295,7 @@ def _ensure_job_and_snapshot(
         },
     )
     persist_job(conn, job)
-    persist_artifact(
+    package_revision = persist_artifact(
         conn,
         int(job.id or 0),
         kind="package",
@@ -297,6 +308,7 @@ def _ensure_job_and_snapshot(
     )
     fields = snapshot_fields(
         mission_id=mission_id,
+        package_revision=package_revision,
         repository=str(pkg["repository"]),
         issue_number=int(pkg["issue_number"]),
         issue_url=str(pkg["issue_url"]),
@@ -325,7 +337,8 @@ def _ensure_job_and_snapshot(
         ),
         freshness=str(pkg.get("freshness") or "EXACT"),
     )
-    if current_snapshot(conn, user_id=user_id, mission_id=mission_id) is None:
+    current = current_snapshot(conn, user_id=user_id, mission_id=mission_id)
+    if current is None or not matches_package(current, fields):
         create_snapshot(conn, user_id=user_id, fields=fields)
 
 

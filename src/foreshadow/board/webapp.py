@@ -976,6 +976,8 @@ function reviewWorkspace(card) {
   </li>`).join("");
   const digest = (r.approval && r.approval.approval_digest) || r.approval_digest || "";
   const patchSha = r.diff_sha256 || (r.package && r.package.diff_sha256) || "";
+  const localActionLabel = r.display_status === "NEEDS_REFRESH" ? "刷新并重新验证" : "继续修改";
+  const localActionHandler = r.display_status === "NEEDS_REFRESH" ? "refreshContribution" : "continueContribution";
   const readinessNote = r.display_status === "NEEDS_REFRESH"
     ? "上游已变化；刷新并重新验证后才能提交"
     : r.display_status === "CREDENTIAL_REQUIRED"
@@ -1001,7 +1003,7 @@ function reviewWorkspace(card) {
     </div>
     <div class="review-next">
       <button type="button" class="primary" ${r.approval_enabled?"":"disabled"} onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>
-      <button type="button" onclick="continueContribution(${esc(r.mission_id)})">继续修改</button>
+      <button type="button" onclick="${localActionHandler}(${esc(r.mission_id)})">${localActionLabel}</button>
       <button type="button" class="ghost" onclick="markEvent(${esc(r.mission_id)}, 'abandoned')">放弃</button>
     </div>
     ${state.submitConfirm ? submitConfirmView(r) : ""}
@@ -2424,6 +2426,15 @@ async function continueContribution(id) {
   state.actionError = "";
   try {
     await api("/api/contribution/continue", { method: "POST", body: JSON.stringify({ mission_id: id }) });
+    state.submitConfirm = false;
+    try { await loadBoard(); } catch {}
+  } catch (e) { state.actionError = e.message || String(e); }
+  render();
+}
+async function refreshContribution(id) {
+  state.actionError = "";
+  try {
+    await api("/api/contribution/refresh", { method: "POST", body: JSON.stringify({ mission_id: id }) });
     state.submitConfirm = false;
     try { await loadBoard(); } catch {}
   } catch (e) { state.actionError = e.message || String(e); }

@@ -24,6 +24,8 @@ from foreshadow.contribution.gates import authorize_entry, run_autonomous_local
 from foreshadow.contribution.identity import pick_active_for_repo, require_mission_id
 from foreshadow.contribution.import_store import (
     import_validated_contribution,
+    load_manifest,
+    package_from_store,
     sha256_text,
 )
 from foreshadow.contribution.jobs import persist_artifact, persist_job
@@ -447,6 +449,47 @@ def test_ripwire74_import_appears_on_board(tmp_home):
     )
     assert again["reused"] is True
     assert again["mission_id"] == mid
+
+
+def test_reimport_changed_package_mints_new_snapshot(tmp_home):
+    store = _mini_store(tmp_home)
+    conn, uid = _conn(tmp_home)
+    first = import_validated_contribution(
+        conn, user_id=uid, store=store, data_dir=tmp_home
+    )
+    old = current_snapshot(conn, user_id=uid, mission_id=first["mission_id"])
+
+    diff = (store / "package" / "clean.diff").read_text(encoding="utf-8") + "+new\n"
+    (store / "package" / "clean.diff").write_text(diff, encoding="utf-8")
+    manifest_path = store / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["diff_sha256"] = hashlib.sha256(diff.encode()).hexdigest()
+    manifest["patch_commit_sha"] = "new-patch"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    again = import_validated_contribution(
+        conn, user_id=uid, store=store, data_dir=tmp_home
+    )
+    new = current_snapshot(conn, user_id=uid, mission_id=again["mission_id"])
+    review = contribution_for_mission(conn, uid, again["mission_id"])
+    fields = fields_from_review(review, mission_id=again["mission_id"])
+
+    assert new["approval_snapshot_id"] != old["approval_snapshot_id"]
+    assert matches_package(new, fields)
+    assert new["package_revision"] == review["package_revision"]
+
+
+def test_import_package_does_not_claim_broader_suite_when_not_needed(tmp_home):
+    store = _mini_store(tmp_home)
+    manifest_path = store / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["broader_validation"] = "NOT_NEEDED"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    package = package_from_store(store, load_manifest(store))
+
+    commands = [item["command"] for item in package["tests"]["commands"]]
+    assert not any("pargates.py" in command for command in commands)
 
 
 def test_webapp_two_gate_chrome():

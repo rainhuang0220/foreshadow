@@ -26,6 +26,7 @@ def _canon(value: Any) -> str:
 
 FIELD_KEYS = (
     "mission_id",
+    "package_revision",
     "repository",
     "issue_number",
     "issue_url",
@@ -82,9 +83,10 @@ def snapshot_fields(
     qa_verdict: str,
     maintainer_output_safety: str,
     freshness: str,
+    package_revision: int | str | None = None,
     planned_remote_actions: tuple[str, ...] = ALLOWED_REMOTE_ACTIONS,
 ) -> dict[str, Any]:
-    return {
+    fields = {
         "mission_id": int(mission_id),
         "repository": repository,
         "issue_number": int(issue_number),
@@ -104,6 +106,9 @@ def snapshot_fields(
         "planned_remote_actions": list(planned_remote_actions),
         "blocked_remote_actions": list(BLOCKED_REMOTE_ACTIONS),
     }
+    if package_revision is not None:
+        fields["package_revision"] = package_revision
+    return fields
 
 
 def create_snapshot(
@@ -249,6 +254,7 @@ def fields_from_review(review: dict[str, Any], *, mission_id: int) -> dict[str, 
     diff = str(review.get("diff") or "")
     out = snapshot_fields(
         mission_id=int(mission_id),
+        package_revision=review.get("package_revision"),
         repository=str(review.get("repository") or ""),
         issue_number=int(review.get("issue_number") or 0),
         issue_url=str(review.get("issue_url") or ""),

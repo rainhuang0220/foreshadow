@@ -309,6 +309,18 @@ def continue_local(
     return {"ok": True, "status": "IMPLEMENTING", "remote_writes": 0}
 
 
+def refresh_local(
+    conn: sqlite3.Connection, user_id: int, mission_id: int
+) -> dict[str, Any]:
+    """Start the distinct local refresh/revalidation workflow; never write remotely."""
+    out = continue_local(conn, user_id, mission_id)
+    return {
+        **out,
+        "workflow": "REFRESH_AND_REVALIDATE",
+        "refresh_requested": True,
+    }
+
+
 def abandon_mission(
     conn: sqlite3.Connection, user_id: int, mission_id: int
 ) -> dict[str, Any]:
