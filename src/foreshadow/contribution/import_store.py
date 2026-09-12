@@ -135,13 +135,17 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         else None,
         "why": {
             "technical": (
-                "Java Type::method was parsed but never captured as a call site "
-                "for --uses/--callers."
+                "Java Type::method is a call site for --uses/--callers when the "
+                "receiver is proven to be an indexed type."
             ),
             "maintainer_intent": (
-                "Issue #74: method references should appear beside lambda call forms."
+                "Issue #74: Type::method should match the lambda caller set, while "
+                "expression, this, and super receivers stay unresolved."
             ),
-            "scope": "Query-only change in queries/java/tags.scm plus matching gates.",
+            "scope": (
+                "Java method_reference extraction plus resolver type/shadow gating; "
+                "constructors and expression receivers are excluded."
+            ),
         },
         "evidence": {
             "red": manifest.get("red") or "confirmed on pristine 766913d",
