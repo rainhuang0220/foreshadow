@@ -374,6 +374,7 @@ def create_for_user(
     from foreshadow.pipeline import load_score_input
 
     full_name = parse_repo_name(full_name)
+    requires_live_entry = live or source == "HUMAN_CONFIRM"
     if issue_number is None:
         open_n = conn.execute(
             """
@@ -390,10 +391,6 @@ def create_for_user(
     existing = _existing_mission_row(
         conn, user_id=user_id, full_name=full_name, issue_number=issue_number
     )
-    if existing is not None and _should_reuse_mission(existing, issue_number, live):
-        plan = load_mission_plan(conn, int(existing[0]), user_id)
-        if plan is not None:
-            return mission_from_plan(plan)
 
     row = conn.execute(
         "SELECT id FROM repos WHERE full_name=?", (full_name,)
@@ -452,7 +449,7 @@ def create_for_user(
         previous_plan = load_mission_plan(conn, int(latest_open[0]), user_id) or {}
         historical_entry = previous_plan.get("historical_entry") or historical_entry
     live_entry = None
-    if live:
+    if requires_live_entry:
         live_entry = _apply_live_entry(
             conn,
             full_name,
@@ -478,6 +475,12 @@ def create_for_user(
                     blurb = str(raw_live.get("description"))
             if live_entry.get("repo_id") is not None:
                 repo_id = int(live_entry["repo_id"])
+    if existing is not None and _should_reuse_mission(
+        existing, issue_number, requires_live_entry
+    ):
+        plan = load_mission_plan(conn, int(existing[0]), user_id)
+        if plan is not None:
+            return mission_from_plan(plan)
     mission = build_mission(
         full_name,
         feat=feat,
@@ -510,7 +513,7 @@ def create_for_user(
             if note not in mission.why_now:
                 mission.why_now.append(note)
     dest = prepare_local_dir(data_dir, full_name, user_id=user_id)
-    if latest_open and live:
+    if latest_open and requires_live_entry:
         from uuid import uuid4
 
         dest = dest.with_name(dest.name + "__mission_" + uuid4().hex[:12])

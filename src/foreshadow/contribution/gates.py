@@ -25,7 +25,6 @@ def authorize_entry(
     full_name: str,
     data_dir: Path,
     issue_number: int | None = None,
-    live: bool = False,
     contribute: bool = True,
     executor: ContributionExecutor | None = None,
 ) -> dict[str, Any]:
@@ -37,7 +36,7 @@ def authorize_entry(
         data_dir=data_dir,
         issue_number=issue_number,
         source="HUMAN_CONFIRM",
-        live=live,
+        live=True,
     )
     mid = int(mission.id or 0)
     plan0 = load_mission_plan(conn, mid, user_id) or mission.as_dict()

@@ -919,6 +919,7 @@ class BoardHandler(BaseHTTPRequestHandler):
                     data_dir=resolve_data_dir(),
                     issue_number=issue_n,
                     source="HUMAN_CONFIRM",
+                    live=True,
                 )
             except ValueError as exc:
                 self._send(*_json_bytes({"error": str(exc)}, 400))

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -380,7 +379,6 @@ def enter(
     migrate(conn)
     try:
         uid = resolve_cli_user(conn)
-        live = os.environ.get("FORESHADOW_SKIP_CLONE") != "1"
         mission = create_for_user(
             conn,
             user_id=uid,
@@ -388,7 +386,7 @@ def enter(
             data_dir=resolve_data_dir(),
             issue_number=issue,
             source="HUMAN_CONFIRM",
-            live=live,
+            live=True,
         )
         from foreshadow.mission import setup_local_environment
 

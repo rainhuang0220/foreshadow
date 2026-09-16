@@ -184,15 +184,31 @@ def test_merged_sibling_does_not_hide_waiting(tmp_home):
     assert 1551 not in issues
 
 
-def test_gate1_starts_local_automation_without_extra_approval(tmp_home):
+def test_gate1_starts_local_automation_without_extra_approval(tmp_home, monkeypatch):
     conn, uid = _conn(tmp_home)
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/toy",
+            "html_url": "https://github.com/acme/toy",
+            "issues": [
+                {
+                    "number": 9,
+                    "title": "Repair the example",
+                    "state": "open",
+                    "labels": ["good first issue"],
+                    "assignees": [],
+                }
+            ],
+            "prs": [],
+        },
+    )
     out = authorize_entry(
         conn,
         user_id=uid,
         full_name="acme/toy",
         data_dir=tmp_home,
         issue_number=9,
-        live=False,
         contribute=False,
     )
     assert out["gate"] == 1
@@ -206,6 +222,56 @@ def test_gate1_starts_local_automation_without_extra_approval(tmp_home):
     ]
     assert "draft_approved" not in events
     assert "user_submitted" not in events
+
+
+@pytest.mark.parametrize(
+    "issue",
+    [
+        [],
+        [
+            {
+                "number": 9,
+                "title": "Already closed",
+                "state": "closed",
+                "labels": ["good first issue"],
+                "assignees": [],
+            }
+        ],
+        [
+            {
+                "number": 9,
+                "title": "Already assigned",
+                "state": "open",
+                "labels": ["good first issue"],
+                "assignees": [{"login": "maintainer"}],
+            }
+        ],
+    ],
+    ids=["missing", "closed", "assigned"],
+)
+def test_gate1_rejects_issue_that_is_no_longer_live(tmp_home, monkeypatch, issue):
+    """The Gate-1 helper cannot create local work from a stale selected issue."""
+    conn, uid = _conn(tmp_home)
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/toy",
+            "html_url": "https://github.com/acme/toy",
+            "issues": issue,
+            "prs": [],
+        },
+    )
+
+    with pytest.raises(ValueError, match="confirmed issue"):
+        authorize_entry(
+            conn,
+            user_id=uid,
+            full_name="acme/toy",
+            data_dir=tmp_home,
+            issue_number=9,
+            contribute=False,
+        )
+    assert conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 0
 
 
 def test_local_phases_do_not_require_approval(tmp_home):

@@ -523,6 +523,61 @@ def test_failed_live_confirmation_cannot_create_stale_mission(tmp_home, monkeypa
     assert conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 0
 
 
+def test_human_confirmation_recertifies_before_reusing_same_issue(tmp_home, monkeypatch):
+    """A stale cached mission must not bypass a new human Gate-1 confirmation."""
+    import pytest
+
+    from foreshadow.auth import ensure_local_user
+    from foreshadow.mission import create_for_user
+
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    uid = ensure_local_user(conn)
+    existing = create_for_user(
+        conn,
+        user_id=uid,
+        full_name="vshulcz/deja-vu",
+        data_dir=tmp_home,
+        issue_number=1828,
+    )
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("live GET unavailable")
+
+    monkeypatch.setattr("foreshadow.github.live_entry.fetch_live_payload", unavailable)
+    with pytest.raises(RuntimeError, match="live GET unavailable"):
+        create_for_user(
+            conn,
+            user_id=uid,
+            full_name="vshulcz/deja-vu",
+            data_dir=tmp_home,
+            issue_number=1828,
+            source="HUMAN_CONFIRM",
+            live=False,
+        )
+    assert conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 1
+    assert existing.id is not None
+
+
+def test_cli_enter_recetifies_when_clone_is_skipped(tmp_home, monkeypatch):
+    """Clone suppression controls local setup, never the Gate-1 GitHub GET."""
+    from typer.testing import CliRunner
+
+    from foreshadow.cli import app
+
+    monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_a, **_k: _live_payload(),
+    )
+    result = CliRunner().invoke(app, ["enter", "vshulcz/deja-vu", "--issue", "99999"])
+
+    assert result.exit_code != 0
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    assert conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 0
+
+
 def test_entry_revision_follows_task_and_package():
     from foreshadow.contribution.executor import ContributionJob, PatchArtifact
     from foreshadow.contribution.package import build_package

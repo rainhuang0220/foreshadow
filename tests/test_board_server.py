@@ -461,6 +461,15 @@ def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
         raise AssertionError("POST /api/mission must not invoke clone_public_repo")
 
     monkeypatch.setattr("foreshadow.mission.clone_public_repo", explode)
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/x",
+            "html_url": "https://github.com/acme/x",
+            "issues": [],
+            "prs": [],
+        },
+    )
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:
         a = httpx.Client()
@@ -483,6 +492,48 @@ def test_post_api_mission_does_not_clone(tmp_home, frozen_clock, monkeypatch):
         assert (dest / "FORESHADOW.md").is_file()
         assert not (dest / "repo").exists()
         assert not (dest / "repo" / ".git").exists()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_post_api_mission_rejects_unavailable_live_issue(
+    tmp_home, frozen_clock, monkeypatch
+):
+    """Board Gate 1 must reject a requested issue absent from the live payload."""
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/x",
+            "html_url": "https://github.com/acme/x",
+            "issues": [],
+            "prs": [],
+        },
+    )
+    httpd, base = _run_server(tmp_home, frozen_clock)
+    try:
+        client = httpx.Client()
+        registered = client.post(
+            f"{base}/api/register",
+            json={
+                "username": "livecheck",
+                "email": "livecheck@example.com",
+                "password": "password1",
+            },
+        )
+        assert registered.status_code == 200
+        response = client.post(
+            f"{base}/api/mission",
+            json={"full_name": "acme/x", "issue_number": 99},
+        )
+        assert response.status_code == 400
+        conn = connect(tmp_home / "foreshadow.sqlite3")
+        try:
+            assert (
+                conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 0
+            )
+        finally:
+            conn.close()
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -528,6 +579,15 @@ def test_mission_api_blocks_remote_and_records_event(
     tmp_home, frozen_clock, monkeypatch
 ):
     monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/x",
+            "html_url": "https://github.com/acme/x",
+            "issues": [],
+            "prs": [],
+        },
+    )
     httpd, base = _run_server(tmp_home, frozen_clock)
     try:
         a = httpx.Client()

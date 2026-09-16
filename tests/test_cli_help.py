@@ -3,8 +3,21 @@ from typer.testing import CliRunner
 from foreshadow.cli import app
 
 
+def _live_payload():
+    return {
+        "full_name": "acme/toy",
+        "html_url": "https://github.com/acme/toy",
+        "issues": [],
+        "prs": [],
+    }
+
+
 def test_cli_outcome_records_without_github(tmp_home, monkeypatch):
     monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: _live_payload(),
+    )
     runner = CliRunner()
     entered = runner.invoke(app, ["enter", "acme/toy"])
     assert entered.exit_code == 0
@@ -22,6 +35,10 @@ def test_cli_outcome_records_without_github(tmp_home, monkeypatch):
 
 def test_cli_outcome_rejects_system_event(tmp_home, monkeypatch):
     monkeypatch.setenv("FORESHADOW_SKIP_CLONE", "1")
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: _live_payload(),
+    )
     runner = CliRunner()
     entered = runner.invoke(app, ["enter", "acme/toy"])
     assert entered.exit_code == 0

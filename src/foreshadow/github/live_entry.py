@@ -44,6 +44,8 @@ def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
     for iss in issues:
         number = iss.get("number")
         title = str(iss.get("title") or "").strip()
+        state = str(iss.get("state") or "OPEN").upper()
+        is_open = state not in {"CLOSED", "MERGED"}
         labels = {
             str(x).lower()
             if not isinstance(x, dict)
@@ -51,9 +53,9 @@ def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
             for x in (iss.get("labels") or [])
         }
         line = f"#{number} {title}".strip() if number is not None else title
-        if line:
+        if line and is_open:
             open_titles.append(line)
-        if labels & {
+        if is_open and labels & {
             "help wanted",
             "help-wanted",
             "good first issue",
@@ -64,7 +66,7 @@ def features_from_live(payload: dict[str, Any]) -> dict[str, Any]:
             assignees = iss.get("assignees") or []
             if not assignees:
                 unassigned_help += 1
-        if labels & {"bug", "crash", "defect", "regression"}:
+        if is_open and labels & {"bug", "crash", "defect", "regression"}:
             bug_n += 1
     contributing = str(payload.get("contributing") or "")
     readme = str(payload.get("readme") or payload.get("readme_excerpt") or "")

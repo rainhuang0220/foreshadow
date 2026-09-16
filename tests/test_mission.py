@@ -1772,11 +1772,15 @@ def test_entry_mission_cannot_post_to_github(tmp_home, monkeypatch):
     assert skipped["status"] == "skipped"
     assert skipped["path"] is None
 
-    class BoomClient:
-        def __init__(self, *_a, **_k):
-            raise AssertionError("GitHubClient must not be used when clone is skipped")
-
-    monkeypatch.setattr("foreshadow.github.client.GitHubClient", BoomClient)
+    monkeypatch.setattr(
+        "foreshadow.github.live_entry.fetch_live_payload",
+        lambda *_args, **_kwargs: {
+            "full_name": "acme/toy",
+            "html_url": "https://github.com/acme/toy",
+            "issues": [],
+            "prs": [],
+        },
+    )
     entered = CliRunner().invoke(app, ["enter", "acme/toy"])
     assert entered.exit_code == 0, entered.output
     dests = list(tmp_home.glob("work/u*/acme__toy/ISSUE_DRAFT.md"))
