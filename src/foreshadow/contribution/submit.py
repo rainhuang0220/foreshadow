@@ -228,6 +228,15 @@ def _submit_approved_unlocked(
     snapshot = load_snapshot(conn, snapshot_id, user_id=user_id)
     from foreshadow.mission import load_mission_plan
 
+    # Check the immutable Gate-2 grant before treating a prior result as
+    # resumable. A duplicate click may reuse a valid submission, but an
+    # invalidated or changed approval must never authorize that response.
+    if not matches_package(snapshot, current_fields):
+        return {
+            "ok": False,
+            "status": "APPROVAL_STALE",
+            "remote_writes": 0,
+        }
     plan = load_mission_plan(conn, int(snapshot["mission_id"]), user_id) or {}
     mission_status = str(plan.get("status") or "")
     if mission_status == "SUBMITTED" and plan.get("bound_pr"):
@@ -245,12 +254,6 @@ def _submit_approved_unlocked(
             "status": "NOT_WAITING_APPROVAL",
             "remote_writes": 0,
             "error": f"Gate 2 only from WAITING_USER_APPROVAL, not {mission_status}",
-        }
-    if not matches_package(snapshot, current_fields):
-        return {
-            "ok": False,
-            "status": "APPROVAL_STALE",
-            "remote_writes": 0,
         }
     if (
         str(
