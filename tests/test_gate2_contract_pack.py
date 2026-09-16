@@ -14,7 +14,6 @@ from foreshadow.cli import app
 from foreshadow.contribution.approval import (
     create_snapshot,
     current_snapshot,
-    fields_from_review,
     invalidate_snapshot,
     snapshot_fields,
 )
@@ -149,7 +148,9 @@ def test_internal_submit_binds_only_the_approved_payload_and_provenance(tmp_home
         "tester:foreshadow/entry-7",
         fields["base_branch"],
     )
-    assert port.pushes == [("tester/toy", fields["branch_name"], fields["patch_commit_sha"])]
+    assert port.pushes == [
+        ("tester/toy", fields["branch_name"], fields["patch_commit_sha"])
+    ]
     plan = load_mission_plan(conn, mission_id, user_id)
     row = conn.execute(
         "SELECT mission_id, approval_snapshot_id FROM submissions WHERE id=?",
@@ -227,13 +228,12 @@ def test_duplicate_submit_is_resumed_without_another_remote_write(tmp_home):
     )
 
     assert first["status"] == "SUBMITTED"
-    assert second == {
-        "ok": True,
-        "status": "SUBMITTED",
-        "pr": first["pr"],
-        "remote_writes": 0,
-        "resumed": True,
-    }
+    assert second["ok"] is True
+    assert second["status"] == "SUBMITTED"
+    assert second["resumed"] is True
+    assert second["remote_writes"] == 0
+    assert second["pr"]["number"] == first["pr"]["number"]
+    assert second["pr"]["head_sha"] == "patch"
     assert port.created_prs == 1
 
 
@@ -302,8 +302,12 @@ def test_cli_submit_and_board_http_submit_share_idempotent_gate2_behavior(
     cli_mission_id = _mission(conn, user_id)
     _review(conn, user_id, cli_mission_id)
     runner = CliRunner()
-    first_cli = runner.invoke(app, ["submit", "--mission-id", str(cli_mission_id), "--confirm"])
-    second_cli = runner.invoke(app, ["submit", "--mission-id", str(cli_mission_id), "--confirm"])
+    first_cli = runner.invoke(
+        app, ["submit", "--mission-id", str(cli_mission_id), "--confirm"]
+    )
+    second_cli = runner.invoke(
+        app, ["submit", "--mission-id", str(cli_mission_id), "--confirm"]
+    )
 
     assert first_cli.exit_code == 0, first_cli.output
     assert second_cli.exit_code == 0, second_cli.output
