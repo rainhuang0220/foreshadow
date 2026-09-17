@@ -169,6 +169,7 @@ def star_delta(
     ``days`` is accepted for call-site compatibility and is not a window.
     The returned ``days`` value is the calendar span between the first and
     last dated observations, or None when a comparison is pending.
+    ``window_complete`` is always False: this is not Official ``v7``.
     """
     _ = days
     span = observation_span(series, key="stars")
@@ -196,7 +197,7 @@ def star_delta(
         "observed_days": n,
         "first_date": span["first_date"],
         "last_date": span["last_date"],
-        "window_complete": True,
+        "window_complete": False,
     }
 
 

@@ -115,7 +115,25 @@ def test_three_day_span_is_not_labeled_seven_days(tmp_home):
     delta = star_delta(load_series(conn, rid), days=7)
     assert delta["days"] == 2
     assert delta["days"] != 7
-    assert delta["window_complete"] is True
+    assert delta["window_complete"] is False
+
+
+def test_sparse_calendar_span_does_not_complete_a_seven_day_window(tmp_home):
+    conn = connect(tmp_home / "foreshadow.sqlite3")
+    migrate(conn)
+    rid = seed_repo(conn, "N1", "acme/x")
+    _snap(conn, rid, "2026-09-01", 10)
+    _snap(conn, rid, "2026-09-15", 50)
+    conn.commit()
+
+    delta = star_delta(load_series(conn, rid), days=7)
+    assert delta["pending"] is False
+    assert delta["delta"] == 40
+    assert delta["days"] == 14
+    assert delta["first_date"] == "2026-09-01"
+    assert delta["last_date"] == "2026-09-15"
+    assert delta["observed_days"] == 2
+    assert delta["window_complete"] is False
 
 
 def test_observation_reads_do_not_mutate_database(tmp_home):

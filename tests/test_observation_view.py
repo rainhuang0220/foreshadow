@@ -78,7 +78,7 @@ def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
     assert delta["days"] == 2
     assert delta["first_date"] == "2026-09-01"
     assert delta["last_date"] == "2026-09-03"
-    assert delta["window_complete"] is True
+    assert delta["window_complete"] is False
     events = timeline_for(conn, rid, today="2026-09-03")
     kinds = [e["kind"] for e in events]
     assert "FIRST_SEEN" in kinds

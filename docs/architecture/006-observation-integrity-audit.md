@@ -41,7 +41,7 @@ Those lies would poison any later temporal projection. Official `v7` scoring is 
 
 ## Subagent Findings
 
-Five parallel investigations (schema, pipeline, board/read-path, tests, adversarial maintainer) plus a coordinator pass on `main`.
+Five parallel investigations plus a coordinator pass. All five landed on **Option B, no migration**.
 
 ### A — Database / schema
 
@@ -54,51 +54,44 @@ Five parallel investigations (schema, pipeline, board/read-path, tests, adversar
 | `observations` | System panel membership, not evidence | `added_on`, `last_observed_on`, `expires_on` (UTC dates) |
 | `observation_events` | Persisted first-seen / deltas | `occurred_on` (UTC date) |
 | `scores` / `intel_scores` | Derived interpretations | `scored_at`, `as_of_date` |
-| `raw_payloads` | Fetch provenance | `fetched_at`, `etag`, `cache_key` |
-| `candidates` | Per-run seating | `discovery_source`, `hydrate_status` |
+| `raw_payloads` | Schema only — never written | `fetched_at`, `etag`, `cache_key` |
+| `candidates` | Per-run seating; deleted on same-day rerun | `discovery_source`, `hydrate_status` |
 
-There is no `observed_at` column. `snapshots.captured_at` already is that timestamp. `occurred_on` is the correct grain for daily events. A new timestamp column would duplicate `captured_at`.
-
-Schema migration is **not required**.
+There is no `observed_at` column. `snapshots.captured_at` already is that timestamp. A new column would duplicate it. Schema migration is **not required**.
 
 ### B — Pipeline
 
-- GraphQL cache is day-keyed (`HttpCache.get_graphql`). REST ETag bodies are process-lifetime; production is one UTC day per `foreshadow run`. `FakeGitHub.begin_day` resets the 7-day soak cache.
-- Same-day reruns upsert `(repo_id, snapshot_date)` and refresh `captured_at`. Last write wins. Intended.
-- `captured_at` is `clock.now()` at discovery start, shared by every snapshot in that run. That is batch provenance, not per-repo fetch time. Acceptable for a daily radar.
-- GitHub `createdAt` / `pushedAt` / `committedDate` are stored (`repos.created_at`, `snapshots.last_pushed_at`, `last_commit_at`).
-- `observation_events` compare consecutive snapshots and skip NULL→value so missing counts are not 0.
-- Official `compute_windows` uses dated `t-N` lookup with `window_slack_days`. That is the real 7-day window. Do not conflate it with Board first→last deltas.
-- Stale-data risk that remains acceptable: REST ETag cache is not day-keyed inside one long-lived process. Observation reads do not call GitHub.
+- GraphQL cache is day-keyed. REST ETag bodies are process-lifetime; a reused client past UTC midnight could 304 yesterday’s REST body. Daily `foreshadow run` creates a new client. **Left out of PR3.**
+- Same-day reruns upsert `(repo_id, snapshot_date)` and refresh `captured_at`. Last write wins.
+- `captured_at` is `clock.now()` at discovery start, shared by every snapshot in that run.
+- `observation_events` compare the latest prior snapshot by date, not a synthetic t−7 point, and skip NULL→value.
+- Official `compute_windows` uses dated `t-N` lookup with slack. Do not unify that with Board first→last deltas.
+- `first_seen` has three meanings (pipeline `repos.first_seen_at`, first snapshot event, GitHub `created_at`). Documented, not unified.
+- `commits_30d` is one REST page, not a true 30-day census. **Out of PR3** (v2 Preview activity, not observation timestamps).
 
 ### C — Board / read path
 
-- `/api/board` → `enrich_board_payload` (in-memory only).
-- `/api/repo` → `repo_detail` (SELECT only).
+- `/api/board` → `enrich_board_payload` mutates the JSON payload only.
+- `/api/repo` → `repo_detail` is SELECT only.
 - `build_board_from_db` raises if the `observations` row count changes.
-- `observation_view` has no GitHub imports and no `INSERT`/`UPDATE`/`DELETE`.
-- Temporal evidence can be displayed by projecting `snapshots` + `observation_events` at read time.
-- Missing from the old payload: `observed_at`, actual `first_date`/`last_date`/`days`. The chip label `7日增长` assumed a window the read path did not compute.
+- Observation views have no GitHub imports and no write SQL. GitHub writes are not reachable from these reads.
+- Authenticated `/api/board` may still write **other** tables via `reconcile_user_safe`. GET `/api/entry` may persist stale `entry_analyses`. Neither touches `observations`.
+- Residual: `load_series` is not truncated to `display_as_of_date`. If today’s snapshots exist while the Board shows yesterday’s Official run, the sparkline can include a later day. **Left out of PR3** — that is Board as-of plumbing, not the 7-day labeling bug.
+- Static `--export-html` still skips `enrich_board_payload`. Accept.
 
 ### D — Tests
 
 Existing coverage is strong for membership, TTL, NULL≠0 events, no interpolated sparklines, Official `v7`, Board as-of, and GET-only GitHub.
 
-Gaps versus PR3:
-
-- no `observed_at` preservation test
-- no “actual date range, not assumed 7 days” contract
-- no observation-view mutation / GitHub-write contract
-
-Gate-1 / Gate-2 / submission tests stay as regression; PR2’s `tests/test_gate2_contract_pack.py` is not on `main`.
+PR3 adds `tests/test_observation_integrity.py` for `observed_at`, actual date ranges, sparse spans, read-only views, and no GitHub write surface. Do not pull draft PR #16’s Gate-2 contract pack onto this branch.
 
 ### E — Adversarial maintainer
 
-Overbuild traps: `observed_at` column, belief/lifecycle tables, `ObservationContract` types, changing Official `v7`, new intelligence storage.
+The title “foundation” is a trap. The data model already shipped. The real bug was naming: `star_delta(days=7)` ignored `days`, and the Board said `7日增长`.
 
-`star_delta(days=7)` was not “just copy.” The JSON field `days` and the Board chip were a false contract.
+Forbidden in this PR (and not done): `ObservationContract` / `EvidenceProjection`, `observed_at` column, new event tables, unifying Board growth with Official `v7`, interpolating missing days, backfill jobs, repo-wide ruff format of unrelated Gate-2 files.
 
-Smallest honest fix: project `captured_at` as `observed_at`, report the real calendar span, stop labeling first→last as 7-day. No migration.
+`window_complete` must not mean “seven snapshot rows exist” or “a 7-day scoring window is satisfied.” This PR keeps the field and sets it **False**.
 
 ## Current Observation Model
 
@@ -139,6 +132,10 @@ Membership (`observations`) answers “are we still watching?” not “what did
 | Timeline prefers stored events, else derives | Accept | Same facts |
 | Official copy still says “近 7 日” for `windows.v7` | Not a bug | Dated 7-day lookup |
 | Long-lived Board process after UTC midnight | Already fixed | v0.4.1 as-of |
+| `load_series` not clipped to `display_as_of_date` | Residual | Later Board as-of work |
+| `first_seen` name collision (3 clocks) | Residual | Document only |
+| GET `/api/entry` may write `entry_analyses` | Residual | Not the observation panel |
+| Repo-wide `ruff format --check` | Pre-existing | Red on `main` since two-gate |
 
 ## PR3 Decision
 
@@ -162,7 +159,7 @@ Read-time temporal projection
 In this PR:
 
 - `load_series` keeps `captured_at` and exposes it as `observed_at`. Order is `snapshot_date`, `captured_at`, `id`.
-- `observation_span` / `star_delta` report the real calendar span. The `days=` argument is ignored (call-site compatibility only).
+- `observation_span` / `star_delta` report the real calendar span. The `days=` argument is ignored. `window_complete` stays False (not Official `v7`).
 - `interpret_growth` no longer says a 7-day trend is pending when the series is simply too short to compare.
 - Board `factCells` labels first→last as `观察增长` / `N日变化`, not `7日增长`.
 - `card_layers.fact` includes `observed_at`, `first_date`, `last_date`, `calendar_days`.
@@ -175,6 +172,9 @@ Out of this PR (intentionally):
 - New tables, columns, entities, lifecycle, predictions
 - GitHub write behavior / Gate-1 / Gate-2
 - Interpolated charts
+- Board as-of series clipping
+- REST ETag day-scoping
+- Reformatting unrelated files to green a pre-existing CI format check
 
 ## Non-goals
 
