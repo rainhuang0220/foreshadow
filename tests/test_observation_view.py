@@ -46,7 +46,10 @@ def test_one_snapshot_does_not_fake_a_seven_day_curve(tmp_home):
     delta = star_delta(series, days=7)
     assert delta["pending"] is True
     assert delta["delta"] is None
-    assert interpret_growth(series) == "增长历史还不够，7 日趋势尚未形成。"
+    assert interpret_growth(series) == "增长历史还不够，还不能比较两次观察。"
+    assert delta["calendar_days"] is None
+    assert delta["observed_points"] == 1
+    assert delta["window_complete"] is False
 
 
 def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
@@ -75,6 +78,12 @@ def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
     delta = star_delta(series, days=7)
     assert delta["pending"] is False
     assert delta["delta"] == 47
+    assert delta["calendar_days"] == 2
+    assert delta["observed_points"] == 3
+    assert delta["days"] == 2
+    assert delta["first_date"] == "2026-09-01"
+    assert delta["last_date"] == "2026-09-03"
+    assert delta["window_complete"] is False
     events = timeline_for(conn, rid, today="2026-09-03")
     kinds = [e["kind"] for e in events]
     assert "FIRST_SEEN" in kinds
@@ -83,7 +92,10 @@ def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
     assert [e["payload"]["delta"] for e in star_events] == [16, 31]
     issue_events = [e for e in events if e["kind"] == "ISSUE_DELTA"]
     assert issue_events and issue_events[0]["payload"]["delta"] == 2
-    assert interpret_growth(series).startswith("近")
+    growth = interpret_growth(series)
+    assert growth.startswith("近")
+    assert "7 日" not in growth
+    assert "7日增长" not in growth
     assert decision_for(series, official=False, observing=True) == "继续观察"
 
 

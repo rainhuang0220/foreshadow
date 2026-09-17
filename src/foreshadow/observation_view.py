@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date
 from typing import Any
 
 SPARK_CHARS = "▁▂▃▄▅▆▇█"
@@ -58,15 +59,17 @@ def load_series(conn: sqlite3.Connection, repo_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT snapshot_date, stars, open_issues, open_prs, forks,
-               contributor_count, last_pushed_at
+               contributor_count, last_pushed_at, captured_at, id
         FROM snapshots
         WHERE repo_id=?
-        ORDER BY snapshot_date ASC
+        ORDER BY snapshot_date ASC, captured_at ASC, id ASC
         """,
         (int(repo_id),),
     ).fetchall()
     out: list[dict[str, Any]] = []
     for row in rows:
+        captured = row[7]
+        observed = str(captured) if captured else str(row[0])
         out.append(
             {
                 "date": str(row[0]),
@@ -78,6 +81,8 @@ def load_series(conn: sqlite3.Connection, repo_id: int) -> list[dict[str, Any]]:
                 "forks": _int(row[4]),
                 "contributors": _int(row[5]),
                 "last_pushed_at": row[6],
+                "captured_at": captured,
+                "observed_at": observed,
             }
         )
     return out
@@ -122,46 +127,89 @@ def format_delta_zh(key: str, pair: dict[str, Any]) -> str:
     return f"{label}：{before} → {after}"
 
 
-def star_delta(series: list[dict[str, Any]], *, days: int = 7) -> dict[str, Any]:
-    stars = [(p["date"], p["stars"]) for p in series if p.get("stars") is not None]
-    if len(stars) < 2:
+def observation_span(
+    series: list[dict[str, Any]], *, key: str = "stars"
+) -> dict[str, Any]:
+    """Actual first→last dates for ``key``. Not an official window."""
+    points: list[tuple[str, int]] = []
+    for point in series:
+        raw = _point_value(point, key)
+        if raw is None:
+            continue
+        day = str(point.get("date") or "")[:10]
+        if not day:
+            continue
+        points.append((day, int(raw)))
+    if not points:
         return {
-            "days": days,
-            "delta": None,
+            "first_date": None,
+            "last_date": None,
+            "calendar_days": None,
+            "observed_points": 0,
             "from": None,
             "to": None,
-            "pending": True,
-            "observed_days": len(stars),
         }
-    last_day, last_val = stars[-1]
-    first_day, first_val = stars[0]
+    first_day, first_val = points[0]
+    last_day, last_val = points[-1]
+    comparable = len(points) >= 2
     return {
-        "days": days,
-        "delta": int(last_val) - int(first_val),
-        "from": first_val,
-        "to": last_val,
-        "pending": False,
-        "observed_days": len(stars),
         "first_date": first_day,
         "last_date": last_day,
-        "window_complete": len(stars) >= days,
+        "calendar_days": _calendar_days(first_day, last_day) if comparable else None,
+        "observed_points": len(points),
+        "from": first_val,
+        "to": last_val,
+    }
+
+
+def star_delta(
+    series: list[dict[str, Any]], *, days: int | None = None
+) -> dict[str, Any]:
+    """First→last observed stars over the actual date range.
+
+    ``days`` is accepted for call-site compatibility and is not a window.
+    Contract fields are ``calendar_days`` and ``observed_points``.
+    ``days`` / ``observed_days`` are aliases of those values.
+    ``window_complete`` is always False: this is not Official ``v7``.
+    """
+    _ = days
+    span = observation_span(series, key="stars")
+    n = int(span["observed_points"] or 0)
+    first_val = span["from"]
+    last_val = span["to"]
+    calendar_days = span["calendar_days"]
+    pending = n < 2 or first_val is None or last_val is None
+    return {
+        "calendar_days": None if pending else calendar_days,
+        "observed_points": n,
+        "days": None if pending else calendar_days,
+        "delta": None if pending else int(last_val) - int(first_val),
+        "from": first_val,
+        "to": last_val,
+        "pending": pending,
+        "observed_days": n,
+        "first_date": span["first_date"],
+        "last_date": span["last_date"],
+        "window_complete": False,
     }
 
 
 def interpret_growth(series: list[dict[str, Any]]) -> str:
-    delta = star_delta(series, days=7)
+    delta = star_delta(series)
     if delta["pending"]:
-        n = delta["observed_days"]
+        n = delta["observed_points"]
         if n <= 0:
             return "还没有本地快照，不能谈增长。"
-        return "增长历史还不够，7 日趋势尚未形成。"
+        return "增长历史还不够，还不能比较两次观察。"
     d = int(delta["delta"] or 0)
-    n = int(delta["observed_days"])
+    n = int(delta["observed_points"])
+    span = delta.get("calendar_days")
+    span_note = f"，日历跨度 {span} 日" if span is not None else ""
     if d > 0:
-        return f"近 {n} 个观察日 Stars {d:+d}（未补齐缺失日期，不是 7 日插值）。"
+        return f"近 {n} 个观察点 Stars {d:+d}（未补齐缺失日期{span_note}，不做插值）。"
     if d < 0:
-        return f"近 {n} 个观察日 Stars {d:+d}。"
-    return f"近 {n} 个观察日 Stars 没有净增长。"
+        return f"近 {n} 个观察点 Stars {d:+d}{span_note}。"
+    return f"近 {n} 个观察点 Stars 没有净增长{span_note}。"
 
 
 def decision_for(
@@ -270,6 +318,11 @@ def card_layers(
             "star_delta": delta["delta"],
             "star_delta_pending": delta["pending"],
             "observed_days": delta["observed_days"],
+            "observed_points": delta["observed_points"],
+            "observed_at": last.get("observed_at"),
+            "first_date": delta.get("first_date"),
+            "last_date": delta.get("last_date"),
+            "calendar_days": delta.get("calendar_days"),
             "open_issues": last.get("open_issues"),
             "open_prs": last.get("open_prs"),
         },
@@ -511,3 +564,12 @@ def _int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _calendar_days(first_day: str, last_day: str) -> int | None:
+    try:
+        start = date.fromisoformat(first_day[:10])
+        end = date.fromisoformat(last_day[:10])
+    except ValueError:
+        return None
+    return abs((end - start).days)
