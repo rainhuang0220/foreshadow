@@ -165,9 +165,7 @@ def test_observation_delta_is_not_official_v7():
         SnapshotPoint(date(2026, 8, 30), 160, None, None),
         SnapshotPoint(date(2026, 8, 31), 170, None, None),
     ]
-    series = [
-        {"date": p.date.isoformat(), "stars": p.stars} for p in snaps
-    ]
+    series = [{"date": p.date.isoformat(), "stars": p.stars} for p in snaps]
     delta = star_delta(series)
     windows = compute_windows(
         snaps,
@@ -189,9 +187,7 @@ def test_sparse_observation_does_not_satisfy_official_v7():
         SnapshotPoint(date(2026, 9, 1), 10, None, None),
         SnapshotPoint(date(2026, 9, 15), 50, None, None),
     ]
-    series = [
-        {"date": p.date.isoformat(), "stars": p.stars} for p in snaps
-    ]
+    series = [{"date": p.date.isoformat(), "stars": p.stars} for p in snaps]
     delta = star_delta(series)
     windows = compute_windows(
         snaps,
