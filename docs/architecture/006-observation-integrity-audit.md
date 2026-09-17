@@ -215,3 +215,4 @@ Full suite: one pre-existing fail (ripwire import path), four `tests/test_packag
 ## COMMITS
 
 - `3b0088f` — `fix: keep observation timestamps and actual date ranges`
+- `82a5e6c` — `test: lock observation span copy and record PR3 results`
