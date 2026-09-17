@@ -157,3 +157,13 @@ Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks
 | MOS-2 | Deterministic `MAINTAINER_OUTPUT_GATE` plus an isolated semantic reviewer. Any FAIL blocks remote submission. False-negative blocks < reputation damage. |
 | MOS-3 | PR draft revisions append a new package artifact. Historical unsafe drafts are not overwritten. |
 | MOS-4 | Third-party auto-submit (YOLO) stays off. The gate is the future reputation lock. |
+
+## Temporal evidence contract (PR4)
+
+Observation reads report what was seen and when. They do not invent a window, a lifecycle, or a forecast. Official `windows.v7` stays the existing dated t-7 calculation.
+
+| ID | Decision |
+|---|---|
+| TE-1 | Observation comparisons expose first→last `calendar_days` and `observed_points`. Snapshot 2026-09-01 then 2026-09-15 is 14 calendar days and 2 points. Never label that “7 day growth”. |
+| TE-2 | Official `v7` means exactly `compute_windows` / `windows.v7`. Observation delta means first observed point → last observed point. Do not merge these. |
+| TE-3 | Temporal evidence functions on the observation read path do not write the database, reconcile state, call GitHub mutation methods, or update missions. |
