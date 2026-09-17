@@ -899,10 +899,11 @@ function factCells(c) {
   if (c.stars != null) {
     cells.push(`<div class="chip"><span class="k">Stars</span><b>${esc(n(c.stars))}</b></div>`);
   }
+  const growthLabel = (d.pending || d.days == null) ? "观察增长" : (d.days + "日变化");
   if (d.pending) {
-    cells.push(`<div class="chip"><span class="k">7日增长</span>${esc((d.observed_days || 0) + " 日观察 · 待确认")}</div>`);
+    cells.push(`<div class="chip"><span class="k">${growthLabel}</span>${esc((d.observed_days || 0) + " 日观察 · 待确认")}</div>`);
   } else if (d.delta != null) {
-    cells.push(`<div class="chip"><span class="k">7日增长</span><b>${esc((d.delta >= 0 ? "+" : "") + d.delta)}</b></div>`);
+    cells.push(`<div class="chip"><span class="k">${esc(growthLabel)}</span><b>${esc((d.delta >= 0 ? "+" : "") + d.delta)}</b></div>`);
   }
   return cells.length ? `<div class="fact-cells">${cells.join("")}</div>` : "";
 }

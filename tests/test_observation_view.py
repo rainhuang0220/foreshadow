@@ -46,7 +46,7 @@ def test_one_snapshot_does_not_fake_a_seven_day_curve(tmp_home):
     delta = star_delta(series, days=7)
     assert delta["pending"] is True
     assert delta["delta"] is None
-    assert interpret_growth(series) == "增长历史还不够，7 日趋势尚未形成。"
+    assert interpret_growth(series) == "增长历史还不够，还不能比较两次观察。"
 
 
 def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
@@ -75,6 +75,10 @@ def test_real_deltas_only_when_consecutive_snapshots_differ(tmp_home):
     delta = star_delta(series, days=7)
     assert delta["pending"] is False
     assert delta["delta"] == 47
+    assert delta["days"] == 2
+    assert delta["first_date"] == "2026-09-01"
+    assert delta["last_date"] == "2026-09-03"
+    assert delta["window_complete"] is True
     events = timeline_for(conn, rid, today="2026-09-03")
     kinds = [e["kind"] for e in events]
     assert "FIRST_SEEN" in kinds
