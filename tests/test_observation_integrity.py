@@ -97,7 +97,10 @@ def test_star_delta_uses_actual_range_not_assumed_seven_days(tmp_home):
     assert delta["first_date"] == "2026-09-01"
     assert delta["last_date"] == "2026-09-10"
     assert delta["observed_days"] == 2
-    assert "7 日" not in interpret_growth(load_series(conn, rid))
+    text = interpret_growth(load_series(conn, rid))
+    assert "7 日趋势" not in text
+    assert "7日增长" not in text
+    assert "按实际观察跨度" in text
 
 
 def test_three_day_span_is_not_labeled_seven_days(tmp_home):

@@ -201,10 +201,17 @@ Implemented on `cursor/observation-integrity-8dc6`.
 
 ## TESTS
 
-- `tests/test_observation_integrity.py` — `observed_at` preserved; actual date ranges; read-only views; no GitHub write surface; Board chip not hardcoded to 7 days
-- `tests/test_observation_view.py` — existing honesty tests plus 3-day span ≠ 7
-- Regression: `tests/test_observation.py`, `tests/test_features.py`, `tests/test_two_gate_contribution.py`, `tests/test_submission_closure.py`, `tests/test_client_get_only.py`
+Focused (this environment, `pytest` 9.1.1):
+
+- `tests/test_observation_integrity.py` — pass
+- `tests/test_observation_view.py` — pass
+- `tests/test_observation.py` — pass
+- `tests/test_features.py`, `tests/test_ttl_timezone.py`, `tests/test_board_as_of.py`, `tests/test_client_get_only.py` — pass
+- `tests/test_submission_closure.py` — pass
+- `tests/test_two_gate_contribution.py` — Gate-1 / Gate-2 pass; `test_ripwire74_import_appears_on_board` fails on `main` already (tmp persistent-store path). Not introduced here.
+
+Full suite: one pre-existing fail (ripwire import path), four `tests/test_packaging.py` errors because this image has no Hatch/uv build toolchain. Ruff check of the changed files passes. Repo-wide `ruff format --check` already fails on `main`.
 
 ## COMMITS
 
-Recorded on the PR3 branch after this audit lands.
+- `3b0088f` — `fix: keep observation timestamps and actual date ranges`

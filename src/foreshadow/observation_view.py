@@ -210,7 +210,7 @@ def interpret_growth(series: list[dict[str, Any]]) -> str:
     d = int(delta["delta"] or 0)
     n = int(delta["observed_days"])
     if d > 0:
-        return f"近 {n} 个观察日 Stars {d:+d}（未补齐缺失日期，不是假定 7 日窗口）。"
+        return f"近 {n} 个观察日 Stars {d:+d}（未补齐缺失日期，按实际观察跨度，不做插值）。"
     if d < 0:
         return f"近 {n} 个观察日 Stars {d:+d}。"
     return f"近 {n} 个观察日 Stars 没有净增长。"
