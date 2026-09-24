@@ -65,6 +65,92 @@ schedule_app = typer.Typer(
     help="Install a daily local job (optional). Does not depend on the current directory.",
 )
 app.add_typer(schedule_app, name="schedule", rich_help_panel="Setup")
+repos_app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+    help="Explicitly register and inspect independent local repositories.",
+)
+app.add_typer(repos_app, name="repos", rich_help_panel="Setup")
+
+
+@repos_app.command("enroll")
+def repos_enroll(
+    upstream: str,
+    workspace_root: str | None = typer.Option(None, "--workspace-root", help="Absolute root for local checkouts; required for first enrollment."),
+    path: str | None = typer.Option(None, "--path", help="Checkout path relative to workspace root. Omit for remote-only."),
+) -> None:
+    """Enroll one GitHub upstream explicitly. Does not clone or contact GitHub."""
+    from foreshadow.repository_registry import RegistryError, enroll
+
+    try:
+        registry = enroll(upstream, workspace_root=workspace_root, path=path)
+    except RegistryError as exc:
+        print(str(exc), file=sys.stderr)
+        raise typer.Exit(EXIT_USAGE) from exc
+    print(f"enrolled {registry.repositories[-1].upstream}")
+
+
+@repos_app.command("list")
+def repos_list() -> None:
+    """List explicit enrollments and any matching existing SQLite identity."""
+    from foreshadow.repository_registry import (
+        RegistryError,
+        identities,
+        load_registry,
+        registry_path,
+    )
+
+    try:
+        registry = load_registry()
+        if registry is None:
+            print(f"no registry at {registry_path()}; use `foreshadow repos enroll`")
+            return
+        known_by_name = identities(item.upstream for item in registry.repositories)
+        for item in registry.repositories:
+            known = known_by_name[item.upstream]
+            detail = f"  node_id={known[1]} current={known[2]}" if known else "  not yet in radar database"
+            print(f"{item.upstream}  path={item.path or '-'}{detail}")
+    except RegistryError as exc:
+        print(str(exc), file=sys.stderr)
+        raise typer.Exit(EXIT_USAGE) from exc
+
+
+@repos_app.command("validate")
+def repos_validate(upstream: str | None = typer.Argument(None)) -> None:
+    """Inspect local checkout paths and Git remotes without writing to them."""
+    from foreshadow.repository_registry import (
+        RegistryError,
+        identities,
+        load_registry,
+        validate,
+    )
+
+    try:
+        registry = load_registry()
+        if registry is None:
+            raise RegistryError("no repositories.toml; use `foreshadow repos enroll`")
+        known_by_name = identities(item.upstream for item in registry.repositories)
+        items = [
+            item for item in registry.repositories
+            if upstream is None
+            or item.upstream.casefold() == upstream.casefold()
+            or (known_by_name[item.upstream] is not None and known_by_name[item.upstream][2].casefold() == upstream.casefold())
+        ]
+        if upstream is not None and not items:
+            raise RegistryError(f"not enrolled: {upstream}")
+        bad = False
+        for item in items:
+            known = known_by_name[item.upstream]
+            status, detail = validate(
+                registry, item, expected_upstream=known[2] if known else None
+            )
+            print(f"{item.upstream}: {status} — {detail}")
+            bad |= status in {"not-checkout", "mismatch"}
+        if bad:
+            raise typer.Exit(EXIT_FAIL)
+    except RegistryError as exc:
+        print(str(exc), file=sys.stderr)
+        raise typer.Exit(EXIT_USAGE) from exc
 
 
 def _show_version(value: bool) -> None:

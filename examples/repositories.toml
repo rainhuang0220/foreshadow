@@ -1,0 +1,11 @@
+# Example only. The active registry is resolve_data_dir()/repositories.toml.
+# Use an absolute workspace_root on your own machine.
+version = 1
+workspace_root = "/path/to/open-source"
+
+[[repository]]
+upstream = "owner/project"
+path = "project"
+
+[[repository]]
+upstream = "another-owner/remote-only-project"
