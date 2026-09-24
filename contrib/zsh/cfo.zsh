@@ -13,15 +13,17 @@
 # uv is not on PATH. foreshadow does not need to be installed globally.
 # A failed lookup prints the error and leaves the current directory unchanged.
 
+typeset -g _FORESHADOW_CFO_ROOT="${${(%):-%x}:A:h}"
+while [[ "$_FORESHADOW_CFO_ROOT" != "/" && ! -f "$_FORESHADOW_CFO_ROOT/pyproject.toml" ]]; do
+  _FORESHADOW_CFO_ROOT="${_FORESHADOW_CFO_ROOT:h}"
+done
+
 cfo() {
   emulate -L zsh
   setopt local_options noshwordsplit
   local root target lookup_status
   local -a cmd
-  root="${${(%):-%x}:A:h}"
-  while [[ "$root" != "/" && ! -f "$root/pyproject.toml" ]]; do
-    root="${root:h}"
-  done
+  root="$_FORESHADOW_CFO_ROOT"
   if [[ ! -f "$root/pyproject.toml" ]]; then
     print -u2 -- "cfo: cannot find the Foreshadow checkout"
     return 1

@@ -156,6 +156,40 @@ def test_unverified_fork_is_navigable_without_remote_changes(tmp_home, tmp_path)
     assert all(cmd[1:4] == ["-C", str(repo), "rev-parse"] for cmd in git_calls)
 
 
+def test_cfo_relative_source_still_resolves_after_cd(tmp_home, tmp_path):
+    workspace = tmp_path / "open-source"
+    repo = _checkout(workspace, "ripwire")
+    runner = CliRunner()
+    _enroll(runner, workspace, "redhat-et/ripwire", "ripwire")
+    env = os.environ.copy()
+    env["FORESHADOW_HOME"] = str(tmp_home)
+    result = subprocess.run(
+        [
+            "zsh",
+            "-f",
+            "-c",
+            (
+                "source contrib/zsh/cfo.zsh\n"
+                "cfo ripwire\n"
+                "cfo nope || lookup_status=$?\n"
+                'print -r -- "AFTER:$PWD"\n'
+                'print -r -- "STATUS:${lookup_status:-0}"\n'
+            ),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "not enrolled: nope" in result.stderr
+    assert "cannot find" not in result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == f"AFTER:{repo.resolve()}"
+    assert lines[1] != "STATUS:0"
+
+
 def test_cfo_enters_nested_path_with_spaces_and_stays_on_failure(tmp_home, tmp_path):
     workspace = tmp_path / "open source"
     repo = _checkout(workspace, "moonbitlang/core")
