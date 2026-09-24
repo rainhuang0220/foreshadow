@@ -196,6 +196,56 @@ def _github_name(url: str | None) -> str | None:
     return part if _UPSTREAM.fullmatch(part) else None
 
 
+def repository_directory(query: str) -> Path:
+    """Absolute checkout for one enrolled repository.
+
+    Reads the registry, and SQLite only to recognize a current name. Does not
+    write, fetch, clone, or change Git remotes.
+    """
+    text = query.strip()
+    if not text or any(character.isspace() for character in text) or text == "/":
+        raise RegistryError("repository must be owner/name or a repository name")
+    registry = load_registry()
+    if registry is None:
+        raise RegistryError("no repositories.toml; use `foreshadow repos enroll`")
+    known = identities(item.upstream for item in registry.repositories)
+    folded = text.casefold()
+    matches = [
+        item
+        for item in registry.repositories
+        if _name_matches(item, known.get(item.upstream), folded, full="/" in text)
+    ]
+    if not matches:
+        raise RegistryError(f"not enrolled: {text}")
+    if len(matches) > 1:
+        names = ", ".join(item.upstream for item in matches)
+        raise RegistryError(f"ambiguous repository: {names}")
+    item = matches[0]
+    if item.path is None:
+        raise RegistryError(f"remote-only: {item.upstream}")
+    repo = checkout_path(registry.workspace_root, item.path)
+    if not repo.exists():
+        raise RegistryError(f"missing checkout: {repo}")
+    if not repo.is_dir() or _git(repo, "rev-parse", "--show-toplevel") != str(repo):
+        raise RegistryError(f"invalid directory: {repo}")
+    return repo
+
+
+def _name_matches(
+    item: RepositoryEntry,
+    known: tuple[int, str, str] | None,
+    folded: str,
+    *,
+    full: bool,
+) -> bool:
+    names = {item.upstream.casefold()}
+    if known is not None:
+        names.add(known[2].casefold())
+    if full:
+        return folded in names
+    return folded in {name.split("/", 1)[1] for name in names}
+
+
 def validate(
     registry: Registry, item: RepositoryEntry, *, expected_upstream: str | None = None
 ) -> tuple[str, str]:

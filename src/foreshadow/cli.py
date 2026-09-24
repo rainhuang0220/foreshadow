@@ -153,6 +153,21 @@ def repos_validate(upstream: str | None = typer.Argument(None)) -> None:
         raise typer.Exit(EXIT_USAGE) from exc
 
 
+@repos_app.command("path")
+def repos_path(
+    repository: str = typer.Argument(..., help="owner/repo, or a unique repository name"),
+) -> None:
+    """Print one absolute checkout path. Does not fetch, clone, or change Git."""
+    from foreshadow.repository_registry import RegistryError, repository_directory
+
+    try:
+        checkout = repository_directory(repository)
+    except RegistryError as exc:
+        print(str(exc), file=sys.stderr)
+        raise typer.Exit(EXIT_USAGE) from exc
+    sys.stdout.write(f"{checkout}\n")
+
+
 def _show_version(value: bool) -> None:
     if value:
         from foreshadow import __version__

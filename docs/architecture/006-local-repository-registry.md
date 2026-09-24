@@ -42,6 +42,21 @@ foreshadow repos enroll owner/remote-only-project
 foreshadow repos list
 foreshadow repos validate
 foreshadow repos validate owner/project
+foreshadow repos path owner/project
+foreshadow repos path project
+```
+
+`repos path` prints one absolute checkout directory and does not fetch, clone,
+or change Git. A unique repository name is enough; an ambiguous short name is
+an error. Remote-only entries and missing or invalid directories are errors.
+An enrolled fork can be opened even when its upstream remote is unverified.
+
+An optional Zsh helper lives at `contrib/zsh/cfo.zsh`. Source it from
+`~/.zshrc` to turn that path into `cd`:
+
+```sh
+source "$HOME/Desktop/Foreshadow/contrib/zsh/cfo.zsh"
+cfo owner/project
 ```
 
 `FORESHADOW_HOME` may override the existing data directory. Keep it outside the
