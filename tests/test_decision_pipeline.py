@@ -81,6 +81,26 @@ def test_validated_task_snapshot_cannot_change_when_candidate_is_mutated():
         valid.opportunity.task.constraints += ("Another mutation",)
 
 
+def test_contribution_rules_survive_freezing_export_and_task_identity():
+    from foreshadow.decision.pipeline import export_work_order, validate_opportunity
+
+    opportunity, obs = candidate()
+    opportunity.task.contribution_rules = [
+        "DCO / signed-off-by required.",
+        "CLA required.",
+    ]
+    first = export_work_order(
+        validate_opportunity(opportunity, (obs,), now=NOW), now=NOW
+    )
+    assert "DCO / signed-off-by required." in first["constraints"]
+    assert "CLA required." in first["constraints"]
+    opportunity.task.contribution_rules.append("Link the existing issue.")
+    second = export_work_order(
+        validate_opportunity(opportunity, (obs,), now=NOW), now=NOW
+    )
+    assert first["task_id"] != second["task_id"]
+
+
 @pytest.mark.parametrize("confidence", [True, float("nan"), float("inf"), "high"])
 def test_invalid_confidence_is_a_structured_rejection(confidence):
     from dataclasses import replace

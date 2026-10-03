@@ -16,6 +16,7 @@ from foreshadow.decision.models import (
     Validation,
 )
 from foreshadow.decision.task import StructuredTask, from_entry
+from foreshadow.repository_identity import github_repository_name
 from foreshadow.work_order import timestamp
 
 
@@ -29,6 +30,8 @@ def _git(path: Path, *args: str) -> str:
             timeout=30,
             env=__import__("os").environ | {"GIT_OPTIONAL_LOCKS": "0"},
         )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("Git inspection timed out") from exc
     except OSError as exc:
         raise ValueError("git is required for a local work order") from exc
     if result.returncode:
@@ -43,11 +46,32 @@ def local_repository(path: Path, identity: str) -> Repository:
         or Path(_git(path, "rev-parse", "--show-toplevel")).resolve() != path
     ):
         raise ValueError("repository must be an existing Git checkout root")
+    _verify_repository_identity(path, identity)
     return Repository(
         identity=identity,
         path=str(path),
         base_revision=_git(path, "rev-parse", "--verify", "HEAD^{commit}"),
     )
+
+
+def _verify_repository_identity(path: Path, identity: str) -> None:
+    remotes = _git(path, "remote").splitlines()
+    names = {
+        name: github_repository_name(
+            _git(path, "config", "--get", f"remote.{name}.url")
+        )
+        for name in ("origin", "upstream")
+        if name in remotes
+    }
+    origin, upstream = names.get("origin"), names.get("upstream")
+    if upstream and upstream.casefold() != identity.casefold():
+        raise ValueError(
+            f"repository identity mismatch: upstream={upstream}; expected={identity}"
+        )
+    if origin and origin.casefold() != identity.casefold() and not upstream:
+        raise ValueError(
+            f"repository identity mismatch: origin={origin}; expected={identity}"
+        )
 
 
 def observe_files(
@@ -68,16 +92,29 @@ def observe_files(
         ):
             raise ValueError("source-file must be a repository-relative path")
         # Read retained Git blobs, never substitute the current dirty worktree.
-        blob = subprocess.check_output(
-            [
-                "git",
-                "-C",
-                repository.path,
-                "show",
-                f"{repository.base_revision}:{name}",
-            ],
-            timeout=30,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    repository.path,
+                    "show",
+                    f"{repository.base_revision}:{name}",
+                ],
+                timeout=30,
+                capture_output=True,
+                check=False,
+                env=__import__("os").environ | {"GIT_OPTIONAL_LOCKS": "0"},
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(f"source-file observation timed out: {name}") from exc
+        except OSError as exc:
+            raise ValueError("git is required for source-file observation") from exc
+        if result.returncode:
+            raise ValueError(
+                f"cannot observe source-file {name} at the pinned revision"
+            )
+        blob = result.stdout
         digest = hashlib.sha256(blob).hexdigest()
         observations.append(
             Observation(
@@ -145,6 +182,9 @@ def stored_opportunity(
     conn: sqlite3.Connection, repository: Repository, *, checks: tuple[Validation, ...]
 ) -> tuple[Opportunity, tuple[Observation, ...]]:
     from foreshadow.entry import load_entry
+
+    if repository.path is not None:
+        _verify_repository_identity(Path(repository.path), repository.identity)
 
     row = conn.execute(
         "SELECT id FROM repos WHERE full_name=?", (repository.identity,)

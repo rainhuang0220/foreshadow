@@ -15,9 +15,9 @@ import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
 from foreshadow.paths import resolve_data_dir
+from foreshadow.repository_identity import github_repository_name as _github_name
 from foreshadow.reviews import _resolve_local
 
 _UPSTREAM = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -212,24 +212,6 @@ def _git(repo: Path, *args: str) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
-
-
-def _github_name(url: str | None) -> str | None:
-    if not url:
-        return None
-    if url.startswith("git@github.com:"):
-        part = url[len("git@github.com:") :]
-    else:
-        parsed = urlparse(url)
-        if parsed.hostname != "github.com" or parsed.scheme not in {
-            "https",
-            "ssh",
-            "git",
-        }:
-            return None
-        part = parsed.path.lstrip("/")
-    part = part.removesuffix(".git")
-    return part if _UPSTREAM.fullmatch(part) else None
 
 
 def repository_directory(query: str) -> Path:

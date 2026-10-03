@@ -23,6 +23,60 @@ def repository(tmp_path):
     return path
 
 
+def test_local_identity_rejects_known_mismatch_and_accepts_matching_fork_upstream(
+    tmp_path,
+):
+    from foreshadow.decision.adapters import local_repository
+
+    path = repository(tmp_path)
+    git(path, "remote", "add", "origin", "https://github.com/unrelated/other.git")
+    with pytest.raises(ValueError, match="identity"):
+        local_repository(path, "acme/project")
+    git(path, "remote", "add", "upstream", "git@github.com:acme/project.git")
+    assert local_repository(path, "acme/project").identity == "acme/project"
+    git(path, "remote", "set-url", "upstream", "git@github.com:acme/wrong.git")
+    with pytest.raises(ValueError, match="identity"):
+        local_repository(path, "acme/project")
+
+
+def test_missing_source_blob_and_git_timeout_are_structured_cli_errors(
+    tmp_path, monkeypatch
+):
+    from foreshadow.decision.adapters import local_repository
+
+    path = repository(tmp_path)
+    args = [
+        "work-order",
+        "plan",
+        str(path),
+        "--identity",
+        "acme/project",
+        "--title",
+        "Fix parser",
+        "--objective",
+        "Reject invalid input",
+        "--rationale",
+        "Observed unsafe lookup",
+        "--source-file",
+        "missing.py",
+        "--check",
+        "python3 -m unittest",
+        "--acceptance",
+        "Tests pass",
+    ]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 2
+    assert "cannot prepare work order" in result.output
+    assert "missing.py" in result.output
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired("git", 30)
+
+    monkeypatch.setattr("foreshadow.decision.adapters.subprocess.run", timeout)
+    with pytest.raises(ValueError, match="timed out"):
+        local_repository(path, "acme/project")
+
+
 def test_local_observation_reads_pinned_blobs_and_does_not_launder_dirty_content(
     tmp_path,
 ):

@@ -90,6 +90,9 @@ class TaskDefinition:
     acceptance_criteria: tuple[str, ...]
     constraints: tuple[str, ...]
     forbidden_actions: tuple[str, ...]
+    contribution_rules: tuple[str, ...]
+    relevant_files: tuple[str, ...]
+    test_commands: tuple[str, ...]
     issue_url: str | None
 
     @classmethod
@@ -100,6 +103,9 @@ class TaskDefinition:
             tuple(task.acceptance_criteria),
             tuple(task.constraints),
             tuple(task.forbidden_actions),
+            tuple(task.contribution_rules),
+            tuple(task.relevant_files),
+            tuple(task.test_commands),
             task.issue_url,
         )
 

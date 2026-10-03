@@ -125,6 +125,12 @@ def _manifest(item: ValidatedOpportunity) -> dict:
         "evidence": evidence,
         "constraints": (
             list(opportunity.task.constraints)
+            + list(opportunity.task.contribution_rules)
+            + ["Relevant file: " + item for item in opportunity.task.relevant_files]
+            + [
+                "Additional requested check: " + item
+                for item in opportunity.task.test_commands
+            ]
             + ["Expected behavior: " + opportunity.task.expected_behavior]
             + ["Acceptance: " + item for item in opportunity.task.acceptance_criteria]
             + ["Forbidden: " + item for item in opportunity.task.forbidden_actions]
