@@ -82,13 +82,36 @@ class Validation:
 
 
 @dataclass(frozen=True)
+class TaskDefinition:
+    """Immutable decision-time subset of the legacy editable task builder."""
+
+    repository: str
+    expected_behavior: str
+    acceptance_criteria: tuple[str, ...]
+    constraints: tuple[str, ...]
+    forbidden_actions: tuple[str, ...]
+    issue_url: str | None
+
+    @classmethod
+    def snapshot(cls, task: StructuredTask | TaskDefinition) -> TaskDefinition:
+        return cls(
+            task.repository,
+            task.expected_behavior,
+            tuple(task.acceptance_criteria),
+            tuple(task.constraints),
+            tuple(task.forbidden_actions),
+            task.issue_url,
+        )
+
+
+@dataclass(frozen=True)
 class Opportunity:
     id: str
     repository: Repository
     title: str
     objective: str
     rationale: str
-    task: StructuredTask
+    task: StructuredTask | TaskDefinition
     evidence: tuple[Evidence, ...]
     confidence: float
     validation: tuple[Validation, ...]

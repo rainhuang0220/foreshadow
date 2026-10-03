@@ -67,6 +67,33 @@ def test_validated_opportunity_exports_without_private_scores():
     assert dumps(order) == dumps(export_work_order(valid, now=NOW))
 
 
+def test_validated_task_snapshot_cannot_change_when_candidate_is_mutated():
+    from foreshadow.decision.pipeline import export_work_order, validate_opportunity
+    from foreshadow.work_order import dumps
+
+    opportunity, obs = candidate()
+    valid = validate_opportunity(opportunity, (obs,), now=NOW)
+    before = dumps(export_work_order(valid, now=NOW))
+    opportunity.task.constraints.append("Silently expand the scope")
+    opportunity.task.acceptance_criteria.clear()
+    assert dumps(export_work_order(valid, now=NOW)) == before
+    with pytest.raises((AttributeError, TypeError)):
+        valid.opportunity.task.constraints += ("Another mutation",)
+
+
+@pytest.mark.parametrize("confidence", [True, float("nan"), float("inf"), "high"])
+def test_invalid_confidence_is_a_structured_rejection(confidence):
+    from dataclasses import replace
+
+    from foreshadow.decision.pipeline import validate_opportunity
+
+    opportunity, obs = candidate()
+    with pytest.raises(ValueError, match="actionable"):
+        validate_opportunity(
+            replace(opportunity, confidence=confidence), (obs,), now=NOW
+        )
+
+
 def test_candidate_cannot_export_without_validation():
     from foreshadow.decision.pipeline import export_work_order
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import math
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from foreshadow.decision.models import (
     EvidenceKind,
     Observation,
     Opportunity,
+    TaskDefinition,
     ValidatedOpportunity,
 )
 from foreshadow.work_order import REQUIRED_DENIALS, dumps, validate
@@ -26,7 +28,8 @@ def validate_opportunity(
 ) -> ValidatedOpportunity:
     _iso(now)
     if (
-        not math.isfinite(opportunity.confidence)
+        type(opportunity.confidence) not in {float, int}
+        or not math.isfinite(opportunity.confidence)
         or not 0.5 <= opportunity.confidence <= 1
         or not opportunity.objective.strip()
         or not opportunity.validation
@@ -66,7 +69,11 @@ def validate_opportunity(
                 raise ValueError("evidence does not match its actual observation")
         elif evidence.observed_at is not None:
             raise ValueError("inference must not claim an observation timestamp")
-    result = ValidatedOpportunity(opportunity, now, observations)
+    result = ValidatedOpportunity(
+        replace(opportunity, task=TaskDefinition.snapshot(opportunity.task)),
+        now,
+        tuple(observations),
+    )
     validate(_manifest(result))
     return result
 
@@ -116,7 +123,12 @@ def _manifest(item: ValidatedOpportunity) -> dict:
         "objective": opportunity.objective,
         "rationale": opportunity.rationale,
         "evidence": evidence,
-        "constraints": list(opportunity.task.constraints),
+        "constraints": (
+            list(opportunity.task.constraints)
+            + ["Expected behavior: " + opportunity.task.expected_behavior]
+            + ["Acceptance: " + item for item in opportunity.task.acceptance_criteria]
+            + ["Forbidden: " + item for item in opportunity.task.forbidden_actions]
+        ),
         "validation": [
             {
                 "argv": list(v.argv),
