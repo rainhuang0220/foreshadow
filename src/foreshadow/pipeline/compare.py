@@ -33,7 +33,13 @@ def pool_rank_key(scored: ScoredRepo, data: dict[str, Any]) -> tuple:
 def assign_pool_ranks(
     items: Sequence[tuple[ScoredRepo, dict[str, Any]]],
 ) -> dict[str, int]:
-    ordered = sorted(items, key=lambda it: pool_rank_key(it[0], it[1]), reverse=True)
+    # Stable ascending identity, then reverse numerical prefix (identity excluded).
+    by_identity = sorted(items, key=lambda it: identity_key(it[0], it[1]))
+    ordered = sorted(
+        by_identity,
+        key=lambda it: pool_rank_key(it[0], it[1])[:-1],
+        reverse=True,
+    )
     ranks: dict[str, int] = {}
     for i, (scored, data) in enumerate(ordered, start=1):
         key = str(data.get("node_id") or scored.full_name)
@@ -51,7 +57,13 @@ def pool_rank_key_v2(scored: ScoredRepo, data: dict[str, Any]) -> tuple:
 def assign_pool_ranks_v2(
     items: Sequence[tuple[ScoredRepo, dict[str, Any]]],
 ) -> dict[str, int]:
-    ordered = sorted(items, key=lambda it: pool_rank_key_v2(it[0], it[1]), reverse=True)
+    # Stable ascending identity, then reverse numerical prefix (identity excluded).
+    by_identity = sorted(items, key=lambda it: identity_key(it[0], it[1]))
+    ordered = sorted(
+        by_identity,
+        key=lambda it: pool_rank_key_v2(it[0], it[1])[:-1],
+        reverse=True,
+    )
     ranks: dict[str, int] = {}
     for i, (scored, data) in enumerate(ordered, start=1):
         key = str(data.get("node_id") or scored.full_name)
