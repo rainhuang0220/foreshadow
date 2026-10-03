@@ -6,6 +6,7 @@
 - Export generic Engineering Work Order v1 from real local Git observations or existing retained entries; no executor dependency or shared state.
 - Compute observation comparisons from measured calendar dates, rejecting duplicated dates and preserving missing evidence.
 - Preserve acceptance and scope constraints across handoff; reject oversized, malformed and incompatible manifests.
+- Preserve contribution obligations and task scope through immutable export; reject known remote-identity mismatches and report missing source blobs or Git timeouts with structured errors.
 - Retain Board contribution execution as a documented compatibility surface pending migration. No tag or release has been created.
 
 ## [0.6.1] - 2026-09-11

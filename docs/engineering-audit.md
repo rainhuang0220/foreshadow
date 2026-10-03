@@ -12,4 +12,4 @@ Full baseline: 807 passed, 3 existing optional skips. CI runs Ruff, format, pyte
 
 Implementation and real canary findings: [engineering dogfood](engineering-dogfood.md). Domain vocabulary: [CONTEXT](../CONTEXT.md). The release candidates retain the limitations stated there; no production release is claimed.
 
-Validation: 830 passed and 3 pre-existing environment skips (Docker image and two sklearn checks); 833 collected. Ruff lint/format, lock consistency, 0.7.0 wheel/sdist and independent install boundary checks pass.
+Validation: 833 passed, 8 subtests passed and 3 pre-existing environment skips (Docker image and two sklearn checks); 836 collected. Ruff lint/format, lock consistency, 0.7.0 wheel/sdist and independent install boundary checks pass.
