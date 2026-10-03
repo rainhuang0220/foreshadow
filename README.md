@@ -1,12 +1,32 @@
 # Foreshadow (伏笔)
 
-**Beta 0.6.1** — find what the future has already foreshadowed. Then prepare a finished contribution for one human submit click.
+**0.7.0 development candidate** — engineering opportunity intelligence: observe repositories, explain what is worth doing, and export a bounded task with evidence.
 
-Foreshadow is a local daily radar for public GitHub, not a trending feed. Once a day it discovers emerging repos, keeps observing the ones that might still be enterable, and shows a Board of what is worth looking at — with why. **进入** (Gate 1) authorizes local work on one issue. **提交到 GitHub** (Gate 2) authorizes only the immutable package on screen: fork if needed, one branch, one PR. Comments, reviews, merge, and force-push stay denied.
+Foreshadow is a local radar for public GitHub. Its decision path is `observe → normalize → derive evidence → candidate → validate → rank → select → export`. Collection, retained SQLite entries and the Board stay available. The new `decision/` core owns typed decisions; adapters read Git blobs or retained observations, and the CLI only coordinates them. Execution and recovery belong to a separate local executor such as Nightshift.
+
+The existing Board **进入** / **提交到 GitHub** contribution workflow remains a compatibility surface during migration. It still contains local agent execution and two human approval gates; this release candidate does not claim its removal. New work-order paths never launch an agent or perform remote writes. See [the audit](docs/engineering-audit.md) and [domain language](CONTEXT.md).
 
 The Board now shows a project summary and four scores — Potential, Creator Prior, Openness, and Entry Fit — and ranks the homepage by expected entry value. Rank is ordinal, not a quality grade. Official Top 5 is unchanged; an empty Top 5 is still success.
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md)。明早走查见 [docs/PRODUCT.md](docs/PRODUCT.md)。
+
+## Export a bounded engineering task
+
+```bash
+foreshadow work-order --help
+foreshadow work-order plan /absolute/repository \
+  --identity owner/repo --title 'Fix parser input handling' \
+  --objective 'Reject invalid input with a structured error' \
+  --rationale 'A retained regression demonstrates the crash' \
+  --source-file src/parser.py --source-file tests/test_parser.py \
+  --check 'python3 -m pytest tests/test_parser.py' \
+  --acceptance 'Invalid input returns the documented error' \
+  --export-work-order order.json
+```
+
+`plan` observes committed blobs at HEAD, preserving dirty checkout work. It supports `--dry-run` and emits canonical JSON to stdout; output files are created exclusively and never overwritten. `export OWNER/REPO --repository PATH --check ...` instead reads an existing issue-targeted entry and its retained snapshot without migrating or writing storage. Stale or nonactionable entries fail with exit 2. `--as-of` replays a decision time but never rewrites actual observation timestamps. See [the generic v1 contract](docs/work-order-v1.md).
+
+An executor can validate and preview this file independently. Foreshadow does not import or depend on Nightshift.
 
 ## Install / update
 
@@ -17,7 +37,7 @@ Python **3.12+**. `git` is needed if you will enter a repo.
 uv tool install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1"
 
 # pip
-pip install "git+https://github.com/rainhuang0220/foreshhadow.git@v0.6.1"
+pip install "git+https://github.com/rainhuang0220/foreshadow.git@v0.6.1"
 ```
 
 Update to a newer tag (git installs do **not** follow new tags via `uv tool upgrade`):

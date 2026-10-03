@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0] - Unreleased
+
+- Add typed repository/observation/evidence/opportunity decisions, immutable validated task snapshots, provenance/freshness checks and deterministic prioritization.
+- Export generic Engineering Work Order v1 from real local Git observations or existing retained entries; no executor dependency or shared state.
+- Compute observation comparisons from measured calendar dates, rejecting duplicated dates and preserving missing evidence.
+- Preserve acceptance and scope constraints across handoff; reject oversized, malformed and incompatible manifests.
+- Retain Board contribution execution as a documented compatibility surface pending migration. No tag or release has been created.
+
 ## [0.6.1] - 2026-09-11
 
 Live Gate-2 readiness. One human Submit click may create exactly one PR.
