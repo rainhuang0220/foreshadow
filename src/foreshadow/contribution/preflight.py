@@ -36,10 +36,7 @@ def classify_delta(names: list[str], *, patch_files: list[str] | None = None) ->
     if not names:
         return "IDENTICAL"
     if all(
-        n.startswith("docs/")
-        or n.endswith(".md")
-        or "captures/" in n
-        for n in names
+        n.startswith("docs/") or n.endswith(".md") or "captures/" in n for n in names
     ):
         return "DOCS_ONLY"
     patch = {str(p) for p in (patch_files or []) if p}
@@ -71,7 +68,12 @@ def run_preflight(
         }
     issue = reader.get_issue(str(snapshot["repository"]), int(snapshot["issue_number"]))
     if str(issue.get("state") or "").lower() != "open":
-        return {"ok": False, "status": "ISSUE_CLOSED", "remote_writes": 0, "issue": issue}
+        return {
+            "ok": False,
+            "status": "ISSUE_CLOSED",
+            "remote_writes": 0,
+            "issue": issue,
+        }
     if issue.get("assignee") and str(issue.get("assignee")) not in {
         "",
         "none",
@@ -107,7 +109,9 @@ def run_preflight(
             "prs": overlap,
             "remote_writes": 0,
         }
-    head = reader.get_ref(str(snapshot["repository"]), snapshot.get("base_branch") or "main")
+    head = reader.get_ref(
+        str(snapshot["repository"]), snapshot.get("base_branch") or "main"
+    )
     if head == snapshot["validated_base_sha"]:
         return {
             "ok": True,
@@ -120,7 +124,9 @@ def run_preflight(
     )
     kind = classify_delta(
         names,
-        patch_files=list(snapshot.get("files_changed") or current_fields.get("files_changed") or []),
+        patch_files=list(
+            snapshot.get("files_changed") or current_fields.get("files_changed") or []
+        ),
     )
     if kind == "CONFLICT_SENSITIVE":
         return {

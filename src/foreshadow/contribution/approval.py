@@ -215,12 +215,16 @@ def maintainer_safety_from_review(review: dict[str, Any]) -> str:
     draft = review.get("pr_draft") if isinstance(review.get("pr_draft"), dict) else {}
     existing = draft.get("safety") if isinstance(draft.get("safety"), dict) else {}
     if existing.get("ok") is False:
-        checks = existing.get("checks") if isinstance(existing.get("checks"), dict) else {}
+        checks = (
+            existing.get("checks") if isinstance(existing.get("checks"), dict) else {}
+        )
         if any(
             checks.get(name) == "FAIL"
             for name in ("internal_leakage", "privacy", "ai_self_reference")
         ) or any(
-            "ai" in str(r).lower() or "leak" in str(r).lower() or "cursor" in str(r).lower()
+            "ai" in str(r).lower()
+            or "leak" in str(r).lower()
+            or "cursor" in str(r).lower()
             for r in (existing.get("reasons") or existing.get("summary") or [])
         ):
             return "FAIL"
@@ -250,7 +254,11 @@ def fields_from_review(review: dict[str, Any], *, mission_id: int) -> dict[str, 
     from foreshadow.contribution.import_store import sha256_text
 
     pkg = review.get("package") if isinstance(review.get("package"), dict) else {}
-    impl = review.get("implementation") if isinstance(review.get("implementation"), dict) else {}
+    impl = (
+        review.get("implementation")
+        if isinstance(review.get("implementation"), dict)
+        else {}
+    )
     diff = str(review.get("diff") or "")
     out = snapshot_fields(
         mission_id=int(mission_id),
@@ -266,9 +274,9 @@ def fields_from_review(review: dict[str, Any], *, mission_id: int) -> dict[str, 
         patch_commit_sha=str(
             review.get("patch_commit_sha") or impl.get("patch_commit_sha") or ""
         ),
-        diff_sha256=sha256_text(diff) if diff else str(
-            review.get("diff_sha256") or pkg.get("diff_sha256") or ""
-        ),
+        diff_sha256=sha256_text(diff)
+        if diff
+        else str(review.get("diff_sha256") or pkg.get("diff_sha256") or ""),
         branch_name=str(
             review.get("branch_name")
             or impl.get("branch")

@@ -50,7 +50,11 @@ def _check_upstream(value: object) -> str:
 
 
 def _root(value: object) -> Path:
-    if not isinstance(value, str) or not value or not Path(value).expanduser().is_absolute():
+    if (
+        not isinstance(value, str)
+        or not value
+        or not Path(value).expanduser().is_absolute()
+    ):
         raise RegistryError("workspace_root must be an absolute path")
     try:
         return Path(value).expanduser().resolve()
@@ -82,7 +86,11 @@ def load_registry(path: Path | None = None) -> Registry | None:
         raw = tomllib.loads(file.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise RegistryError(f"invalid repositories.toml: {exc}") from exc
-    if not isinstance(raw, dict) or set(raw) - {"version", "workspace_root", "repository"}:
+    if not isinstance(raw, dict) or set(raw) - {
+        "version",
+        "workspace_root",
+        "repository",
+    }:
         raise RegistryError("unknown repositories.toml field")
     if type(raw.get("version")) is not int or raw["version"] != 1:
         raise RegistryError("unsupported repositories.toml version (expected 1)")
@@ -120,7 +128,9 @@ def identities(upstreams: Iterable[str]) -> dict[str, tuple[int, str, str] | Non
         with sqlite3.connect(db.as_uri() + "?mode=ro", uri=True) as conn:
             return {name: _resolve_local(conn, name) for name in names}
     except sqlite3.Error as exc:
-        raise RegistryError(f"could not read existing repository identity: {exc}") from exc
+        raise RegistryError(
+            f"could not read existing repository identity: {exc}"
+        ) from exc
 
 
 def enroll(upstream: str, *, workspace_root: str | None, path: str | None) -> Registry:
@@ -140,12 +150,22 @@ def enroll(upstream: str, *, workspace_root: str | None, path: str | None) -> Re
     for item in current.repositories:
         if item.upstream.casefold() == upstream.casefold():
             raise RegistryError(f"already enrolled: {item.upstream}")
-        if local is not None and item.path is not None and checkout_path(current.workspace_root, item.path) == local:
+        if (
+            local is not None
+            and item.path is not None
+            and checkout_path(current.workspace_root, item.path) == local
+        ):
             raise RegistryError(f"checkout path already enrolled: {item.path}")
         existing_identity = known[item.upstream]
-        if new_identity and existing_identity and new_identity[0] == existing_identity[0]:
+        if (
+            new_identity
+            and existing_identity
+            and new_identity[0] == existing_identity[0]
+        ):
             raise RegistryError(f"repository already enrolled as {item.upstream}")
-    updated = Registry(current.workspace_root, (*current.repositories, RepositoryEntry(upstream, path)))
+    updated = Registry(
+        current.workspace_root, (*current.repositories, RepositoryEntry(upstream, path))
+    )
     _save(updated)
     return updated
 
@@ -153,14 +173,23 @@ def enroll(upstream: str, *, workspace_root: str | None, path: str | None) -> Re
 def _save(registry: Registry) -> None:
     file = registry_path()
     file.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["version = 1", f"workspace_root = {json.dumps(str(registry.workspace_root), ensure_ascii=False)}"]
+    lines = [
+        "version = 1",
+        f"workspace_root = {json.dumps(str(registry.workspace_root), ensure_ascii=False)}",
+    ]
     for item in registry.repositories:
         lines.extend(("", "[[repository]]", f"upstream = {json.dumps(item.upstream)}"))
         if item.path is not None:
             lines.append(f"path = {json.dumps(item.path, ensure_ascii=False)}")
     temp_name: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=file.parent, prefix=".repositories-", delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=file.parent,
+            prefix=".repositories-",
+            delete=False,
+        ) as handle:
             temp_name = handle.name
             handle.write("\n".join(lines) + "\n")
         os.chmod(temp_name, 0o600)
@@ -174,7 +203,10 @@ def _git(repo: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, check=False, timeout=10,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
             env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -186,10 +218,14 @@ def _github_name(url: str | None) -> str | None:
     if not url:
         return None
     if url.startswith("git@github.com:"):
-        part = url[len("git@github.com:"):]
+        part = url[len("git@github.com:") :]
     else:
         parsed = urlparse(url)
-        if parsed.hostname != "github.com" or parsed.scheme not in {"https", "ssh", "git"}:
+        if parsed.hostname != "github.com" or parsed.scheme not in {
+            "https",
+            "ssh",
+            "git",
+        }:
             return None
         part = parsed.path.lstrip("/")
     part = part.removesuffix(".git")
@@ -262,10 +298,23 @@ def validate(
     target = expected.casefold()
     if upstream and upstream.casefold() != target:
         return "mismatch", f"upstream remote={upstream}; expected={expected}"
-    if upstream and upstream.casefold() == target and origin and origin.casefold() != target:
+    if (
+        upstream
+        and upstream.casefold() == target
+        and origin
+        and origin.casefold() != target
+    ):
         return "fork", f"origin={origin}; upstream={upstream}"
-    if origin and origin.casefold() == target or upstream and upstream.casefold() == target:
+    if (
+        origin
+        and origin.casefold() == target
+        or upstream
+        and upstream.casefold() == target
+    ):
         return "ok", f"upstream={expected}"
     if origin:
         return "upstream-unverified", f"origin={origin}; expected upstream={expected}"
-    return "upstream-unverified", f"no matching GitHub remote; expected upstream={expected}"
+    return (
+        "upstream-unverified",
+        f"no matching GitHub remote; expected upstream={expected}",
+    )

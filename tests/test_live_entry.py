@@ -523,7 +523,9 @@ def test_failed_live_confirmation_cannot_create_stale_mission(tmp_home, monkeypa
     assert conn.execute("SELECT count(*) FROM entry_missions").fetchone()[0] == 0
 
 
-def test_human_confirmation_recertifies_before_reusing_same_issue(tmp_home, monkeypatch):
+def test_human_confirmation_recertifies_before_reusing_same_issue(
+    tmp_home, monkeypatch
+):
     """A stale cached mission must not bypass a new human Gate-1 confirmation."""
     import pytest
 

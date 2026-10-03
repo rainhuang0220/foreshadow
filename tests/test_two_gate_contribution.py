@@ -134,7 +134,9 @@ def _job(conn, uid, repo, pkg, mission_id=None):
         backend="native",
         status=JobStatus.ready,
         mission_id=mission_id,
-        task={"structured": {"issue_number": int(str(pkg["related_issue"]).lstrip("#"))}},
+        task={
+            "structured": {"issue_number": int(str(pkg["related_issue"]).lstrip("#"))}
+        },
     )
     persist_job(conn, job)
     persist_artifact(conn, int(job.id), kind="package", body=json.dumps(pkg))
@@ -158,8 +160,18 @@ def test_multiple_missions_same_repo_are_distinct(tmp_home):
     a = _mission(conn, uid, "vshulcz/deja-vu", 1828)
     b = _mission(conn, uid, "vshulcz/deja-vu", 1551, status="MERGED")
     items = [
-        {"id": a, "full_name": "vshulcz/deja-vu", "status": "WAITING_USER_APPROVAL", "issue_number": 1828},
-        {"id": b, "full_name": "vshulcz/deja-vu", "status": "MERGED", "issue_number": 1551},
+        {
+            "id": a,
+            "full_name": "vshulcz/deja-vu",
+            "status": "WAITING_USER_APPROVAL",
+            "issue_number": 1828,
+        },
+        {
+            "id": b,
+            "full_name": "vshulcz/deja-vu",
+            "status": "MERGED",
+            "issue_number": 1551,
+        },
     ]
     active = pick_active_for_repo(items)
     assert active["id"] == a
@@ -175,8 +187,20 @@ def test_merged_sibling_does_not_hide_waiting(tmp_home):
     conn, uid = _conn(tmp_home)
     m1828 = _mission(conn, uid, "vshulcz/deja-vu", 1828)
     m1551 = _mission(conn, uid, "vshulcz/deja-vu", 1551, status="MERGED")
-    _job(conn, uid, "vshulcz/deja-vu", _pkg("vshulcz/deja-vu", 1828, "old", "diff --git a/a b/a\n"), m1828)
-    _job(conn, uid, "vshulcz/deja-vu", _pkg("vshulcz/deja-vu", 1551, "merged", "diff --git a/b b/b\n"), m1551)
+    _job(
+        conn,
+        uid,
+        "vshulcz/deja-vu",
+        _pkg("vshulcz/deja-vu", 1828, "old", "diff --git a/a b/a\n"),
+        m1828,
+    )
+    _job(
+        conn,
+        uid,
+        "vshulcz/deja-vu",
+        _pkg("vshulcz/deja-vu", 1551, "merged", "diff --git a/b b/b\n"),
+        m1551,
+    )
     payload = {"candidates": []}
     attach_review_summaries(payload, conn, uid)
     issues = [q["issue_number"] for q in payload["review_queue"]]
@@ -345,7 +369,9 @@ def test_preflight_before_first_write_and_stale_upstream(tmp_home):
 def test_classify_delta_non_overlap():
     assert classify_delta(["present/deck.js"]) == "NON_OVERLAPPING"
     assert classify_delta([]) == "IDENTICAL"
-    assert classify_delta(["src/foo.c"], patch_files=["src/foo.c"]) == "CONFLICT_SENSITIVE"
+    assert (
+        classify_delta(["src/foo.c"], patch_files=["src/foo.c"]) == "CONFLICT_SENSITIVE"
+    )
 
 
 def test_import_does_not_reuse_merged(tmp_home):
@@ -370,9 +396,20 @@ def test_import_does_not_reuse_merged(tmp_home):
 def test_merged_mission_cannot_submit(tmp_home):
     conn, uid = _conn(tmp_home)
     mid = _mission(conn, uid, "acme/toy", 14, status="MERGED")
-    _job(conn, uid, "acme/toy", _pkg("acme/toy", 14, "Fix it", "diff --git a/x b/x\n+hi\n", body="Closes #14"), mid)
+    _job(
+        conn,
+        uid,
+        "acme/toy",
+        _pkg("acme/toy", 14, "Fix it", "diff --git a/x b/x\n+hi\n", body="Closes #14"),
+        mid,
+    )
     out = execute_gate2(
-        conn, user_id=uid, mission_id=mid, snapshot_id=None, confirm=True, port=FakeGitHub()
+        conn,
+        user_id=uid,
+        mission_id=mid,
+        snapshot_id=None,
+        confirm=True,
+        port=FakeGitHub(),
     )
     assert out["ok"] is False
     assert out["remote_writes"] == 0
@@ -480,7 +517,9 @@ def test_bound_pr_merged_and_1551_regression(tmp_home):
 
     out = reconcile_mission(conn, user_id=uid, mission_id=mid, reader=Reader())
     assert out["changed"] is True
-    row = conn.execute("SELECT status FROM entry_missions WHERE id=?", (mid,)).fetchone()
+    row = conn.execute(
+        "SELECT status FROM entry_missions WHERE id=?", (mid,)
+    ).fetchone()
     assert row[0] == "MERGED"
 
 

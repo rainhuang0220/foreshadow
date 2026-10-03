@@ -125,18 +125,29 @@ def test_review_ui_uses_computed_readiness_and_disables_submit():
 def test_review_ui_distinguishes_refresh_from_intentional_editing():
     from foreshadow.board.webapp import APP_HTML
 
-    assert 'r.display_status === "NEEDS_REFRESH" ? "刷新并重新验证" : "继续修改"' in APP_HTML
-    assert 'r.display_status === "NEEDS_REFRESH" ? "refreshContribution" : "continueContribution"' in APP_HTML
+    assert (
+        'r.display_status === "NEEDS_REFRESH" ? "刷新并重新验证" : "继续修改"'
+        in APP_HTML
+    )
+    assert (
+        'r.display_status === "NEEDS_REFRESH" ? "refreshContribution" : "continueContribution"'
+        in APP_HTML
+    )
 
 
 def test_waiting_contribution_job_routes_to_authoritative_live_review():
     from foreshadow.board.webapp import APP_HTML
 
-    assert 'data.job.status === "WAITING_USER_APPROVAL" && data.job.mission_id' in APP_HTML
+    assert (
+        'data.job.status === "WAITING_USER_APPROVAL" && data.job.mission_id' in APP_HTML
+    )
     assert "state.openJob = null" in APP_HTML
     assert "openCard(data.job.full_name, data.job.mission_id)" in APP_HTML
     assert 'r.display_status || "SUBMISSION_CHECK_REQUIRED"' in APP_HTML
-    assert 'onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>' in APP_HTML
+    assert (
+        'onclick="confirmSubmit(${esc(r.mission_id)})">提交到 GitHub</button>'
+        in APP_HTML
+    )
 
 
 def test_approval_snapshot_binds_package_revision():
@@ -752,7 +763,9 @@ def test_submit_re_preflights_when_create_pr_not_finished(tmp_home):
                     "PERSIST_RESULT": "NOT_STARTED",
                 }
             ),
-            json.dumps({"fork": "tester/toy", "preflight": {"ok": True, "status": "EXACT"}}),
+            json.dumps(
+                {"fork": "tester/toy", "preflight": {"ok": True, "status": "EXACT"}}
+            ),
             sid,
         ),
     )
@@ -780,9 +793,7 @@ def test_wrong_branch_sha_refuses_without_force_or_push(tmp_path):
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append((request.method, request.url.path))
         if request.url.path.endswith("/git/ref/heads/foreshadow/entry-7"):
-            return httpx.Response(
-                200, json={"object": {"sha": "someone-elses-commit"}}
-            )
+            return httpx.Response(200, json={"object": {"sha": "someone-elses-commit"}})
         raise AssertionError(f"unexpected request {request.method} {request.url}")
 
     def run_git(args: list[str], **_kwargs):
@@ -881,7 +892,11 @@ def test_readiness_false_when_any_required_fact_is_false():
     from foreshadow.contribution.approval import compute_digest
 
     fields = _fields()
-    snapshot = {**fields, "status": "current", "approval_digest": compute_digest(fields)}
+    snapshot = {
+        **fields,
+        "status": "current",
+        "approval_digest": compute_digest(fields),
+    }
 
     class ReadyPort(FakeGitHub):
         is_fake = False
@@ -1119,9 +1134,7 @@ def test_find_pr_qualifies_head_and_ignores_unrelated_open_pr():
             transport=httpx.MockTransport(handler),
         ),
     )
-    found = port.find_pr(
-        "upstream/toy", head="foreshadow/entry-7", base="main"
-    )
+    found = port.find_pr("upstream/toy", head="foreshadow/entry-7", base="main")
     assert found is not None
     assert found["number"] == 9
     assert queries and queries[0].get("head") == "upstream:foreshadow/entry-7"

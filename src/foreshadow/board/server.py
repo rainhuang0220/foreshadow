@@ -1130,8 +1130,17 @@ class BoardHandler(BaseHTTPRequestHandler):
                         mission_id = int(raw_mid)
                     except (TypeError, ValueError):
                         mission_id = None
-                structured = task.get("structured") if isinstance(task.get("structured"), dict) else {}
-                if mission_id is None and structured.get("mission_id") not in (None, "", 0, "0"):
+                structured = (
+                    task.get("structured")
+                    if isinstance(task.get("structured"), dict)
+                    else {}
+                )
+                if mission_id is None and structured.get("mission_id") not in (
+                    None,
+                    "",
+                    0,
+                    "0",
+                ):
                     try:
                         mission_id = int(structured["mission_id"])
                     except (TypeError, ValueError):

@@ -49,11 +49,16 @@ def reconcile_mission(
             "status": out.get("status"),
             "pr": int(pr["number"]),
         }
-    if state == "closed" and not merged and str(plan.get("status") or "") not in {
-        "BLOCKED",
-        "ABANDONED",
-        "MERGED",
-    }:
+    if (
+        state == "closed"
+        and not merged
+        and str(plan.get("status") or "")
+        not in {
+            "BLOCKED",
+            "ABANDONED",
+            "MERGED",
+        }
+    ):
         out = record_user_event(
             conn, user_id=user_id, mission_id=mission_id, event="pr_rejected"
         )
@@ -63,7 +68,12 @@ def reconcile_mission(
             "status": out.get("status"),
             "pr": int(pr["number"]),
         }
-    return {"ok": True, "changed": False, "status": plan.get("status"), "pr": int(pr["number"])}
+    return {
+        "ok": True,
+        "changed": False,
+        "status": plan.get("status"),
+        "pr": int(pr["number"]),
+    }
 
 
 def reconcile_user(

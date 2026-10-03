@@ -32,7 +32,15 @@ def test_enroll_list_and_validate_existing_checkout(tmp_home, tmp_path):
 
     enrolled = runner.invoke(
         app,
-        ["repos", "enroll", "acme/project", "--workspace-root", str(workspace), "--path", "project"],
+        [
+            "repos",
+            "enroll",
+            "acme/project",
+            "--workspace-root",
+            str(workspace),
+            "--path",
+            "project",
+        ],
     )
     assert enrolled.exit_code == 0, enrolled.output
     data = tomllib.loads((tmp_home / "repositories.toml").read_text())
@@ -53,7 +61,18 @@ def test_missing_checkout_and_remote_only_are_valid(tmp_home, tmp_path):
     workspace = tmp_path / "open-source"
     workspace.mkdir()
     runner = CliRunner()
-    first = runner.invoke(app, ["repos", "enroll", "acme/missing", "--workspace-root", str(workspace), "--path", "missing"])
+    first = runner.invoke(
+        app,
+        [
+            "repos",
+            "enroll",
+            "acme/missing",
+            "--workspace-root",
+            str(workspace),
+            "--path",
+            "missing",
+        ],
+    )
     second = runner.invoke(app, ["repos", "enroll", "acme/remote"])
     assert first.exit_code == second.exit_code == 0
     result = runner.invoke(app, ["repos", "validate"])
@@ -72,7 +91,18 @@ def test_rejects_traversal_absolute_and_symlink_escape(tmp_home, tmp_path):
     (workspace / "loop").symlink_to("loop", target_is_directory=True)
     runner = CliRunner()
     for path in ("../outside", str(outside), "escape", "loop"):
-        result = runner.invoke(app, ["repos", "enroll", "acme/project", "--workspace-root", str(workspace), "--path", path])
+        result = runner.invoke(
+            app,
+            [
+                "repos",
+                "enroll",
+                "acme/project",
+                "--workspace-root",
+                str(workspace),
+                "--path",
+                path,
+            ],
+        )
         assert result.exit_code == 2, (path, result.output)
         assert "path" in result.output.lower()
     assert not (tmp_home / "repositories.toml").exists()
@@ -84,7 +114,21 @@ def test_fork_origin_and_upstream_are_distinguished_without_writes(tmp_home, tmp
     _git(repo, "remote", "add", "origin", "git@github.com:me/project.git")
     _git(repo, "remote", "add", "upstream", "https://github.com/acme/project.git")
     runner = CliRunner()
-    assert runner.invoke(app, ["repos", "enroll", "acme/project", "--workspace-root", str(workspace), "--path", "project"]).exit_code == 0
+    assert (
+        runner.invoke(
+            app,
+            [
+                "repos",
+                "enroll",
+                "acme/project",
+                "--workspace-root",
+                str(workspace),
+                "--path",
+                "project",
+            ],
+        ).exit_code
+        == 0
+    )
     before = (repo / ".git" / "config").read_bytes()
     before_status = _git(repo, "status", "--porcelain")
     result = runner.invoke(app, ["repos", "validate", "acme/project"])
@@ -98,10 +142,32 @@ def test_duplicate_upstream_and_path_are_rejected(tmp_home, tmp_path):
     workspace = tmp_path / "open-source"
     workspace.mkdir()
     runner = CliRunner()
-    assert runner.invoke(app, ["repos", "enroll", "acme/project", "--workspace-root", str(workspace), "--path", "project"]).exit_code == 0
+    assert (
+        runner.invoke(
+            app,
+            [
+                "repos",
+                "enroll",
+                "acme/project",
+                "--workspace-root",
+                str(workspace),
+                "--path",
+                "project",
+            ],
+        ).exit_code
+        == 0
+    )
     assert runner.invoke(app, ["repos", "enroll", "ACME/PROJECT"]).exit_code == 2
-    assert runner.invoke(app, ["repos", "enroll", "other/project", "--path", "project"]).exit_code == 2
-    assert len(tomllib.loads((tmp_home / "repositories.toml").read_text())["repository"]) == 1
+    assert (
+        runner.invoke(
+            app, ["repos", "enroll", "other/project", "--path", "project"]
+        ).exit_code
+        == 2
+    )
+    assert (
+        len(tomllib.loads((tmp_home / "repositories.toml").read_text())["repository"])
+        == 1
+    )
 
 
 def test_invalid_toml_and_unsupported_version_are_reported(tmp_home):
@@ -123,14 +189,24 @@ def test_alias_uses_existing_sqlite_identity_without_creating_rows(tmp_home, tmp
         "INSERT INTO repos(node_id, full_name, owner, name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
         ("R_stable", "acme/new", "acme", "new", "2026-01-01", "2026-01-01"),
     )
-    repo_id = conn.execute("SELECT id FROM repos WHERE node_id='R_stable'").fetchone()[0]
-    conn.execute("INSERT INTO repo_aliases(repo_id, full_name, seen_at) VALUES (?, ?, ?)", (repo_id, "acme/old", "2026-01-01"))
+    repo_id = conn.execute("SELECT id FROM repos WHERE node_id='R_stable'").fetchone()[
+        0
+    ]
+    conn.execute(
+        "INSERT INTO repo_aliases(repo_id, full_name, seen_at) VALUES (?, ?, ?)",
+        (repo_id, "acme/old", "2026-01-01"),
+    )
     conn.commit()
     conn.close()
     workspace = tmp_path / "open-source"
     workspace.mkdir()
     runner = CliRunner()
-    assert runner.invoke(app, ["repos", "enroll", "acme/old", "--workspace-root", str(workspace)]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["repos", "enroll", "acme/old", "--workspace-root", str(workspace)]
+        ).exit_code
+        == 0
+    )
     saved = tomllib.loads((tmp_home / "repositories.toml").read_text())
     assert saved["repository"][0]["upstream"] == "acme/new"
     listed = runner.invoke(app, ["repos", "list"])
@@ -156,8 +232,13 @@ def test_saved_old_name_validates_against_current_sqlite_name(tmp_home, tmp_path
         "INSERT INTO repos(node_id, full_name, owner, name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
         ("R_stable", "acme/new", "acme", "new", "2026-01-01", "2026-01-01"),
     )
-    repo_id = conn.execute("SELECT id FROM repos WHERE node_id='R_stable'").fetchone()[0]
-    conn.execute("INSERT INTO repo_aliases(repo_id, full_name, seen_at) VALUES (?, ?, ?)", (repo_id, "acme/old", "2026-01-01"))
+    repo_id = conn.execute("SELECT id FROM repos WHERE node_id='R_stable'").fetchone()[
+        0
+    ]
+    conn.execute(
+        "INSERT INTO repo_aliases(repo_id, full_name, seen_at) VALUES (?, ?, ?)",
+        (repo_id, "acme/old", "2026-01-01"),
+    )
     conn.commit()
     conn.close()
     result = CliRunner().invoke(app, ["repos", "validate", "acme/old"])

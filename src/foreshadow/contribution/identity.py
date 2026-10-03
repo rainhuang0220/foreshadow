@@ -64,7 +64,11 @@ def issue_from_plan(plan: dict[str, Any]) -> int | None:
                 return int(n.lstrip("#"))
         if isinstance(raw, str) and raw.lstrip("#").isdigit():
             return int(raw.lstrip("#"))
-    rec = plan.get("entry_strategy") if isinstance(plan.get("entry_strategy"), dict) else {}
+    rec = (
+        plan.get("entry_strategy")
+        if isinstance(plan.get("entry_strategy"), dict)
+        else {}
+    )
     rec = rec.get("recommended") if isinstance(rec, dict) else {}
     if isinstance(rec, dict):
         n = rec.get("issue_number") or rec.get("number")
@@ -96,6 +100,7 @@ def pick_active_for_repo(missions: list[dict[str, Any]]) -> dict[str, Any] | Non
         and str(m.get("status") or "") != "ABANDONED"
     ]
     if open_rows:
+
         def key(m: dict[str, Any]) -> tuple[int, int]:
             st = str(m.get("status") or "")
             try:
@@ -135,6 +140,4 @@ def require_mission_id(
         raise LookupError(f"no mission for {full_name}#{issue_number}")
     if len(rows) == 1:
         return rows[0]
-    raise LookupError(
-        f"{full_name} has {len(rows)} missions; pass --mission-id"
-    )
+    raise LookupError(f"{full_name} has {len(rows)} missions; pass --mission-id")

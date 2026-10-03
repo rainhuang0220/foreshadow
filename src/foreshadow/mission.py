@@ -253,22 +253,22 @@ def list_missions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
                 "status": row[2],
                 "status_zh": status_zh(str(row[2])),
                 "next_step_zh": next_step_zh(str(row[2])),
-            "needs_user_approval": str(row[2])
-            in {"WAITING_USER_APPROVAL", "MISSION_READY"},
-            "issue_number": _issue_number_from_plan(plan),
-            "issue_url": plan.get("issue_url")
-            or (
-                f"https://github.com/{row[1]}/issues/{_issue_number_from_plan(plan)}"
-                if _issue_number_from_plan(plan)
-                else None
-            ),
-            "repository": row[1],
-            "display_status": (
-                "SUBMISSION_CHECK_REQUIRED"
-                if str(row[2]) == "WAITING_USER_APPROVAL"
-                else str(row[2])
-            ),
-            "local_path": row[7],
+                "needs_user_approval": str(row[2])
+                in {"WAITING_USER_APPROVAL", "MISSION_READY"},
+                "issue_number": _issue_number_from_plan(plan),
+                "issue_url": plan.get("issue_url")
+                or (
+                    f"https://github.com/{row[1]}/issues/{_issue_number_from_plan(plan)}"
+                    if _issue_number_from_plan(plan)
+                    else None
+                ),
+                "repository": row[1],
+                "display_status": (
+                    "SUBMISSION_CHECK_REQUIRED"
+                    if str(row[2]) == "WAITING_USER_APPROVAL"
+                    else str(row[2])
+                ),
+                "local_path": row[7],
                 "created_at": row[8],
                 "updated_at": row[9],
             }
@@ -1916,9 +1916,7 @@ def load_mission_plan(
             "status_zh": status_zh(str(row[2])),
             "issue_number": issue_n,
             "issue_url": plan.get("issue_url")
-            or (
-                f"https://github.com/{row[1]}/issues/{issue_n}" if issue_n else None
-            ),
+            or (f"https://github.com/{row[1]}/issues/{issue_n}" if issue_n else None),
             "repository": row[1],
             "display_status": (
                 "SUBMISSION_CHECK_REQUIRED"

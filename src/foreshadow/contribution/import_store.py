@@ -180,7 +180,11 @@ def package_from_store(store: Path, manifest: dict[str, Any]) -> dict[str, Any]:
             "patch_commit_sha": manifest.get("patch_commit_sha"),
         },
         "remote_plan": {
-            "will": ["fork (if needed)", "push one contribution branch", "create one PR"],
+            "will": [
+                "fork (if needed)",
+                "push one contribution branch",
+                "create one PR",
+            ],
             "will_not": ["comment", "review", "merge", "force push"],
         },
         "entry_revision": "ripwire-74-imported",
@@ -239,7 +243,8 @@ def import_validated_contribution(
     persist_mission(conn, mission, user_id=user_id, repo_id=None)
     mid = int(mission.id or 0)
     issue_url = str(
-        manifest.get("issue_url") or f"https://github.com/{repository}/issues/{issue_number}"
+        manifest.get("issue_url")
+        or f"https://github.com/{repository}/issues/{issue_number}"
     )
     patch_mission_plan(
         conn,
@@ -321,10 +326,14 @@ def _ensure_job_and_snapshot(
         validated_base_sha=str(pkg.get("validated_base_sha") or ""),
         patch_commit_sha=str(pkg.get("patch_commit_sha") or ""),
         diff_sha256=str(pkg["diff_sha256"]),
-        branch_name=str((pkg.get("implementation") or {}).get("branch") or "foreshadow/entry"),
+        branch_name=str(
+            (pkg.get("implementation") or {}).get("branch") or "foreshadow/entry"
+        ),
         pr_title=str(pkg.get("pr_title") or ""),
         pr_body=str(pkg.get("pr_body") or ""),
-        test_evidence_digest=sha256_text(json.dumps(pkg.get("evidence") or {}, sort_keys=True)),
+        test_evidence_digest=sha256_text(
+            json.dumps(pkg.get("evidence") or {}, sort_keys=True)
+        ),
         qa_verdict=str(pkg.get("qa") or "PASS"),
         maintainer_output_safety=maintainer_safety_from_review(
             {

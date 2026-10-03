@@ -313,7 +313,11 @@ def _review(
         "evidence": pkg.get("evidence"),
         "remote_plan": pkg.get("remote_plan")
         or {
-            "will": ["fork (if needed)", "push one contribution branch", "create one PR"],
+            "will": [
+                "fork (if needed)",
+                "push one contribution branch",
+                "create one PR",
+            ],
             "will_not": ["comment", "review", "merge", "force push"],
         },
         "persistent_store": pkg.get("persistent_store"),
