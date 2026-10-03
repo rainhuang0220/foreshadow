@@ -123,29 +123,44 @@ def format_delta_zh(key: str, pair: dict[str, Any]) -> str:
 
 
 def star_delta(series: list[dict[str, Any]], *, days: int = 7) -> dict[str, Any]:
-    stars = [(p["date"], p["stars"]) for p in series if p.get("stars") is not None]
-    if len(stars) < 2:
-        return {
-            "days": days,
-            "delta": None,
-            "from": None,
-            "to": None,
-            "pending": True,
-            "observed_days": len(stars),
-        }
-    last_day, last_val = stars[-1]
-    first_day, first_val = stars[0]
-    return {
+    """Compare first-to-last retained samples; expose their real calendar span.
+
+    `days` is a requested comparison label, never a license to interpolate.
+    `window_complete` is true only for exactly that many consecutive dates.
+    """
+    from foreshadow.decision.spans import ObservationSpan
+
+    try:
+        span = ObservationSpan.normalize(series, key="stars")
+        points = span.points
+        invalid = None
+    except (ValueError, KeyError, TypeError):
+        span = ObservationSpan(())
+        points = ()
+        invalid = "invalid or duplicate measurement dates"
+    result = {
         "days": days,
-        "delta": int(last_val) - int(first_val),
-        "from": first_val,
-        "to": last_val,
-        "pending": False,
-        "observed_days": len(stars),
-        "first_date": first_day,
-        "last_date": last_day,
-        "window_complete": len(stars) >= days,
+        "delta": None,
+        "from": None,
+        "to": None,
+        "pending": len(points) < 2,
+        "observed_days": len(points),
+        "observed_points": len(points),
+        "calendar_days": span.calendar_days,
+        "comparison_kind": "observation_span",
+        "window_complete": span.exactly_covers(days),
     }
+    if invalid:
+        result["invalid_reason"] = invalid
+    if len(points) >= 2:
+        first, last = points[0], points[-1]
+        result.update(
+            delta=last.value - first.value,
+            **{"from": first.value, "to": last.value},
+            first_date=first.on.isoformat(),
+            last_date=last.on.isoformat(),
+        )
+    return result
 
 
 def interpret_growth(series: list[dict[str, Any]]) -> str:
