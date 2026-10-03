@@ -59,6 +59,10 @@ app = typer.Typer(
     epilog=APP_EPILOG,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+from foreshadow.decision.cli import app as work_order_app
+
+app.add_typer(work_order_app, name="work-order", rich_help_panel="Decide")
+
 schedule_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
@@ -76,8 +80,16 @@ app.add_typer(repos_app, name="repos", rich_help_panel="Setup")
 @repos_app.command("enroll")
 def repos_enroll(
     upstream: str,
-    workspace_root: str | None = typer.Option(None, "--workspace-root", help="Absolute root for local checkouts; required for first enrollment."),
-    path: str | None = typer.Option(None, "--path", help="Checkout path relative to workspace root. Omit for remote-only."),
+    workspace_root: str | None = typer.Option(
+        None,
+        "--workspace-root",
+        help="Absolute root for local checkouts; required for first enrollment.",
+    ),
+    path: str | None = typer.Option(
+        None,
+        "--path",
+        help="Checkout path relative to workspace root. Omit for remote-only.",
+    ),
 ) -> None:
     """Enroll one GitHub upstream explicitly. Does not clone or contact GitHub."""
     from foreshadow.repository_registry import RegistryError, enroll
@@ -108,7 +120,11 @@ def repos_list() -> None:
         known_by_name = identities(item.upstream for item in registry.repositories)
         for item in registry.repositories:
             known = known_by_name[item.upstream]
-            detail = f"  node_id={known[1]} current={known[2]}" if known else "  not yet in radar database"
+            detail = (
+                f"  node_id={known[1]} current={known[2]}"
+                if known
+                else "  not yet in radar database"
+            )
             print(f"{item.upstream}  path={item.path or '-'}{detail}")
     except RegistryError as exc:
         print(str(exc), file=sys.stderr)
@@ -131,10 +147,14 @@ def repos_validate(upstream: str | None = typer.Argument(None)) -> None:
             raise RegistryError("no repositories.toml; use `foreshadow repos enroll`")
         known_by_name = identities(item.upstream for item in registry.repositories)
         items = [
-            item for item in registry.repositories
+            item
+            for item in registry.repositories
             if upstream is None
             or item.upstream.casefold() == upstream.casefold()
-            or (known_by_name[item.upstream] is not None and known_by_name[item.upstream][2].casefold() == upstream.casefold())
+            or (
+                known_by_name[item.upstream] is not None
+                and known_by_name[item.upstream][2].casefold() == upstream.casefold()
+            )
         ]
         if upstream is not None and not items:
             raise RegistryError(f"not enrolled: {upstream}")
@@ -155,7 +175,9 @@ def repos_validate(upstream: str | None = typer.Argument(None)) -> None:
 
 @repos_app.command("path")
 def repos_path(
-    repository: str = typer.Argument(..., help="owner/repo, or a unique repository name"),
+    repository: str = typer.Argument(
+        ..., help="owner/repo, or a unique repository name"
+    ),
 ) -> None:
     """Print one absolute checkout path. Does not fetch, clone, or change Git."""
     from foreshadow.repository_registry import RegistryError, repository_directory
@@ -699,9 +721,14 @@ def outcome(
         help="maintainer_replied / pr_merged / abandoned / …",
     ),
     mission_id: int | None = typer.Option(
-        None, "--mission-id", "--mission", help="Required when the repo has multiple missions"
+        None,
+        "--mission-id",
+        "--mission",
+        help="Required when the repo has multiple missions",
     ),
-    issue: int | None = typer.Option(None, "--issue", help="Issue number when mission id is unknown"),
+    issue: int | None = typer.Option(
+        None, "--issue", help="Issue number when mission id is unknown"
+    ),
 ) -> None:
     """Record a manual contribution outcome. Never talks to GitHub."""
     from foreshadow.auth import resolve_cli_user
