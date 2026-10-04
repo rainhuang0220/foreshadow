@@ -149,6 +149,12 @@ Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks
 
 **K7 / E2-11:** Official Top 5 still needs genuine local v7. EEV is Board sort only. **K10:** LLM remains narrative. **S4-1 / PI-11:** remote GitHub mutations stay refused.
 
+## Growth Intelligence (accepted 2026-10-04)
+
+| ID | Decision |
+|---|---|
+| GI-1 | Growth Intelligence is a separate question from contribution Opportunity. See `docs/adr/0011-growth-intelligence.md`. No new SQLite snapshot table. Epistemic ceiling for this slice is HYPOTHESIS. The first experiment is a whereToken install-path edit, not a star campaign. Nightshift stays downstream of generic Work Order v1 and is not executed. |
+
 ## Maintainer-facing output (accepted 2026-09-09)
 
 | ID | Decision |
