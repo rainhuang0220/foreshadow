@@ -113,6 +113,8 @@ Lifecycle is `PRE_BASELINE_STABILIZATION`. The baseline does not start on the cu
 
 The hygiene commits change only `site/index.html`. They narrow privacy sentences that were broader than Cursor and Trae account calls, hosted sync, and profile refresh. They do not change command flags or runtime code. Pages deploys from `main` only, so the live site is still the old copy.
 
+Pushing that branch updated the repository `pushed_at` to `2026-10-04T17:05:48Z`. Public `main` did not move. Homepage, description, and topics were unchanged at `Date: Sun, 04 Oct 2026 17:07:04 GMT`. The push is a pre-baseline event, not the description treatment. Baseline collection still waits for `stabilization_sha`.
+
 `stabilization_sha` is the public `main` commit after that hygiene is what `main` contains, recorded at the time Pages has deployed it. It is not `b6b741d` unless a fast-forward makes that commit `main`. A merge commit would be a different sha. Do not fill this field in advance.
 
 `Formula/wheretoken.rb` staying on `v0.7.6` is a frozen confounder, not a hygiene gate. The approval packet is `docs/growth-approval-wheretoken-formula-v077.md`. It was not applied.
