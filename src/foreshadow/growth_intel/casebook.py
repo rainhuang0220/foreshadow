@@ -16,7 +16,7 @@ CLASSES = {
     "large_incumbent_or_platform",
     "foundation",
 }
-_DATA = Path(__file__).with_name("data") / "casebook.json"
+_DATA = Path(__file__).with_name("casebook.json")
 
 
 def packaged_casebook() -> dict:
