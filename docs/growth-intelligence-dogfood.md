@@ -62,3 +62,9 @@ The casebook still cannot support a comparative growth claim. Current README sna
 ## Evidence-integrity follow-up
 
 Starting from `4d5e96c` on the same branch, and still without a live traffic call: a same-day referrer or path refetch now replaces that fetch date's snapshot in one transaction. `growth observe` no longer accepts `--as-of`. The fetch clock is the process clock, and tests inject a clock. Daily rows are `daily_unique_visitors` and `daily_unique_cloners`. The endpoint's top-level 14-day `count` and `uniques` are stored separately and are not a sum of the daily uniques. The adoption experiment remains `INSUFFICIENT_BASELINE` / `UNKNOWN`. The full suite after this pass passed 883, skipped 3, and failed 0.
+
+## First whereToken dogfood, still unpublished
+
+On 2026-10-04 the source review of `rainhuang0220/whereToken` at `6948f752` pre-registered one metadata treatment: the GitHub homepage field, from null to `https://rainhuang0220.github.io/whereToken/`. The record is `docs/growth-experiment-wheretoken-1.md`.
+
+`FORESHADOW_OWNER_TRAFFIC_TOKEN` was still unset. No traffic call was made. No whereToken file, formula, README, topic, description, or GitHub metadata field was written. `build_plan` still does not name a channel. State remains `INSUFFICIENT_BASELINE`. This is not `TREATMENT_APPLIED`.
