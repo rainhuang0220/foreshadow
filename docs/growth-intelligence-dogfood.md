@@ -68,3 +68,7 @@ Starting from `4d5e96c` on the same branch, and still without a live traffic cal
 On 2026-10-04 the source review of `rainhuang0220/whereToken` at `6948f752` pre-registered one metadata treatment: the GitHub homepage field, from null to `https://rainhuang0220.github.io/whereToken/`. The record is `docs/growth-experiment-wheretoken-1.md`.
 
 `FORESHADOW_OWNER_TRAFFIC_TOKEN` was still unset. No traffic call was made. No whereToken file, formula, README, topic, description, or GitHub metadata field was written. `build_plan` still does not name a channel. State remains `INSUFFICIENT_BASELINE`. This is not `TREATMENT_APPLIED`.
+
+## Design review, 2026-10-05
+
+`wt-homepage` is `SUPERSEDED_BEFORE_TREATMENT` because `daily_unique_visitors` is counted before the About link can be seen. The replacement, still unpublished, is the GitHub description field in `docs/growth-experiment-wheretoken-2.md`. Lifecycle state is `PRE_BASELINE_STABILIZATION`. `stabilization_sha` is null. The in-repo formula packet is `docs/growth-approval-wheretoken-formula-v077.md` and was not applied. `build_plan` still does not name a channel.

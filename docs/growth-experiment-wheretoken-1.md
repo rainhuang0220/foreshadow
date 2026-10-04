@@ -144,3 +144,15 @@ These are real, and they are not this treatment.
 ## What would make a later result invalid
 
 A missing day stored as zero. A rolling 14-day total used as the effect. Stars used as the primary success. A second public string changed in the same window. A traffic token reused from `gh` or `GITHUB_TOKEN`. Telemetry added to whereToken. The homepage written before 7 stored calendar days exist.
+
+## Superseded before treatment
+
+Recorded 2026-10-05. This pre-registration is `SUPERSEDED_BEFORE_TREATMENT`.
+
+reason: metric/treatment mismatch
+
+The sections above are the original pre-registration. They were not rewritten. The homepage field was not changed. It was still JSON `null` when this supersession was written. No traffic row was stored.
+
+`daily_unique_visitors` is counted when the repository page loads. The About homepage link is visible only after that load. Repository search does not read the homepage field. The same Pages URL is already in the README. What remains is a return visit, an external index hit, or an API consumer, and none of those is identifiable as a first arrival in `daily_unique_visitors`. A flat median would not say the field does not matter. It would say this metric cannot see it.
+
+The replacement record is `docs/growth-experiment-wheretoken-2.md`. `build_plan` still does not name a channel.
