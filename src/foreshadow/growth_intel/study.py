@@ -22,13 +22,22 @@ def build_study(book: dict, *, as_of: datetime) -> dict:
     for repo in loaded["repositories"]:
         if _time(repo["observation_time"]) > as_of:
             raise ValueError("future observation")
-    snapshot = any(repo.get("readme_scope") == "CURRENT_SNAPSHOT" for repo in loaded["repositories"])
-    text = (
-        "README fields in this study are a CURRENT_SNAPSHOT pinned by blob SHA. "
-        "They were not observed before the growth window, so they cannot explain historical stars."
-        if snapshot
-        else "No README snapshot was attached. Historical README effects are UNKNOWN."
-    )
+    snapshots = [
+        repo for repo in loaded["repositories"] if repo.get("readme_scope") == "CURRENT_SNAPSHOT"
+    ]
+    pinned = bool(snapshots) and all(repo.get("readme_blob_sha") for repo in snapshots)
+    if snapshots and pinned:
+        text = (
+            "README fields in this study are a CURRENT_SNAPSHOT pinned by blob SHA. "
+            "They were not observed before the growth window, so they cannot explain historical stars."
+        )
+    elif snapshots:
+        text = (
+            "README fields in this study are a CURRENT_SNAPSHOT. "
+            "They were not observed before the growth window, so they cannot explain historical stars."
+        )
+    else:
+        text = "No README snapshot was attached. Historical README effects are UNKNOWN."
     claim = dump_claim(
         {
             "id": "cl-readme-snapshot",

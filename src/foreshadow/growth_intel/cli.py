@@ -59,8 +59,15 @@ def portfolio(
         sys.stdout.write(dumps({"portfolio": plan["portfolio"]}))
         return
     for row in plan["portfolio"]:
-        score = "none" if row["score"] is None else str(row["score"])
-        print(f"{row['identity']}\teligible={row['eligible']}\treason={row['reason']}\tscore={score}")
+        priority = (
+            "none"
+            if row["intervention_priority"] is None
+            else str(row["intervention_priority"])
+        )
+        print(
+            f"{row['identity']}\teligible={row['eligible']}\treason={row['reason']}\t"
+            f"intervention_priority={priority}\tmeaning={row['priority_meaning']}"
+        )
 
 
 @app.command("plan")
@@ -95,3 +102,49 @@ def export(
         with output.expanduser().open("x", encoding="utf-8") as handle:
             handle.write(text)
     sys.stdout.write(text)
+
+
+@app.command("observe")
+def observe(
+    identity: Annotated[str, typer.Argument()],
+    casebook: Annotated[Path | None, typer.Option("--casebook")] = None,
+    as_of: Annotated[str | None, typer.Option("--as-of")] = None,
+    database: Annotated[Path | None, typer.Option("--database")] = None,
+):
+    """Record read-only traffic for one owned repository. Does not post or execute."""
+    from foreshadow.growth_intel.owner_traffic import TOKEN_ENV, record_owner_traffic, token_from_env
+
+    token = token_from_env()
+    if not token:
+        print(
+            f"cannot observe owner traffic: {TOKEN_ENV} is not set. "
+            "Create a fine-grained personal access token limited to the selected repositories, "
+            "with Administration repository permission Read. "
+            "Do not use a classic repo token. Public GITHUB_TOKEN is not read.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(2)
+    try:
+        book = _book(casebook)
+        allowed = {row["identity"] for row in book["repositories"] if row.get("role") == "owned"}
+        if identity not in allowed:
+            raise ValueError("repository is not an owned casebook repository")
+        from foreshadow.db import connect, migrate
+
+        if database is None:
+            from foreshadow.paths import resolve_data_dir
+
+            database = resolve_data_dir() / "foreshadow.sqlite3"
+        conn = connect(database)
+        migrate(conn)
+        record_owner_traffic(
+            conn,
+            identity=identity,
+            token=token,
+            as_of=_as_of(as_of),
+            allowed=allowed,
+        )
+    except (ValueError, OSError) as exc:
+        print(f"cannot observe owner traffic: {exc}", file=sys.stderr)
+        raise typer.Exit(2) from exc
+    print(f"recorded owner traffic for {identity}")

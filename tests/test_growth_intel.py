@@ -40,6 +40,13 @@ def _repo(**overrides):
         "install_paths_conflict": True,
         "demo_present": True,
         "html_url": "https://github.com/acme/tool",
+        "surface_discrepancy": {
+            "kind": "install_surface_version",
+            "observed": "1.2.3",
+            "expected": "9.9.9",
+            "affected_surfaces": ["docs/INSTALL.md"],
+            "evidence": "docs/INSTALL.md names 1.2.3. The release names 9.9.9.",
+        },
     }
     row.update(overrides)
     return row
@@ -256,7 +263,7 @@ def test_experiment_requires_metric_baseline_success_and_failure():
 def test_star_only_success_is_rejected_below_the_floor():
     from foreshadow.growth_intel.plan import validate_experiment
 
-    with pytest.raises(ValueError, match="underpowered"):
+    with pytest.raises(ValueError, match="policy floor"):
         validate_experiment(
             {
                 "id": "gx-stars",
@@ -391,3 +398,513 @@ def test_shipped_casebook_ranks_where_token_and_blocks_nightshift():
     assert night["eligible"] is False
     assert plan["blocked_experiments"]
     assert all(item["evidence_strength"] != "QUASI_EXPERIMENTAL" for item in plan["backlog"])
+
+
+def _package_sources() -> list[Path]:
+    root = Path(__file__).resolve().parents[1] / "src" / "foreshadow" / "growth_intel"
+    return sorted(root.glob("*.py"))
+
+
+def test_generic_planner_has_no_where_token_version_knowledge():
+    banned = ("v0.7.6", "v0.7.7", "Formula/wheretoken.rb", "wheretoken")
+    offenders = []
+    for path in _package_sources():
+        text = path.read_text(encoding="utf-8").lower()
+        for token in banned:
+            if token.lower() in text:
+                offenders.append(f"{path.name}:{token}")
+    assert offenders == []
+
+
+def test_synthetic_repository_gets_the_same_treatment_class():
+    from foreshadow.growth_intel.plan import build_plan
+
+    plan = build_plan(_book(_repo()), as_of=AS_OF)
+    experiment = plan["recommended_experiment"]
+    assert experiment["kind"] == "treatment"
+    assert experiment["role"] == "treatment-integrity"
+    assert experiment["state"] == "TREATMENT_READY"
+    assert experiment["implementation_metric"] == "install_path_agreement"
+    assert experiment["outcome_metric"] is None
+    assert "window_days" not in experiment
+    assert "9.9.9" in experiment["success_criterion"]
+    assert "1.2.3" in experiment["success_criterion"]
+    assert "docs/INSTALL.md" in experiment["success_criterion"]
+    assert "v0.7" not in json.dumps(experiment)
+    growth = plan["growth_experiment"]
+    assert growth["id"] == "gx-qualified-traffic-v1"
+    assert growth["kind"] == "outcome"
+    assert growth["outcome_metric"] == "unique_visitors"
+    assert growth["state"] == "INSUFFICIENT_BASELINE"
+    assert growth["baseline_observations"] == []
+    assert growth["evidence_strength"] == "UNKNOWN"
+    assert growth["exportable"] is False
+    assert growth["causal"] is False
+    assert growth["low_power"] is True
+    assert "EXPERIMENT_RESULT" not in json.dumps(plan)
+
+
+def test_treatment_acceptance_is_not_an_outcome_window():
+    from foreshadow.growth_intel.plan import validate_experiment
+
+    with pytest.raises(ValueError, match="not an outcome window"):
+        validate_experiment(
+            {
+                "id": "gx-surface-agreement",
+                "kind": "treatment",
+                "implementation_metric": "install_path_agreement",
+                "baseline": "surfaces disagree",
+                "window_days": 14,
+                "success_criterion": "the files agree",
+                "failure_criterion": "the files still disagree",
+                "guardrail": "no release",
+            }
+        )
+
+
+def test_implementation_pass_is_not_an_experiment_result():
+    from foreshadow.growth_intel.outcome import mark_implementation
+
+    experiment = {"kind": "treatment", "evidence_strength": "HYPOTHESIS", "id": "gx-1"}
+    marked = mark_implementation(experiment, passed=True)
+    assert marked["state"] == "READY_FOR_OBSERVATION"
+    assert marked["implementation"] == "PASS"
+    assert marked["evidence_strength"] == "HYPOTHESIS"
+    poisoned = dict(experiment, evidence_strength="EXPERIMENT_RESULT")
+    with pytest.raises(ValueError, match="not an experiment result"):
+        mark_implementation(poisoned, passed=True)
+
+
+def test_measured_change_keeps_raw_observations_and_is_not_causal():
+    from foreshadow.growth_intel.outcome import measure_outcome
+
+    baseline = [{"observed_on": "2026-09-01", "unique_visitors": 6, "clones": 1}]
+    post = [
+        {"observed_on": "2026-09-10", "unique_visitors": 6, "clones": 1},
+        {"observed_on": "2026-09-22", "unique_visitors": 18, "clones": 5},
+    ]
+    result = measure_outcome(
+        baseline=baseline,
+        post=post,
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert result["state"] == "MEASURED"
+    assert result["evidence_strength"] == "OBSERVED"
+    assert result["interpretation"] == "OBSERVED_CHANGE"
+    assert result["causal"] is False
+    assert result["elapsed_days"] == 12
+    assert result["elapsed_days"] != len(post)
+    assert result["baseline_observations"] == baseline
+    assert result["post_observations"] == post
+    unordered = measure_outcome(
+        baseline=[
+            {"observed_on": "2026-09-08", "unique_visitors": 1},
+            {"observed_on": "2026-09-01", "unique_visitors": 18},
+        ],
+        post=[
+            {"observed_on": "2026-09-22", "unique_visitors": 1},
+            {"observed_on": "2026-09-10", "unique_visitors": 9},
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert unordered["interpretation"] == "NO_CLEAR_CHANGE"
+    assert unordered["baseline_observations"][0]["unique_visitors"] == 1
+    assert "QUASI_EXPERIMENTAL" not in result.values()
+    assert "EXPERIMENT_RESULT" not in result.values()
+    assert "not a causal claim" in result["text"]
+
+
+def test_insufficient_baseline_stays_explicit():
+    from foreshadow.growth_intel.outcome import measure_outcome
+
+    post = [
+        {"observed_on": "2026-09-10", "unique_visitors": 1},
+        {"observed_on": "2026-09-12", "unique_visitors": 2},
+    ]
+    missing = measure_outcome(
+        baseline=[],
+        post=post,
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert missing["state"] == "INSUFFICIENT_BASELINE"
+    assert missing["evidence_strength"] == "UNKNOWN"
+    assert missing["elapsed_days"] is None
+    assert missing["post_observations"] == post
+    short = measure_outcome(
+        baseline=[{"observed_on": "2026-09-01", "unique_visitors": 1}],
+        post=[{"observed_on": "2026-09-12", "unique_visitors": 2}],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert short["state"] == "INSUFFICIENT_BASELINE"
+    assert short["elapsed_days"] is None
+    same_day = measure_outcome(
+        baseline=[{"observed_on": "2026-09-01", "unique_visitors": 1}],
+        post=[
+            {"observed_on": "2026-09-10T00:00:00Z", "unique_visitors": 1},
+            {"observed_on": "2026-09-10T18:00:00Z", "unique_visitors": 4},
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert same_day["state"] == "INSUFFICIENT_BASELINE"
+    assert same_day["elapsed_days"] in (None, 0)
+
+
+def test_missing_outcome_counts_are_not_zero():
+    from foreshadow.growth_intel.outcome import measure_outcome
+
+    result = measure_outcome(
+        baseline=[{"observed_on": "2026-09-01"}],
+        post=[
+            {"observed_on": "2026-09-10", "unique_visitors": None},
+            {"observed_on": "2026-09-22"},
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert result["state"] == "MEASURED"
+    assert result["interpretation"] == "UNKNOWN"
+    assert result["causal"] is False
+
+
+def test_future_outcome_observation_is_rejected():
+    from foreshadow.growth_intel.outcome import measure_outcome
+
+    with pytest.raises(ValueError, match="future"):
+        measure_outcome(
+            baseline=[{"observed_on": "2026-10-06", "unique_visitors": 1}],
+            post=[],
+            intervention_on="2026-10-01",
+            as_of=AS_OF,
+        )
+
+
+def test_transfer_does_not_infer_a_band_from_an_editable_file():
+    from foreshadow.growth_intel.transfer import transfer_for
+
+    result = transfer_for(
+        sources=[
+            _repo(
+                identity="solo/quiet",
+                role="control",
+                brand_advantage="low",
+                matched_to="acme/tool",
+                created_at="2016-03-11T00:00:00Z",
+                archetype="cli-local",
+            )
+        ],
+        target=_repo(archetype="portfolio"),
+        as_of=AS_OF,
+    )
+    assert result["band"] == "unknown"
+    assert result["status"] == "UNKNOWN"
+    assert result["assessment"]["age_compatibility"] == "not_comparable"
+    assert result["assessment"]["archetype"] == "mixed"
+    assert result["assessment"]["measurement_quality"] == "unknown"
+    assert "effect size" in result["why_might_not"].lower()
+
+
+def test_portfolio_priority_is_not_a_growth_score():
+    from foreshadow.growth_intel.portfolio import rank_portfolio
+
+    ranked = rank_portfolio(
+        [
+            _repo(identity="rainhuang0220/whereToken"),
+            _repo(
+                identity="rainhuang0220/foreshadow",
+                install_paths_conflict=False,
+                description_states_job=False,
+                demo_present=False,
+                topics_present=False,
+            ),
+            _repo(
+                identity="rainhuang0220/nightshift",
+                release_blocked=True,
+                install_paths_conflict=False,
+            ),
+        ]
+    )
+    winner = ranked[0]
+    assert winner["identity"] == "rainhuang0220/whereToken"
+    assert "score" not in winner
+    assert winner["intervention_priority"] == 5
+    assert winner["priority_meaning"] == "actionable-friction"
+    second = next(item for item in ranked if item["identity"] == "rainhuang0220/foreshadow")
+    assert second["intervention_priority"] == 4
+    blocked = next(item for item in ranked if item["identity"] == "rainhuang0220/nightshift")
+    assert blocked["eligible"] is False
+    assert blocked["reason"] == "release-blocked"
+    assert blocked["intervention_priority"] is None
+    assert blocked["priority_meaning"] == "actionable-friction"
+    encoded = json.dumps(ranked)
+    assert "star potential" not in encoded
+    assert "expected_entry" not in encoded
+
+
+def test_external_description_change_has_no_outcome_window():
+    from foreshadow.growth_intel.plan import build_plan
+
+    plan = build_plan(
+        _book(
+            _repo(
+                identity="acme/docs",
+                description_states_job=False,
+                install_paths_conflict=False,
+                demo_present=False,
+                topics_present=True,
+            )
+        ),
+        as_of=AS_OF,
+    )
+    assert plan["recommended_experiment"] is None
+    item = plan["backlog"][0]
+    assert item["id"] == "gx-explicit-header-v1"
+    assert item["kind"] == "treatment"
+    assert "window_days" not in item
+    assert item["exportable"] is False
+    assert item["reason"] == "external-write"
+
+
+def test_export_uses_the_observation_discrepancy(tmp_path: Path):
+    from foreshadow.growth_intel.export import export_work_order
+    from foreshadow.growth_intel.plan import build_plan
+
+    secret = "ghp_OWNER_TRAFFIC_SECRET"
+    plan = build_plan(_book(_repo()), as_of=AS_OF)
+    order = export_work_order(plan, now=AS_OF, repository_path=tmp_path)
+    encoded = json.dumps(order)
+    assert "9.9.9" in order["objective"]
+    assert "docs/INSTALL.md" in order["objective"]
+    assert order["validation"][0]["argv"] == [
+        "git",
+        "grep",
+        "-n",
+        "-F",
+        "-e",
+        "9.9.9",
+        "--",
+        "docs/INSTALL.md",
+    ]
+    assert "v0.7.6" not in encoded
+    assert "Formula/wheretoken.rb" not in encoded
+    assert secret not in encoded
+    refused = dict(plan)
+    refused["recommended_experiment"] = plan["growth_experiment"]
+    with pytest.raises(ValueError, match="cannot be a work order"):
+        export_work_order(refused, now=AS_OF)
+
+
+def test_where_token_discrepancy_stays_in_the_casebook():
+    from foreshadow.growth_intel.casebook import packaged_casebook
+    from foreshadow.growth_intel.plan import build_plan
+
+    book = packaged_casebook()
+    where = next(row for row in book["repositories"] if row["identity"] == "rainhuang0220/whereToken")
+    assert where["treatment_id"] == "gx-single-install-path-v1"
+    assert where["surface_discrepancy"]["observed"] == "v0.7.6"
+    assert where["surface_discrepancy"]["expected"] == "v0.7.7"
+    assert where["surface_discrepancy"]["affected_surfaces"] == [
+        "Formula/wheretoken.rb",
+        "README.md",
+    ]
+    others = [row for row in book["repositories"] if "surface_discrepancy" in row]
+    assert [row["identity"] for row in others] == ["rainhuang0220/whereToken"]
+    plan = build_plan(book, as_of=AS_OF)
+    experiment = plan["recommended_experiment"]
+    assert experiment["id"] == "gx-single-install-path-v1"
+    assert experiment["kind"] == "treatment"
+    assert experiment["state"] == "TREATMENT_READY"
+    assert "window_days" not in experiment
+    assert plan["growth_experiment"]["target"] == "rainhuang0220/whereToken"
+    assert plan["growth_experiment"]["state"] == "INSUFFICIENT_BASELINE"
+    assert plan["growth_experiment"]["baseline_observations"] == []
+    night = next(row for row in plan["portfolio"] if row["identity"] == "rainhuang0220/nightshift")
+    assert night["reason"] == "release-blocked"
+    assert plan["transferability"]["status"] == "UNKNOWN"
+    assert plan["transferability"]["band"] == "unknown"
+
+
+def test_growth_modules_do_not_import_contribution_ranking():
+    import ast
+
+    banned_prefixes = (
+        "foreshadow.score",
+        "foreshadow.score_v2",
+        "foreshadow.pipeline",
+        "foreshadow.learning",
+        "foreshadow.decision",
+    )
+    for path in _package_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith(banned_prefixes), path.name
+
+
+def test_public_client_still_denies_traffic():
+    from foreshadow.github.client import rest_path_denied
+
+    assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/views")
+    assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/clones")
+
+
+def test_traffic_missing_days_are_not_zero_and_future_days_are_rejected():
+    from foreshadow.growth_intel.owner_traffic import parse_daily
+
+    rows = parse_daily(
+        {
+            "count": 9,
+            "uniques": 4,
+            "views": [
+                {"timestamp": "2026-09-20T00:00:00Z", "count": 1, "uniques": 1},
+                {"timestamp": "2026-09-22T00:00:00Z", "uniques": 2},
+            ],
+        },
+        series="views",
+        as_of=AS_OF,
+    )
+    assert [row["observed_on"] for row in rows] == ["2026-09-20", "2026-09-22"]
+    assert rows[1]["count"] is None
+    assert rows[1]["uniques"] == 2
+    assert all(row["count"] != 0 or row["observed_on"] == "2026-09-20" for row in rows)
+    assert parse_daily({}, series="views", as_of=AS_OF) == []
+    with pytest.raises(ValueError, match="future"):
+        parse_daily(
+            {"views": [{"timestamp": "2026-10-06T00:00:00Z", "count": 1, "uniques": 1}]},
+            series="views",
+            as_of=AS_OF,
+        )
+
+
+def test_owner_token_is_not_stored_or_exported(tmp_path: Path, monkeypatch):
+    from foreshadow.db import connect, migrate
+    from foreshadow.growth_intel.export import export_work_order
+    from foreshadow.growth_intel.owner_traffic import record_owner_traffic
+    from foreshadow.growth_intel.plan import build_plan
+
+    secret = "ghp_OWNER_TRAFFIC_SECRET"
+    monkeypatch.setenv("FORESHADOW_OWNER_TRAFFIC_TOKEN", secret)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_BROAD_LOGIN_SECRET")
+
+    class _Body:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def read(self) -> bytes:
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class _Opener:
+        def __init__(self):
+            self.urls = []
+
+        def open(self, request, timeout=None):
+            self.urls.append(request.full_url)
+            if request.full_url.endswith("/traffic/views?per=day"):
+                payload = {
+                    "count": 4,
+                    "uniques": 2,
+                    "views": [
+                        {"timestamp": "2026-09-20T00:00:00Z", "count": 1, "uniques": 1},
+                        {"timestamp": "2026-09-22T00:00:00Z", "count": 0, "uniques": 0},
+                    ],
+                }
+            elif request.full_url.endswith("/traffic/clones?per=day"):
+                payload = {
+                    "clones": [
+                        {"timestamp": "2026-09-20T00:00:00Z", "count": 2, "uniques": 1},
+                    ]
+                }
+            elif request.full_url.endswith("/traffic/popular/referrers"):
+                payload = [{"referrer": "github.com", "count": 2, "uniques": 1}]
+            elif request.full_url.endswith("/traffic/popular/paths"):
+                payload = [{"path": "/acme/tool", "count": 3, "uniques": 1}]
+            else:
+                raise AssertionError(request.full_url)
+            assert secret in request.get_header("Authorization")
+            return _Body(json.dumps(payload).encode())
+
+    opener = _Opener()
+    db_path = tmp_path / "owner.sqlite3"
+    conn = connect(db_path)
+    migrate(conn)
+    record_owner_traffic(
+        conn,
+        identity="acme/tool",
+        token=secret,
+        as_of=AS_OF,
+        allowed={"acme/tool"},
+        opener=opener,
+    )
+    stored = conn.execute(
+        "SELECT source, observed_on, metric, value FROM owner_traffic_observations ORDER BY source, metric, observed_on"
+    ).fetchall()
+    assert ("views", "2026-09-21", "views", 0) not in stored
+    assert ("views", "2026-09-22", "views", 0) in stored
+    assert ("referrers", "2026-10-04", "count:github.com", 2) in stored
+    blob = db_path.read_bytes()
+    assert secret.encode() not in blob
+    assert b"ghp_BROAD_LOGIN_SECRET" not in blob
+    plan = build_plan(_book(_repo()), as_of=AS_OF)
+    order = export_work_order(plan, now=AS_OF, repository_path=tmp_path)
+    encoded = json.dumps(plan) + json.dumps(order)
+    assert secret not in encoded
+    assert "ghp_BROAD_LOGIN_SECRET" not in encoded
+    with pytest.raises(ValueError, match="configured owned"):
+        record_owner_traffic(
+            conn,
+            identity="other/repo",
+            token=secret,
+            as_of=AS_OF,
+            allowed={"acme/tool"},
+            opener=opener,
+        )
+
+
+def test_owner_traffic_refuses_redirects_and_redacts_the_token():
+    import io
+    import urllib.error
+
+    from foreshadow.growth_intel.owner_traffic import _NoRedirect, fetch_json
+
+    with pytest.raises(ValueError, match="redirected"):
+        _NoRedirect().redirect_request(None, None, 302, "Found", {}, "https://evil.example/steal")
+    secret = "ghp_OWNER_TRAFFIC_SECRET"
+
+    class _Boom:
+        def open(self, request, timeout=None):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                403,
+                "no",
+                hdrs=None,
+                fp=io.BytesIO(f"denied {secret}".encode()),
+            )
+
+    with pytest.raises(ValueError, match="redacted") as raised:
+        fetch_json("acme/tool", "views", token=secret, opener=_Boom(), allowed={"acme/tool"})
+    assert secret not in str(raised.value)
+
+
+def test_observe_refuses_without_the_owner_token(monkeypatch):
+    from typer.testing import CliRunner
+
+    from foreshadow.cli import app
+
+    monkeypatch.delenv("FORESHADOW_OWNER_TRAFFIC_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_BROAD_LOGIN_SECRET")
+    result = CliRunner().invoke(app, ["growth", "observe", "acme/tool"])
+    assert result.exit_code == 2
+    assert "FORESHADOW_OWNER_TRAFFIC_TOKEN" in result.stderr
+    assert "Administration" in result.stderr
+    assert "ghp_BROAD_LOGIN_SECRET" not in (result.stdout + result.stderr)
+    assert "sqlite" not in result.stderr.lower()

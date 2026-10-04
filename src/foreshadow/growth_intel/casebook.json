@@ -1531,7 +1531,15 @@
       "demo_present": true,
       "value_prop_quote": "Local-first token usage analytics for coding agents.",
       "install_conflict_detail": "At default_branch_sha 6948f7522a0a98d4f7d2619583e1b717b9363162, Formula/wheretoken.rb blob b51368437f5af9cd9034310da383cbb1e93ffba4 urls archive/refs/tags/v0.7.6.tar.gz (sha256 384780534bf6051ca546519ac74182d6f6bfb6331677c04299030a18399417bf). Tap rainhuang0220/homebrew-wheretoken installs v0.7.7 release binaries. README blob 2e4212dd400678a7bd3be2a947ea1e74680a8602 leads with a curl install script, and says release binaries and brew tap include the dashboard while go install and brew --HEAD build the CLI only.",
-      "formula_blob_sha": "b51368437f5af9cd9034310da383cbb1e93ffba4"
+      "formula_blob_sha": "b51368437f5af9cd9034310da383cbb1e93ffba4",
+      "treatment_id": "gx-single-install-path-v1",
+      "surface_discrepancy": {
+        "kind": "install_surface_version",
+        "observed": "v0.7.6",
+        "expected": "v0.7.7",
+        "affected_surfaces": ["Formula/wheretoken.rb", "README.md"],
+        "evidence": "At default_branch_sha 6948f7522a0a98d4f7d2619583e1b717b9363162, Formula/wheretoken.rb blob b51368437f5af9cd9034310da383cbb1e93ffba4 urls archive/refs/tags/v0.7.6.tar.gz (sha256 384780534bf6051ca546519ac74182d6f6bfb6331677c04299030a18399417bf). Tap rainhuang0220/homebrew-wheretoken installs v0.7.7 release binaries. README blob 2e4212dd400678a7bd3be2a947ea1e74680a8602 leads with a curl install script, and says release binaries and brew tap include the dashboard while go install and brew --HEAD build the CLI only."
+      }
     },
     {
       "identity": "rainhuang0220/foreshadow",

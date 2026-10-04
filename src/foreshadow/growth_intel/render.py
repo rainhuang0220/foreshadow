@@ -26,9 +26,24 @@ def render_plan(plan: dict) -> str:
         "Recommended experiment:",
         sections["experiment"] if experiment is None else (
             f"{experiment['title']} on {experiment['target']}. "
-            f"Metric: {experiment['primary_metric']}. "
+            f"Check: {experiment.get('implementation_metric') or experiment.get('outcome_metric')}. "
+            f"State: {experiment.get('state', 'PLANNED')}. "
             f"Evidence: {experiment['evidence_strength']}."
         ),
         "",
     ]
+    growth = plan.get("growth_experiment")
+    if growth:
+        lines.extend(
+            [
+                "Outcome measurement:",
+                (
+                    f"{growth['id']} on {growth['target']}. "
+                    f"State: {growth['state']}. "
+                    f"Metric: {growth['outcome_metric']}. "
+                    f"Evidence: {growth['evidence_strength']}."
+                ),
+                "",
+            ]
+        )
     return "\n".join(lines)
