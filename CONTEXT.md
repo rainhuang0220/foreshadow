@@ -27,8 +27,20 @@ _Avoid_: causal claim, correlation treated as a cause
 **Transferability**: A judgment of whether a source case's mechanism can be reproduced on an owned repository, including brand and team class.
 _Avoid_: copy the winner
 
-**Growth experiment plan**: A bounded change on one owned repository, with a metric, a baseline, a calendar window, and success and failure criteria.
+**Growth experiment plan**: A bounded change on one owned repository. A treatment check says whether the change landed. An outcome window says whether a later behavior changed.
 _Avoid_: growth advice, marketing campaign
 
-**Growth outcome**: The later measurement of a growth experiment plan. It does not exist until the window has elapsed.
+**Treatment check**: An immediate test that the requested files or settings match. Passing it means the change landed.
+_Avoid_: adoption result, experiment result
+
+**Outcome measurement**: A comparison of stored observations before and after an intervention, using calendar dates. It is not a cause.
+_Avoid_: predicted stars, a file assertion with a waiting period
+
+**Intervention priority**: A rank of actionable friction on owned repositories. It chooses what to try next.
+_Avoid_: growth probability, star potential, expected entry value
+
+**Owner traffic observation**: A dated, owner-only count of views, visitors, clones, cloners, referrers, or paths. Missing days stay missing.
+_Avoid_: public star snapshot, a token stored in the database
+
+**Growth outcome**: The later measurement of an outcome window. It does not exist until stored observations cover real elapsed days.
 _Avoid_: predicted stars

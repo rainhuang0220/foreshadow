@@ -1,52 +1,60 @@
-# Growth Intelligence dogfood, 2026-10-04
+# Growth Intelligence dogfood, 2026-10-04, owned-observation round
 
-The slice was exercised from the isolated worktree `engineering/growth-intelligence`, with `PYTHONPATH=src` pointed at that tree. The dirty Foreshadow checkout, Nightshift source, and whereToken source were not edited.
+This round started from `ad96569` on `engineering/growth-intelligence`. It did not rebuild the casebook and it did not edit whereToken, Nightshift, or the dirty Foreshadow checkout.
 
-## Commands
+## What changed in the reading
 
-`foreshadow growth study`, `portfolio`, `plan`, and `export` are registered on the Decide panel. `growth --help` names those four commands and does not mention GraphQL, sqlite, or argparse.
+The generic planner no longer contains whereToken version strings. The whereToken row carries `treatment_id` `gx-single-install-path-v1` and a `surface_discrepancy`: observed `v0.7.6`, expected `v0.7.7`, surfaces `Formula/wheretoken.rb` and `README.md`. A synthetic repository with `1.2.3` versus `9.9.9` on `docs/INSTALL.md` produces the same treatment class.
 
-Plan and export used `--as-of 2026-10-04T10:40:00Z`. That instant is after every casebook `observation_time` (latest `2026-10-04T10:35:00Z` on `mikehasa/agentacct`) and was already in the past when Nightshift checked freshness. `expires_at` is `2026-10-18T10:40:00Z`.
+`gx-single-install-path-v1` is a treatment check. State `TREATMENT_READY`. Implementation metric `install_path_agreement`. Evidence `HYPOTHESIS`. There is no outcome window. Passing it later would be `READY_FOR_OBSERVATION`, still not `EXPERIMENT_RESULT`.
 
-`growth plan --json` wrote `docs/growth-intelligence-plan.json`. The public JSON omits `target_record`. Export uses the in-memory plan, which still carries that record. A later process that only has the dumped plan cannot export until it rebuilds the plan.
+`gx-qualified-traffic-v1` is the adoption question for whereToken. Outcome metric `unique_visitors`, secondary `unique_cloners`, stars as a secondary observation only. State `INSUFFICIENT_BASELINE`. Evidence `UNKNOWN`. `low_power` is true because no pre-intervention traffic row is stored. It is not exportable. It does not name a channel. The earlier unsaved read of 6 unique views is not a baseline.
 
-## Portfolio result the tool printed
+Transfer status is `UNKNOWN`. Age compatibility is `not_comparable` (whereToken was created 2026-08-15; the one-command controls are much older). Archetype is `mixed`. Measurement quality is `unknown`. The band is not an effect size.
 
-| Repository | Eligible | Score | Reason |
+Portfolio field is `intervention_priority`, meaning `actionable-friction`.
+
+| Repository | Eligible | Intervention priority | Reason |
 |---|---|---:|---|
 | `rainhuang0220/whereToken` | yes | 5 | eligible |
 | `rainhuang0220/foreshadow` | yes | 4 | eligible |
 | `rainhuang0220/nightshift` | no | null | release-blocked |
 
-Recommended experiment: `gx-single-install-path-v1`. Evidence strength `HYPOTHESIS`. Transfer band `medium`, status `HYPOTHESIS`. That band means a low-brand maintainer can edit the file. It is not an effect size and it does not match on age. The sources are the one-command controls, not the whole casebook. Those controls, named as counterevidence: `dalance/amber`, `lmnr-ai/index`, `neovateai/neovate-code`, `shotgun-sh/shotgun`. No backlog item is `QUASI_EXPERIMENTAL`.
+## Commands
 
-## Work order
+`growth study`, `portfolio`, `plan`, `export`, and `observe` are on the Decide panel. Plan and export used `--as-of 2026-10-04T11:50:00Z`, after the latest casebook observation `2026-10-04T10:35:00Z`. `expires_at` is `2026-10-18T11:50:00Z`.
 
-Portable file: `docs/growth-intelligence-work-order.json`.
+`growth plan --json` wrote `docs/growth-intelligence-plan.json`. The public JSON omits `target_record`.
 
-- schema `engineering.work-order`, version 1 (integer)
-- task id `wo-281085fcfc8ed7ea225c2d93`
-- repository `rainhuang0220/whereToken`
-- `path` null, `url` `https://github.com/rainhuang0220/whereToken`
-- `base_revision` `6948f7522a0a98d4f7d2619583e1b717b9363162`
-- actions allowed `read`, `edit`, `commit`
-- actions forbidden `credentials`, `deploy`, `external-write`, `publish`, `push`
-- validation argv: `git grep -n -F -e refs/tags/v0.7.7.tar.gz -- Formula/wheretoken.rb`
-- rationale contains "This is not a causal claim." and the current-README counterevidence sentence
-- observation summary quotes the v0.7.6 formula blob and the v0.7.7 tap
+Portable work order `docs/growth-intelligence-work-order.json`:
 
-Nightshift at `e27a83a6947d708b5883f808f925688f44220d2e` validated that file. Its canonical dump matched the file byte for byte.
+- task `wo-c438408810f4c0c09fdaa391`
+- repository path null
+- base revision `6948f7522a0a98d4f7d2619583e1b717b9363162`
+- validation argv `git grep -n -F -e v0.7.7 -- Formula/wheretoken.rb`
 
-Preview used a second file that differs only by `repository.path` = `/Users/rainhuang/Desktop/whereToken`. That copy's task id is `wo-562c16826664404ed7153fe0`. It is not committed, because the path is this machine's checkout. `nightshift work-order preview --provider fake` returned a plan with `provider=fake`, `network=false`, `write_scope=workspace`, `isolation=clone`, `base_ref` equal to the pinned public commit, and the prompt containing both `v0.7.7` and "not a causal claim." Preview calls `plan_order`, which reads git state and does not create a worktree. No `import`, no `--run`, and no `grok` provider.
+That argv shows the expected token in the first surface. It does not show that `v0.7.6` is gone, and it does not check `README.md`. The expectation string still requires both surfaces to name `v0.7.7` rather than `v0.7.6`.
 
-`git status` on `/Users/rainhuang/Desktop/whereToken` was unchanged: still behind `origin/main` by 22, with the same untracked `.superpowers/`, `docs/superpowers/plans/2026-09-01-v060-model-pricing-portrait.md`, and `image.png`. HEAD remained `75cef1ae06da50d2801c7febdc2ac599af22ac4d`. The pinned public commit is present in that object store, which is why preview could resolve it. The checkout itself was not moved onto that commit.
+Nightshift at `e27a83a` validated that file. Its canonical JSON matched the file byte for byte. Preview was not run. Nothing was executed. Unattended Nightshift release remains NOT READY.
 
-The validation argv fails on today's formula, which still urls `v0.7.6`. It passes only after that file names `refs/tags/v0.7.7.tar.gz`. It does not by itself check the README. The README half is the `expectation` string the executor has to satisfy. That split is deliberate: Work Order v1 takes one argv, not a shell comparison.
+## Owner traffic credential
 
-## Tests
+`FORESHADOW_OWNER_TRAFFIC_TOKEN` was not set. `GITHUB_TOKEN` was not set. This round did not call the traffic API and did not use the logged-in `gh` credential. The public client still denies `/traffic`.
 
-From this worktree, `PYTHONPATH=src` and the existing engineering virtualenv: `tests/test_growth_intel.py` passed 21. The full Foreshadow suite then passed 854, skipped 3, and failed 0. No existing test was deleted, skipped, or weakened. Official Top 5 and contribution scoring were not edited.
+The credential an operator can create later, and only if they want stored baselines:
 
-## What this dogfood did not do
+- Fine-grained personal access token.
+- Repository access limited to the owned repositories to observe. For this experiment, `rainhuang0220/whereToken` is enough.
+- One repository permission: Administration, Read. GitHub's REST docs for API version 2026-03-10 document that permission for clones, page views, top referral paths, and top referral sources (https://docs.github.com/en/rest/metrics/traffic). The same page says the endpoints are for repositories the caller can write.
+- Do not grant classic `repo`. Do not reuse the current `gh` login. Do not put this token in `GITHUB_TOKEN`.
+- Export it only as `FORESHADOW_OWNER_TRAFFIC_TOKEN`.
 
-It did not execute the work order. Nightshift unattended release remains NOT READY. It did not fetch traffic. It did not train a model. It did not rewrite a README. It did not open an issue, solicit stars, or publish a release. It did not treat the casebook as a causal estimate. The study's only README claim is `UNKNOWN`, because every README blob is a `CURRENT_SNAPSHOT`.
+`growth observe rainhuang0220/whereToken` then stores dated rows. Days GitHub omits stay missing. They are not stored as zero. Without that token the adoption experiment remains `INSUFFICIENT_BASELINE`.
+
+## What this round did not do
+
+It did not modify whereToken. The install-path patch can be applied by hand outside this task. It did not post, tweet, open a promotional issue, message a maintainer, solicit stars, or add a posting client. It did not train a model. It did not expand the 40-repository casebook. It did not release Foreshadow.
+
+From this worktree, `PYTHONPATH=src` and the existing engineering virtualenv: the full Foreshadow suite passed 873, skipped 3, and failed 0. The three skips were already present. No existing test was deleted or weakened. Official Top 5 and contribution scoring were not edited.
+
+The casebook still cannot support a comparative growth claim. Current README snapshots remain `UNKNOWN` as explanations of historical stars. The machine path's field-by-field verdict is in `docs/growth-intelligence-casebook.md`.

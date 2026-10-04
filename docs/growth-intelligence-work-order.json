@@ -19,10 +19,10 @@
     "Do not solicit stars or open unsolicited issues.",
     "Forbidden: push, publish, deploy, credentials, external-write."
   ],
-  "created_at": "2026-10-04T10:40:00Z",
+  "created_at": "2026-10-04T11:50:00Z",
   "evidence": [
     {
-      "expires_at": "2026-10-18T10:40:00Z",
+      "expires_at": "2026-10-18T11:50:00Z",
       "id": "obs-install-conflict",
       "kind": "observation",
       "observation_ids": [
@@ -33,7 +33,7 @@
       "summary": "On 2026-10-04T10:26:52Z, rainhuang0220/whereToken: At default_branch_sha 6948f7522a0a98d4f7d2619583e1b717b9363162, Formula/wheretoken.rb blob b51368437f5af9cd9034310da383cbb1e93ffba4 urls archive/refs/tags/v0.7.6.tar.gz (sha256 384780534bf6051ca546519ac74182d6f6bfb6331677c04299030a18399417bf). Tap rainhuang0220/homebrew-wheretoken installs v0.7.7 release binaries. README blob 2e4212dd400678a7bd3be2a947ea1e74680a8602 leads with a curl install script, and says release binaries and brew tap include the dashboard while go install and brew --HEAD build the CLI only. OBSERVED. This is not a causal claim."
     },
     {
-      "expires_at": "2026-10-18T10:40:00Z",
+      "expires_at": "2026-10-18T11:50:00Z",
       "id": "inf-install-hypothesis",
       "kind": "inference",
       "observation_ids": [
@@ -44,13 +44,13 @@
       "summary": "Making contradictory install instructions agree may reduce activation friction. This is not a causal claim. Counterevidence: Current README text is a CURRENT_SNAPSHOT and cannot explain historical star growth."
     }
   ],
-  "objective": "On rainhuang0220/whereToken, make README.md and Formula/wheretoken.rb name v0.7.7. Point the in-repo formula at refs/tags/v0.7.7.tar.gz. Do not cut a release.",
+  "objective": "On rainhuang0220/whereToken, make Formula/wheretoken.rb and README.md name v0.7.7 rather than v0.7.6. Do not cut a release.",
   "origin": {
     "name": "foreshadow",
     "reference": "gx-single-install-path-v1"
   },
   "provenance": {
-    "decision_at": "2026-10-04T10:40:00Z",
+    "decision_at": "2026-10-04T11:50:00Z",
     "evidence_ids": [
       "inf-install-hypothesis",
       "obs-install-conflict"
@@ -68,7 +68,7 @@
     "url": "https://github.com/rainhuang0220/whereToken"
   },
   "schema": "engineering.work-order",
-  "task_id": "wo-281085fcfc8ed7ea225c2d93",
+  "task_id": "wo-c438408810f4c0c09fdaa391",
   "title": "Make the documented install paths name one version",
   "validation": [
     {
@@ -78,11 +78,11 @@
         "-n",
         "-F",
         "-e",
-        "refs/tags/v0.7.7.tar.gz",
+        "v0.7.7",
         "--",
         "Formula/wheretoken.rb"
       ],
-      "expectation": "README.md and Formula/wheretoken.rb both name v0.7.7, and the formula urls refs/tags/v0.7.7.tar.gz rather than v0.7.6",
+      "expectation": "Formula/wheretoken.rb and README.md name v0.7.7 rather than v0.7.6",
       "timeout_seconds": 60
     }
   ],

@@ -101,4 +101,21 @@ The mechanism that can move to a solo repository is narrow: do not publish two i
 
 Why the file edit might help whereToken: a stranger who follows the in-repo formula and the tap formula does not get the same version, and the README already says the tap and `go install` do not produce the same surface. That is a measured contradiction on commit `6948f7522a0a98d4f7d2619583e1b717b9363162`.
 
-Why it might not help: neovate, shotgun, amber, and the archived lmnr repo already show a coherent one-command path without entering the star regime of their matched breakouts. whereToken has 3 stars. A 14-day star delta is underpowered below the floor of 30. The curl installer, the Chinese-first dashboard, and unsigned macOS binaries are separate friction, and this experiment does not touch them. Agentacct's 763 stars show that a nearby product can be noticed without this repository's formula edit. The source of that gap is UNKNOWN.
+Why it might not help: neovate, shotgun, amber, and the archived lmnr repo already show a coherent one-command path without entering the star regime of their matched breakouts. whereToken has 3 stars. Star success below 30 is a product policy floor, not a power calculation, and stars are not the acceptance check for the install-path edit. The curl installer, the Chinese-first dashboard, and unsigned macOS binaries are separate friction, and this experiment does not touch them. Agentacct's 763 stars show that a nearby product can be noticed without this repository's formula edit. The source of that gap is UNKNOWN.
+
+## What the machine path actually reads
+
+This audit is of `foreshadow.growth_intel` after the treatment and owner-traffic split. It does not add repositories and it does not invent a correlation. `build_plan` does not call `select_cohort`. `build_study` emits one claim, `cl-readme-snapshot`, status `UNKNOWN`, whenever any row has `readme_scope` `CURRENT_SNAPSHOT`. That guardrail is the only comparative statement the study makes. The temporal evidence that would be required for anything stronger is absent: historical README blobs, a dated star series inside the casebook, a stored traffic baseline, and a pre-registered intervention time.
+
+| Field | Verdict | What the code does with it |
+|---|---|---|
+| identity, role, source_url, observation_time, html_url, default_branch_sha | USED | Plan, export, and freshness |
+| release_blocked, install_paths_conflict, description_states_job, one_command_install, demo_present, topics_present | USED | Intervention priority and the backlog gate |
+| surface_discrepancy, treatment_id | USED | The generic treatment. Only the whereToken row carries them |
+| brand_advantage, maintainer_class, archetype, created_at | USED | The transfer assessment. They do not produce a band |
+| readme_scope, selection, epistemic_ceiling | USED | The study's UNKNOWN ceiling |
+| matched_to | PARTIALLY_USED | Load rejects a control that lacks it. Nothing compares the pair |
+| stars, forks | PARTIALLY_USED | Load checks integer or null. `select_cohort` can drop a missing star count, and the plan never calls it. The plan does not read a row's star count |
+| description, pushed_at, language, topics, owner_type, default_branch, readme_blob_sha, license, match_quality, value_prop_quote, archived, formula_blob_sha, install_conflict_detail | DECORATIVE | Provenance for a human reader. `topics_present` is the flag the rank reads. Export reads `surface_discrepancy.evidence`, not `install_conflict_detail` |
+
+`select_cohort` remains a tested filter for archetype, ownership, brand, and missing stars. It is not on the path that builds a plan, so those exclusions do not change the shipped recommendation. Missing mechanism flags stay null. The study does not turn them into false.

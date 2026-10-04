@@ -53,3 +53,7 @@ Are we buying attention by making the project harder to maintain? The experiment
 Can the experiment be measured? Success is whether `README.md` and `Formula/wheretoken.rb` name the same version and one primary install command. That is a file fact. A star effect is `UNKNOWN`.
 
 Can the tool say it does not know? Yes. Unsupported status strings, including `CAUSAL`, are rejected. A release-blocked repository produces no growth experiment.
+
+## Amendment
+
+`docs/adr/0012-owned-experiment-observations.md` supersedes the measurement sentence above that treats agreement of `README.md` and `Formula/wheretoken.rb` as the experiment result. That agreement is a treatment check. Version strings belong in the casebook discrepancy, not in the generic planner. A file pass does not create `EXPERIMENT_RESULT`.

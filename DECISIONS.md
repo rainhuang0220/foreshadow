@@ -154,6 +154,7 @@ Owner approved PI-1…PI-11. Official Top 5 remains **v1**. Board homepage ranks
 | ID | Decision |
 |---|---|
 | GI-1 | Growth Intelligence is a separate question from contribution Opportunity. See `docs/adr/0011-growth-intelligence.md`. No new SQLite snapshot table. Epistemic ceiling for this slice is HYPOTHESIS. The first experiment is a whereToken install-path edit, not a star campaign. Nightshift stays downstream of generic Work Order v1 and is not executed. |
+| GI-2 | A treatment check is not an adoption result. Owner traffic uses `FORESHADOW_OWNER_TRAFFIC_TOKEN`, not `GITHUB_TOKEN`, and is stored only as dated rows. See `docs/adr/0012-owned-experiment-observations.md`. The install-path edit stays a prerequisite. The traffic experiment stays `INSUFFICIENT_BASELINE` until those rows exist. |
 
 ## Maintainer-facing output (accepted 2026-09-09)
 
