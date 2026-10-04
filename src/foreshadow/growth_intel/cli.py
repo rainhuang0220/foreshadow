@@ -108,10 +108,9 @@ def export(
 def observe(
     identity: Annotated[str, typer.Argument()],
     casebook: Annotated[Path | None, typer.Option("--casebook")] = None,
-    as_of: Annotated[str | None, typer.Option("--as-of")] = None,
     database: Annotated[Path | None, typer.Option("--database")] = None,
 ):
-    """Record read-only traffic for one owned repository. Does not post or execute."""
+    """Record read-only traffic for one owned repository. The fetch time is the process clock."""
     from foreshadow.growth_intel.owner_traffic import TOKEN_ENV, record_owner_traffic, token_from_env
 
     token = token_from_env()
@@ -141,7 +140,6 @@ def observe(
             conn,
             identity=identity,
             token=token,
-            as_of=_as_of(as_of),
             allowed=allowed,
         )
     except (ValueError, OSError) as exc:

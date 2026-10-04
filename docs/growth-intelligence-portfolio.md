@@ -42,7 +42,7 @@ The file change stays inside whereToken. The tap repository is a different git i
 
 1. `gx-single-install-path-v1` on `rainhuang0220/whereToken`. Exportable treatment. State `TREATMENT_READY`. Evidence strength `HYPOTHESIS`. Implementation check `install_path_agreement`. No outcome window. See the plan JSON.
 2. `gx-explicit-header-v1` on `rainhuang0220/foreshadow`. Not exportable. Reason `external-write`. Evidence strength `HYPOTHESIS`. Success would be a GitHub description that states the job in language a stranger reads. Failure is a description that stays poetic or empty. No outcome window. Guardrail: do not solicit stars.
-3. `gx-qualified-traffic-v1` on `rainhuang0220/whereToken`. Not exportable. State `INSUFFICIENT_BASELINE`. Outcome metric `unique_visitors`. This is the adoption question, and it is not the work order.
+3. `gx-qualified-traffic-v1` on `rainhuang0220/whereToken`. Not exportable. State `INSUFFICIENT_BASELINE`. Outcome metric `daily_unique_visitors` (one day, not the rolling 14-day unique total). This is the adoption question, and it is not the work order.
 3. No experiment for `rainhuang0220/nightshift`. Evidence strength `UNKNOWN`. Reason `release-blocked`.
 
 Rejected as the first experiment: moving a profile README link (the profile repository is outside this portfolio, and the card has been live while unique views stayed low), and adding `CONTRIBUTING.md` because other successful repositories have one. Neither is the measured contradiction, and the second is a cargo-cult copy.

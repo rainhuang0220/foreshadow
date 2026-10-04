@@ -145,7 +145,7 @@ def _job(conn, uid, repo, pkg, mission_id=None):
 
 def test_schema_is_current(tmp_home):
     conn, _ = _conn(tmp_home)
-    assert SCHEMA_VERSION == 11
+    assert SCHEMA_VERSION == 12
     tables = {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }

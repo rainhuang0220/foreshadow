@@ -6,7 +6,8 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 TOKEN_ENV = "FORESHADOW_OWNER_TRAFFIC_TOKEN"
@@ -57,25 +58,37 @@ def _optional_int(item: dict, key: str) -> int | None:
     return item[key]
 
 
-def _day(timestamp: str, *, as_of: datetime) -> str:
-    if as_of.tzinfo is None:
-        raise ValueError("as_of needs a timezone")
+def utc_now() -> datetime:
+    """The production fetch clock. Tests pass their own clock into the recorder."""
+    return datetime.now(UTC)
+
+
+def _fetch_moment(clock: Callable[[], datetime] | None) -> datetime:
+    moment = utc_now() if clock is None else clock()
+    if not isinstance(moment, datetime) or moment.tzinfo is None:
+        raise ValueError("clock needs a timezone")
+    return moment
+
+
+def _day(timestamp: str, *, now: datetime) -> str:
+    if now.tzinfo is None:
+        raise ValueError("clock needs a timezone")
     parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("traffic timestamp needs a timezone")
-    if parsed.date() > as_of.date():
+    if parsed.date() > now.date():
         raise ValueError("future observation")
     return parsed.date().isoformat()
 
 
-def parse_daily(payload: dict, *, series: str, as_of: datetime) -> list[dict]:
+def parse_daily(payload: dict, *, series: str, now: datetime) -> list[dict]:
     """Keep only days GitHub returned. An absent day is not zero."""
     if series not in payload or payload[series] is None:
         return []
     rows = []
     seen = set()
     for item in payload[series]:
-        day = _day(item["timestamp"], as_of=as_of)
+        day = _day(item["timestamp"], now=now)
         if day in seen:
             raise ValueError("duplicate traffic day")
         seen.add(day)
@@ -156,91 +169,205 @@ def fetch_json(identity: str, kind: str, *, token: str, opener=None, allowed=Non
     return json.loads(body.decode("utf-8"))
 
 
+def _upsert(
+    conn,
+    *,
+    identity: str,
+    source: str,
+    observed_on: str,
+    metric: str,
+    value: int | None,
+    fetched_at: str,
+    grain: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO owner_traffic_observations(
+          identity, source, observed_on, metric, value, fetched_at, grain
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(identity, source, metric, observed_on)
+        DO UPDATE SET
+          value=excluded.value,
+          fetched_at=excluded.fetched_at,
+          grain=excluded.grain
+        """,
+        (identity, source, observed_on, metric, value, fetched_at, grain),
+    )
+
+
 def store_daily(conn, *, identity: str, source: str, rows: list[dict], fetched_at: str) -> None:
     if source not in {"views", "clones"}:
         raise ValueError("daily traffic source must be views or clones")
     metric = {
-        "views": ("views", "unique_visitors"),
-        "clones": ("clones", "unique_cloners"),
+        "views": ("daily_views", "daily_unique_visitors"),
+        "clones": ("daily_clones", "daily_unique_cloners"),
     }[source]
     for row in rows:
         pairs = ((metric[0], row["count"]), (metric[1], row["uniques"]))
         for name, value in pairs:
-            conn.execute(
-                """
-                INSERT INTO owner_traffic_observations(
-                  identity, source, observed_on, metric, value, fetched_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(identity, source, metric, observed_on)
-                DO UPDATE SET value=excluded.value, fetched_at=excluded.fetched_at
-                """,
-                (identity, source, row["observed_on"], name, value, fetched_at),
+            _upsert(
+                conn,
+                identity=identity,
+                source=source,
+                observed_on=row["observed_on"],
+                metric=name,
+                value=value,
+                fetched_at=fetched_at,
+                grain="day",
             )
     conn.commit()
 
 
-def store_window(conn, *, identity: str, source: str, rows: list[dict], fetched_at: str) -> None:
-    """Persist a top-list snapshot. observed_on is the fetch date, not a traffic day."""
+def store_response_totals(
+    conn,
+    *,
+    identity: str,
+    source: str,
+    observed_on: str,
+    payload: dict,
+    fetched_at: str,
+) -> None:
+    """Store the views/clones top-level count and uniques for the last 14 days.
+
+    GitHub's REST description for those endpoints is the total plus a per-day
+    breakdown. The total is a separate field. It is not the sum of daily uniques.
+    A missing key is left unstored. A returned zero is stored as zero.
+    """
+    if source not in {"views", "clones"}:
+        raise ValueError("response totals come from views or clones")
+    metric = {
+        "views": ("rolling_14d_views", "rolling_14d_unique_visitors"),
+        "clones": ("rolling_14d_clones", "rolling_14d_unique_cloners"),
+    }[source]
+    for key, name in (("count", metric[0]), ("uniques", metric[1])):
+        if key not in payload:
+            continue
+        _upsert(
+            conn,
+            identity=identity,
+            source=source,
+            observed_on=observed_on,
+            metric=name,
+            value=_optional_int(payload, key),
+            fetched_at=fetched_at,
+            grain="window",
+        )
+    conn.commit()
+
+
+def store_window(
+    conn,
+    *,
+    identity: str,
+    source: str,
+    rows: list[dict],
+    fetched_at: str,
+    observed_on: str | None = None,
+) -> None:
+    """Replace one top-list snapshot. observed_on is the fetch date, not a traffic day."""
     if source not in {"referrers", "paths"}:
         raise ValueError("window traffic source must be referrers or paths")
     label_key = "referrer" if source == "referrers" else "path"
-    for row in rows:
-        if row.get("grain") != "window":
-            raise ValueError("referrer and path rows are a window, not a day")
-        label = row[label_key]
-        for suffix in ("count", "uniques"):
-            conn.execute(
-                """
-                INSERT INTO owner_traffic_observations(
-                  identity, source, observed_on, metric, value, fetched_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(identity, source, metric, observed_on)
-                DO UPDATE SET value=excluded.value, fetched_at=excluded.fetched_at
-                """,
-                (identity, source, row["observed_on"], f"{suffix}:{label}", row[suffix], fetched_at),
-            )
+    dates = {row["observed_on"] for row in rows}
+    if observed_on is None:
+        if len(dates) != 1:
+            raise ValueError("a window snapshot has one fetch date")
+        observed_on = next(iter(dates))
+    elif dates and dates != {observed_on}:
+        raise ValueError("a window snapshot has one fetch date")
+    conn.execute("SAVEPOINT owner_traffic_snapshot")
+    try:
+        conn.execute(
+            """
+            DELETE FROM owner_traffic_observations
+            WHERE identity=? AND source=? AND observed_on=?
+            """,
+            (identity, source, observed_on),
+        )
+        for row in rows:
+            if row.get("grain") != "window":
+                raise ValueError("referrer and path rows are a window, not a day")
+            label = row[label_key]
+            for name, key in (("window_count", "count"), ("window_uniques", "uniques")):
+                _upsert(
+                    conn,
+                    identity=identity,
+                    source=source,
+                    observed_on=observed_on,
+                    metric=f"{name}:{label}",
+                    value=row[key],
+                    fetched_at=fetched_at,
+                    grain="window",
+                )
+    except Exception:
+        conn.execute("ROLLBACK TO owner_traffic_snapshot")
+        conn.execute("RELEASE owner_traffic_snapshot")
+        raise
+    conn.execute("RELEASE owner_traffic_snapshot")
     conn.commit()
 
 
-def record_owner_traffic(conn, *, identity: str, token: str, as_of: datetime, allowed: set[str], opener=None) -> None:
-    """Fetch the four read-only traffic reads and store dated rows. The token is not written."""
+def record_owner_traffic(
+    conn,
+    *,
+    identity: str,
+    token: str,
+    allowed: set[str],
+    opener=None,
+    clock: Callable[[], datetime] | None = None,
+) -> None:
+    """Fetch the four read-only traffic reads and store dated rows. The token is not written.
+
+    fetched_at and the referrer/path snapshot date come from clock, or from the
+    process clock when clock is omitted. A caller-supplied historical date is
+    not accepted under another name: the live command does not pass one.
+    """
     if identity not in allowed:
         raise ValueError("owner traffic is limited to configured owned repositories")
-    if as_of.tzinfo is None:
-        raise ValueError("as_of needs a timezone")
-    fetched_at = as_of.isoformat().replace("+00:00", "Z")
-    fetched_on = as_of.date().isoformat()
+    moment = _fetch_moment(clock)
+    fetched_at = moment.isoformat().replace("+00:00", "Z")
+    fetched_on = moment.date().isoformat()
     views = fetch_json(identity, "views", token=token, opener=opener, allowed=allowed)
     clones = fetch_json(identity, "clones", token=token, opener=opener, allowed=allowed)
     referrers = fetch_json(identity, "referrers", token=token, opener=opener, allowed=allowed)
     paths = fetch_json(identity, "paths", token=token, opener=opener, allowed=allowed)
-    store_daily(
+    view_rows = parse_daily(views, series="views", now=moment)
+    clone_rows = parse_daily(clones, series="clones", now=moment)
+    referrer_rows = parse_referrers(referrers, fetched_on=fetched_on)
+    path_rows = parse_paths(paths, fetched_on=fetched_on)
+    store_daily(conn, identity=identity, source="views", rows=view_rows, fetched_at=fetched_at)
+    store_response_totals(
         conn,
         identity=identity,
         source="views",
-        rows=parse_daily(views, series="views", as_of=as_of),
+        observed_on=fetched_on,
+        payload=views,
         fetched_at=fetched_at,
     )
-    store_daily(
+    store_daily(conn, identity=identity, source="clones", rows=clone_rows, fetched_at=fetched_at)
+    store_response_totals(
         conn,
         identity=identity,
         source="clones",
-        rows=parse_daily(clones, series="clones", as_of=as_of),
+        observed_on=fetched_on,
+        payload=clones,
         fetched_at=fetched_at,
     )
     store_window(
         conn,
         identity=identity,
         source="referrers",
-        rows=parse_referrers(referrers, fetched_on=fetched_on),
+        rows=referrer_rows,
         fetched_at=fetched_at,
+        observed_on=fetched_on,
     )
     store_window(
         conn,
         identity=identity,
         source="paths",
-        rows=parse_paths(paths, fetched_on=fetched_on),
+        rows=path_rows,
         fetched_at=fetched_at,
+        observed_on=fetched_on,
     )
 
 

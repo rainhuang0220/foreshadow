@@ -69,18 +69,18 @@
     "kind": "outcome",
     "low_power": true,
     "low_power_reason": "no stored pre-intervention traffic observations",
-    "outcome_metric": "unique_visitors",
+    "outcome_metric": "daily_unique_visitors",
     "post_window": null,
     "reason": "insufficient-baseline",
     "secondary_metrics": [
-      "unique_cloners"
+      "daily_unique_cloners"
     ],
     "secondary_observations": [
       "stars"
     ],
     "state": "INSUFFICIENT_BASELINE",
     "target": "rainhuang0220/whereToken",
-    "text": "No stored pre-intervention traffic observation is available. Stars are a secondary observation only. This is not a causal claim."
+    "text": "No stored pre-intervention traffic observation is available. The outcome metric is the last daily unique visitor count, not the rolling 14-day unique count. Daily unique counts are not summed. Stars are a secondary observation only. This is not a causal claim."
   },
   "hypothesis": {
     "counterevidence": [

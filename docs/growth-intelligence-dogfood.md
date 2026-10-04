@@ -8,7 +8,7 @@ The generic planner no longer contains whereToken version strings. The whereToke
 
 `gx-single-install-path-v1` is a treatment check. State `TREATMENT_READY`. Implementation metric `install_path_agreement`. Evidence `HYPOTHESIS`. There is no outcome window. Passing it later would be `READY_FOR_OBSERVATION`, still not `EXPERIMENT_RESULT`.
 
-`gx-qualified-traffic-v1` is the adoption question for whereToken. Outcome metric `unique_visitors`, secondary `unique_cloners`, stars as a secondary observation only. State `INSUFFICIENT_BASELINE`. Evidence `UNKNOWN`. `low_power` is true because no pre-intervention traffic row is stored. It is not exportable. It does not name a channel. The earlier unsaved read of 6 unique views is not a baseline.
+`gx-qualified-traffic-v1` is the adoption question for whereToken. Outcome metric `unique_visitors`, secondary `unique_cloners`, stars as a secondary observation only. State `INSUFFICIENT_BASELINE`. Evidence `UNKNOWN`. `low_power` is true because no pre-intervention traffic row is stored. It is not exportable. It does not name a channel. The earlier unsaved read of 6 unique views is not a baseline. The metric names in this paragraph are what this round shipped. The follow-up below renamed them before any live row was stored.
 
 Transfer status is `UNKNOWN`. Age compatibility is `not_comparable` (whereToken was created 2026-08-15; the one-command controls are much older). Archetype is `mixed`. Measurement quality is `unknown`. The band is not an effect size.
 
@@ -58,3 +58,7 @@ It did not modify whereToken. The install-path patch can be applied by hand outs
 From this worktree, `PYTHONPATH=src` and the existing engineering virtualenv: the full Foreshadow suite passed 873, skipped 3, and failed 0. The three skips were already present. No existing test was deleted or weakened. Official Top 5 and contribution scoring were not edited.
 
 The casebook still cannot support a comparative growth claim. Current README snapshots remain `UNKNOWN` as explanations of historical stars. The machine path's field-by-field verdict is in `docs/growth-intelligence-casebook.md`.
+
+## Evidence-integrity follow-up
+
+Starting from `4d5e96c` on the same branch, and still without a live traffic call: a same-day referrer or path refetch now replaces that fetch date's snapshot in one transaction. `growth observe` no longer accepts `--as-of`. The fetch clock is the process clock, and tests inject a clock. Daily rows are `daily_unique_visitors` and `daily_unique_cloners`. The endpoint's top-level 14-day `count` and `uniques` are stored separately and are not a sum of the daily uniques. The adoption experiment remains `INSUFFICIENT_BASELINE` / `UNKNOWN`. The full suite after this pass passed 883, skipped 3, and failed 0.

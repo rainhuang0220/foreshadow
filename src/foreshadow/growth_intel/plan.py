@@ -115,8 +115,8 @@ def _growth_experiment(target: dict) -> dict:
         "kind": "outcome",
         "target": target["identity"],
         "state": "INSUFFICIENT_BASELINE",
-        "outcome_metric": "unique_visitors",
-        "secondary_metrics": ["unique_cloners"],
+        "outcome_metric": "daily_unique_visitors",
+        "secondary_metrics": ["daily_unique_cloners"],
         "secondary_observations": ["stars"],
         "baseline_observations": [],
         "baseline_window": None,
@@ -133,6 +133,8 @@ def _growth_experiment(target: dict) -> dict:
         "guardrail": "do not post, solicit stars, or message maintainers",
         "text": (
             "No stored pre-intervention traffic observation is available. "
+            "The outcome metric is the last daily unique visitor count, not the rolling 14-day unique count. "
+            "Daily unique counts are not summed. "
             "Stars are a secondary observation only. This is not a causal claim."
         ),
     }

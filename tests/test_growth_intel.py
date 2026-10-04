@@ -434,8 +434,13 @@ def test_synthetic_repository_gets_the_same_treatment_class():
     growth = plan["growth_experiment"]
     assert growth["id"] == "gx-qualified-traffic-v1"
     assert growth["kind"] == "outcome"
-    assert growth["outcome_metric"] == "unique_visitors"
+    assert growth["outcome_metric"] == "daily_unique_visitors"
+    assert growth["secondary_metrics"] == ["daily_unique_cloners"]
+    assert growth["outcome_metric"] != "unique_visitors"
+    assert "rolling" not in growth["outcome_metric"]
+    assert "are not summed" in growth["text"]
     assert growth["state"] == "INSUFFICIENT_BASELINE"
+    assert growth["interpretation"] == "UNKNOWN"
     assert growth["baseline_observations"] == []
     assert growth["evidence_strength"] == "UNKNOWN"
     assert growth["exportable"] is False
@@ -478,10 +483,10 @@ def test_implementation_pass_is_not_an_experiment_result():
 def test_measured_change_keeps_raw_observations_and_is_not_causal():
     from foreshadow.growth_intel.outcome import measure_outcome
 
-    baseline = [{"observed_on": "2026-09-01", "unique_visitors": 6, "clones": 1}]
+    baseline = [{"observed_on": "2026-09-01", "daily_unique_visitors": 6, "clones": 1}]
     post = [
-        {"observed_on": "2026-09-10", "unique_visitors": 6, "clones": 1},
-        {"observed_on": "2026-09-22", "unique_visitors": 18, "clones": 5},
+        {"observed_on": "2026-09-10", "daily_unique_visitors": 6, "clones": 1},
+        {"observed_on": "2026-09-22", "daily_unique_visitors": 18, "clones": 5},
     ]
     result = measure_outcome(
         baseline=baseline,
@@ -493,24 +498,32 @@ def test_measured_change_keeps_raw_observations_and_is_not_causal():
     assert result["evidence_strength"] == "OBSERVED"
     assert result["interpretation"] == "OBSERVED_CHANGE"
     assert result["causal"] is False
+    assert result["metric"] == "daily_unique_visitors"
+    assert result["comparison"] == "last_daily_unique_visitors"
+    assert result["before_daily_unique_visitors"] == 6
+    assert result["after_daily_unique_visitors"] == 18
+    assert "are not summed" in result["text"]
+    assert "rolling 14-day" in result["text"]
     assert result["elapsed_days"] == 12
     assert result["elapsed_days"] != len(post)
     assert result["baseline_observations"] == baseline
     assert result["post_observations"] == post
     unordered = measure_outcome(
         baseline=[
-            {"observed_on": "2026-09-08", "unique_visitors": 1},
-            {"observed_on": "2026-09-01", "unique_visitors": 18},
+            {"observed_on": "2026-09-08", "daily_unique_visitors": 1},
+            {"observed_on": "2026-09-01", "daily_unique_visitors": 18},
         ],
         post=[
-            {"observed_on": "2026-09-22", "unique_visitors": 1},
-            {"observed_on": "2026-09-10", "unique_visitors": 9},
+            {"observed_on": "2026-09-22", "daily_unique_visitors": 1},
+            {"observed_on": "2026-09-10", "daily_unique_visitors": 9},
         ],
         intervention_on="2026-09-10",
         as_of=AS_OF,
     )
     assert unordered["interpretation"] == "NO_CLEAR_CHANGE"
-    assert unordered["baseline_observations"][0]["unique_visitors"] == 1
+    assert unordered["before_daily_unique_visitors"] == 1
+    assert unordered["after_daily_unique_visitors"] == 1
+    assert unordered["baseline_observations"][0]["daily_unique_visitors"] == 1
     assert "QUASI_EXPERIMENTAL" not in result.values()
     assert "EXPERIMENT_RESULT" not in result.values()
     assert "not a causal claim" in result["text"]
@@ -520,8 +533,8 @@ def test_insufficient_baseline_stays_explicit():
     from foreshadow.growth_intel.outcome import measure_outcome
 
     post = [
-        {"observed_on": "2026-09-10", "unique_visitors": 1},
-        {"observed_on": "2026-09-12", "unique_visitors": 2},
+        {"observed_on": "2026-09-10", "daily_unique_visitors": 1},
+        {"observed_on": "2026-09-12", "daily_unique_visitors": 2},
     ]
     missing = measure_outcome(
         baseline=[],
@@ -534,18 +547,18 @@ def test_insufficient_baseline_stays_explicit():
     assert missing["elapsed_days"] is None
     assert missing["post_observations"] == post
     short = measure_outcome(
-        baseline=[{"observed_on": "2026-09-01", "unique_visitors": 1}],
-        post=[{"observed_on": "2026-09-12", "unique_visitors": 2}],
+        baseline=[{"observed_on": "2026-09-01", "daily_unique_visitors": 1}],
+        post=[{"observed_on": "2026-09-12", "daily_unique_visitors": 2}],
         intervention_on="2026-09-10",
         as_of=AS_OF,
     )
     assert short["state"] == "INSUFFICIENT_BASELINE"
     assert short["elapsed_days"] is None
     same_day = measure_outcome(
-        baseline=[{"observed_on": "2026-09-01", "unique_visitors": 1}],
+        baseline=[{"observed_on": "2026-09-01", "daily_unique_visitors": 1}],
         post=[
-            {"observed_on": "2026-09-10T00:00:00Z", "unique_visitors": 1},
-            {"observed_on": "2026-09-10T18:00:00Z", "unique_visitors": 4},
+            {"observed_on": "2026-09-10T00:00:00Z", "daily_unique_visitors": 1},
+            {"observed_on": "2026-09-10T18:00:00Z", "daily_unique_visitors": 4},
         ],
         intervention_on="2026-09-10",
         as_of=AS_OF,
@@ -560,7 +573,7 @@ def test_missing_outcome_counts_are_not_zero():
     result = measure_outcome(
         baseline=[{"observed_on": "2026-09-01"}],
         post=[
-            {"observed_on": "2026-09-10", "unique_visitors": None},
+            {"observed_on": "2026-09-10", "daily_unique_visitors": None},
             {"observed_on": "2026-09-22"},
         ],
         intervention_on="2026-09-10",
@@ -569,6 +582,79 @@ def test_missing_outcome_counts_are_not_zero():
     assert result["state"] == "MEASURED"
     assert result["interpretation"] == "UNKNOWN"
     assert result["causal"] is False
+    assert result["metric"] == "daily_unique_visitors"
+    assert result["before_daily_unique_visitors"] is None
+    assert result["after_daily_unique_visitors"] is None
+
+
+def test_daily_uniques_are_not_summed_or_read_as_window_uniques():
+    from foreshadow.growth_intel.outcome import measure_outcome
+
+    summed = measure_outcome(
+        baseline=[
+            {"observed_on": "2026-09-01", "daily_unique_visitors": 2},
+            {"observed_on": "2026-09-03", "daily_unique_visitors": 3},
+        ],
+        post=[
+            {"observed_on": "2026-09-10", "daily_unique_visitors": 4},
+            {"observed_on": "2026-09-12", "daily_unique_visitors": 6},
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert summed["before_daily_unique_visitors"] == 3
+    assert summed["after_daily_unique_visitors"] == 6
+    assert summed["interpretation"] == "OBSERVED_CHANGE"
+    assert 5 not in summed.values()
+    assert 10 not in summed.values()
+    ignored = measure_outcome(
+        baseline=[
+            {
+                "observed_on": "2026-09-01",
+                "daily_unique_visitors": 1,
+                "rolling_14d_unique_visitors": 50,
+                "unique_visitors": 50,
+            },
+            {
+                "observed_on": "2026-09-03",
+                "daily_unique_visitors": 1,
+                "rolling_14d_unique_visitors": 80,
+                "unique_visitors": 80,
+            },
+        ],
+        post=[
+            {
+                "observed_on": "2026-09-10",
+                "daily_unique_visitors": 1,
+                "rolling_14d_unique_visitors": 10,
+                "unique_visitors": 10,
+            },
+            {
+                "observed_on": "2026-09-12",
+                "daily_unique_visitors": 1,
+                "rolling_14d_unique_visitors": 90,
+                "unique_visitors": 90,
+            },
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert ignored["interpretation"] == "NO_CLEAR_CHANGE"
+    assert ignored["before_daily_unique_visitors"] == 1
+    assert ignored["after_daily_unique_visitors"] == 1
+    ambiguous = measure_outcome(
+        baseline=[{"observed_on": "2026-09-01", "unique_visitors": 1}],
+        post=[
+            {"observed_on": "2026-09-10", "unique_visitors": 4},
+            {"observed_on": "2026-09-12", "unique_visitors": 40},
+        ],
+        intervention_on="2026-09-10",
+        as_of=AS_OF,
+    )
+    assert ambiguous["state"] == "MEASURED"
+    assert ambiguous["interpretation"] == "UNKNOWN"
+    assert ambiguous["before_daily_unique_visitors"] is None
+    assert ambiguous["after_daily_unique_visitors"] is None
 
 
 def test_future_outcome_observation_is_rejected():
@@ -576,7 +662,7 @@ def test_future_outcome_observation_is_rejected():
 
     with pytest.raises(ValueError, match="future"):
         measure_outcome(
-            baseline=[{"observed_on": "2026-10-06", "unique_visitors": 1}],
+            baseline=[{"observed_on": "2026-10-06", "daily_unique_visitors": 1}],
             post=[],
             intervention_on="2026-10-01",
             as_of=AS_OF,
@@ -750,6 +836,8 @@ def test_public_client_still_denies_traffic():
 
     assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/views")
     assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/clones")
+    assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/popular/referrers")
+    assert rest_path_denied("https://api.github.com/repos/acme/tool/traffic/popular/paths")
 
 
 def test_traffic_missing_days_are_not_zero_and_future_days_are_rejected():
@@ -765,18 +853,18 @@ def test_traffic_missing_days_are_not_zero_and_future_days_are_rejected():
             ],
         },
         series="views",
-        as_of=AS_OF,
+        now=AS_OF,
     )
     assert [row["observed_on"] for row in rows] == ["2026-09-20", "2026-09-22"]
     assert rows[1]["count"] is None
     assert rows[1]["uniques"] == 2
     assert all(row["count"] != 0 or row["observed_on"] == "2026-09-20" for row in rows)
-    assert parse_daily({}, series="views", as_of=AS_OF) == []
+    assert parse_daily({}, series="views", now=AS_OF) == []
     with pytest.raises(ValueError, match="future"):
         parse_daily(
             {"views": [{"timestamp": "2026-10-06T00:00:00Z", "count": 1, "uniques": 1}]},
             series="views",
-            as_of=AS_OF,
+            now=AS_OF,
         )
 
 
@@ -841,16 +929,42 @@ def test_owner_token_is_not_stored_or_exported(tmp_path: Path, monkeypatch):
         conn,
         identity="acme/tool",
         token=secret,
-        as_of=AS_OF,
         allowed={"acme/tool"},
         opener=opener,
+        clock=lambda: AS_OF,
     )
     stored = conn.execute(
         "SELECT source, observed_on, metric, value FROM owner_traffic_observations ORDER BY source, metric, observed_on"
     ).fetchall()
-    assert ("views", "2026-09-21", "views", 0) not in stored
-    assert ("views", "2026-09-22", "views", 0) in stored
-    assert ("referrers", "2026-10-04", "count:github.com", 2) in stored
+    assert ("views", "2026-09-21", "daily_views", 0) not in stored
+    assert ("views", "2026-09-22", "daily_views", 0) in stored
+    assert ("views", "2026-09-22", "daily_unique_visitors", 0) in stored
+    assert ("views", "2026-10-04", "rolling_14d_unique_visitors", 2) in stored
+    assert ("views", "2026-10-04", "rolling_14d_unique_visitors", 1) not in stored
+    assert ("clones", "2026-09-20", "daily_unique_cloners", 1) in stored
+    assert all(metric != "rolling_14d_unique_cloners" for _, _, metric, _ in stored)
+    assert ("referrers", "2026-10-04", "window_count:github.com", 2) in stored
+    provenance = conn.execute(
+        """
+        SELECT identity, source, observed_on, metric, value, fetched_at, grain
+        FROM owner_traffic_observations
+        """
+    ).fetchall()
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(owner_traffic_observations)")}
+    assert "token" not in columns
+    assert {"identity", "source", "observed_on", "metric", "value", "fetched_at", "grain"} <= columns
+    for identity, source, observed_on, metric, _value, fetched_at, grain in provenance:
+        assert identity == "acme/tool"
+        assert source in {"views", "clones", "referrers", "paths"}
+        assert observed_on
+        assert metric
+        assert fetched_at == "2026-10-04T12:00:00Z"
+        if metric.startswith("daily_"):
+            assert grain == "day"
+        if metric.startswith("rolling_14d_") or source in {"referrers", "paths"}:
+            assert grain == "window"
+    assert {row[2] for row in provenance if row[1] == "referrers"} == {"2026-10-04"}
+    assert {row[2] for row in provenance if row[1] == "paths"} == {"2026-10-04"}
     blob = db_path.read_bytes()
     assert secret.encode() not in blob
     assert b"ghp_BROAD_LOGIN_SECRET" not in blob
@@ -864,9 +978,9 @@ def test_owner_token_is_not_stored_or_exported(tmp_path: Path, monkeypatch):
             conn,
             identity="other/repo",
             token=secret,
-            as_of=AS_OF,
             allowed={"acme/tool"},
             opener=opener,
+            clock=lambda: AS_OF,
         )
 
 
@@ -893,6 +1007,498 @@ def test_owner_traffic_refuses_redirects_and_redacts_the_token():
     with pytest.raises(ValueError, match="redacted") as raised:
         fetch_json("acme/tool", "views", token=secret, opener=_Boom(), allowed={"acme/tool"})
     assert secret not in str(raised.value)
+
+
+def _traffic_conn(tmp_path: Path):
+    from foreshadow.db import connect, migrate
+
+    conn = connect(tmp_path / "traffic.sqlite3")
+    migrate(conn)
+    return conn
+
+
+def _window_values(conn, *, identity: str, source: str, observed_on: str) -> dict[str, dict[str, int | None]]:
+    rows = conn.execute(
+        """
+        SELECT metric, value FROM owner_traffic_observations
+        WHERE identity=? AND source=? AND observed_on=?
+        """,
+        (identity, source, observed_on),
+    ).fetchall()
+    found: dict[str, dict[str, int | None]] = {}
+    for metric, value in rows:
+        kind, separator, label = metric.partition(":")
+        if not separator:
+            continue
+        slot = "count" if kind.endswith("count") else "uniques"
+        found.setdefault(label, {})[slot] = value
+    return found
+
+
+def _referrer(name: str, count: int, uniques: int, day: str = "2026-10-04") -> dict:
+    return {
+        "observed_on": day,
+        "referrer": name,
+        "count": count,
+        "uniques": uniques,
+        "grain": "window",
+    }
+
+
+def _path(name: str, count: int, uniques: int, day: str = "2026-10-04") -> dict:
+    return {
+        "observed_on": day,
+        "path": name,
+        "count": count,
+        "uniques": uniques,
+        "grain": "window",
+    }
+
+
+def test_same_day_referrer_refetch_drops_stale_entries(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import store_window
+
+    conn = _traffic_conn(tmp_path)
+    identity = "acme/tool"
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 1, 1), _referrer("B", 2, 2), _referrer("C", 3, 3)],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 9, 4), _referrer("D", 8, 5)],
+        fetched_at="2026-10-04T13:00:00Z",
+    )
+    stored = _window_values(conn, identity=identity, source="referrers", observed_on="2026-10-04")
+    assert set(stored) == {"A", "D"}
+    assert stored["A"] == {"count": 9, "uniques": 4}
+    assert stored["D"] == {"count": 8, "uniques": 5}
+
+
+def test_same_day_path_refetch_drops_stale_entries(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import store_window
+
+    conn = _traffic_conn(tmp_path)
+    identity = "acme/tool"
+    store_window(
+        conn,
+        identity=identity,
+        source="paths",
+        rows=[_path("/A", 1, 1), _path("/B", 2, 2), _path("/C", 3, 3)],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="paths",
+        rows=[_path("/A", 7, 3), _path("/D", 6, 2)],
+        fetched_at="2026-10-04T13:00:00Z",
+    )
+    stored = _window_values(conn, identity=identity, source="paths", observed_on="2026-10-04")
+    assert set(stored) == {"/A", "/D"}
+    assert stored["/A"]["count"] == 7
+
+
+def test_window_replacement_keeps_other_dates_and_sources(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import store_daily, store_window
+
+    conn = _traffic_conn(tmp_path)
+    identity = "acme/tool"
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("B", 2, 2, day="2026-10-03")],
+        fetched_at="2026-10-03T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="paths",
+        rows=[_path("/keep", 4, 1)],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    store_daily(
+        conn,
+        identity=identity,
+        source="views",
+        rows=[{"observed_on": "2026-10-04", "count": 3, "uniques": 1}],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 1, 1), _referrer("B", 2, 2), _referrer("C", 3, 3)],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 9, 4), _referrer("D", 8, 5)],
+        fetched_at="2026-10-04T13:00:00Z",
+    )
+    assert set(_window_values(conn, identity=identity, source="referrers", observed_on="2026-10-03")) == {"B"}
+    assert set(_window_values(conn, identity=identity, source="paths", observed_on="2026-10-04")) == {"/keep"}
+    daily = conn.execute(
+        """
+        SELECT value FROM owner_traffic_observations
+        WHERE identity=? AND source='views' AND observed_on='2026-10-04'
+          AND metric IN ('views', 'daily_views')
+        """,
+        (identity,),
+    ).fetchone()
+    assert daily[0] == 3
+
+
+def test_failed_window_replacement_restores_the_previous_snapshot(tmp_path: Path):
+    import sqlite3
+
+    from foreshadow.growth_intel.owner_traffic import store_window
+
+    conn = _traffic_conn(tmp_path)
+    identity = "acme/tool"
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 1, 1), _referrer("B", 2, 2), _referrer("C", 3, 3)],
+        fetched_at="2026-10-04T12:00:00Z",
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER abort_boom
+        BEFORE INSERT ON owner_traffic_observations
+        WHEN NEW.metric LIKE '%:boom'
+        BEGIN
+          SELECT RAISE(ABORT, 'injected failure');
+        END
+        """
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="injected failure"):
+        store_window(
+            conn,
+            identity=identity,
+            source="referrers",
+            rows=[_referrer("A", 9, 4), _referrer("boom", 8, 5)],
+            fetched_at="2026-10-04T13:00:00Z",
+        )
+    stored = _window_values(conn, identity=identity, source="referrers", observed_on="2026-10-04")
+    assert set(stored) == {"A", "B", "C"}
+    assert stored["A"] == {"count": 1, "uniques": 1}
+    assert "boom" not in stored
+
+
+def test_empty_referrer_refetch_clears_only_that_snapshot(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import store_window
+
+    conn = _traffic_conn(tmp_path)
+    identity = "acme/tool"
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("B", 2, 2, day="2026-10-03")],
+        fetched_at="2026-10-03T12:00:00Z",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[_referrer("A", 1, 1), _referrer("B", 2, 2)],
+        fetched_at="2026-10-04T12:00:00Z",
+        observed_on="2026-10-04",
+    )
+    store_window(
+        conn,
+        identity=identity,
+        source="referrers",
+        rows=[],
+        fetched_at="2026-10-04T13:00:00Z",
+        observed_on="2026-10-04",
+    )
+    assert _window_values(conn, identity=identity, source="referrers", observed_on="2026-10-04") == {}
+    assert set(_window_values(conn, identity=identity, source="referrers", observed_on="2026-10-03")) == {"B"}
+
+
+def _payload_opener(payloads: dict[str, object]):
+    class _Body:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def read(self) -> bytes:
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class _Opener:
+        def open(self, request, timeout=None):
+            for suffix, payload in payloads.items():
+                if request.full_url.endswith(suffix):
+                    return _Body(json.dumps(payload).encode())
+            raise AssertionError(request.full_url)
+
+    return _Opener()
+
+
+def test_rolling_totals_keep_github_uniques_and_explicit_zero(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import record_owner_traffic
+
+    conn = _traffic_conn(tmp_path)
+    record_owner_traffic(
+        conn,
+        identity="acme/tool",
+        token="ghp_OWNER_TRAFFIC_SECRET",
+        allowed={"acme/tool"},
+        clock=lambda: AS_OF,
+        opener=_payload_opener(
+            {
+                "/traffic/views?per=day": {
+                    "count": 10,
+                    "uniques": 5,
+                    "views": [
+                        {"timestamp": "2026-09-20T00:00:00Z", "count": 2, "uniques": 2},
+                        {"timestamp": "2026-09-21T00:00:00Z", "count": 3, "uniques": 3},
+                        {"timestamp": "2026-09-22T00:00:00Z", "count": 4, "uniques": 4},
+                    ],
+                },
+                "/traffic/clones?per=day": {
+                    "count": 0,
+                    "uniques": 0,
+                    "clones": [
+                        {"timestamp": "2026-09-22T00:00:00Z", "count": 0, "uniques": 0},
+                    ],
+                },
+                "/traffic/popular/referrers": [],
+                "/traffic/popular/paths": [{"path": "/readme", "count": 1, "uniques": 1}],
+            }
+        ),
+    )
+    stored = {
+        (source, day, metric): value
+        for source, day, metric, value in conn.execute(
+            "SELECT source, observed_on, metric, value FROM owner_traffic_observations"
+        )
+    }
+    assert stored[("views", "2026-10-04", "rolling_14d_unique_visitors")] == 5
+    assert stored[("views", "2026-10-04", "rolling_14d_views")] == 10
+    assert ("views", "2026-10-04", "rolling_14d_unique_visitors") in stored
+    assert 9 not in stored.values()
+    assert stored[("clones", "2026-10-04", "rolling_14d_unique_cloners")] == 0
+    assert stored[("clones", "2026-10-04", "rolling_14d_clones")] == 0
+    assert stored[("clones", "2026-09-22", "daily_clones")] == 0
+    assert stored[("views", "2026-09-22", "daily_unique_visitors")] == 4
+    day_values = conn.execute(
+        """
+        SELECT value FROM owner_traffic_observations
+        WHERE source='views' AND metric='daily_unique_visitors'
+        """
+    ).fetchall()
+    assert sum(value for (value,) in day_values) == 9
+    assert stored[("views", "2026-10-04", "rolling_14d_unique_visitors")] != 9
+    missing = _payload_opener(
+        {
+            "/traffic/views?per=day": {
+                "views": [{"timestamp": "2026-09-20T00:00:00Z", "uniques": 2}],
+            },
+            "/traffic/clones?per=day": {"clones": []},
+            "/traffic/popular/referrers": [],
+            "/traffic/popular/paths": [],
+        }
+    )
+    fresh = _traffic_conn(tmp_path / "missing")
+    record_owner_traffic(
+        fresh,
+        identity="acme/tool",
+        token="ghp_OWNER_TRAFFIC_SECRET",
+        allowed={"acme/tool"},
+        clock=lambda: AS_OF,
+        opener=missing,
+    )
+    missing_rows = fresh.execute(
+        "SELECT metric, value FROM owner_traffic_observations WHERE source='views'"
+    ).fetchall()
+    assert ("daily_unique_visitors", 2) in missing_rows
+    assert ("daily_views", None) in missing_rows
+    assert all(not metric.startswith("rolling_14d_") for metric, _value in missing_rows)
+
+
+def test_future_api_days_are_rejected_before_they_are_stored(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import record_owner_traffic
+
+    conn = _traffic_conn(tmp_path)
+    with pytest.raises(ValueError, match="future"):
+        record_owner_traffic(
+            conn,
+            identity="acme/tool",
+            token="ghp_OWNER_TRAFFIC_SECRET",
+            allowed={"acme/tool"},
+            clock=lambda: AS_OF,
+            opener=_payload_opener(
+                {
+                    "/traffic/views?per=day": {
+                        "count": 1,
+                        "uniques": 1,
+                        "views": [{"timestamp": "2026-10-06T00:00:00Z", "count": 1, "uniques": 1}],
+                    },
+                    "/traffic/clones?per=day": {"count": 0, "uniques": 0, "clones": []},
+                    "/traffic/popular/referrers": [{"referrer": "A", "count": 1, "uniques": 1}],
+                    "/traffic/popular/paths": [],
+                }
+            ),
+        )
+    assert conn.execute("SELECT COUNT(*) FROM owner_traffic_observations").fetchone()[0] == 0
+
+
+def test_fetch_clock_dates_referrers_without_inventing_history(tmp_path: Path):
+    from foreshadow.growth_intel.owner_traffic import record_owner_traffic
+
+    moment = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
+    conn = _traffic_conn(tmp_path)
+    record_owner_traffic(
+        conn,
+        identity="acme/tool",
+        token="ghp_OWNER_TRAFFIC_SECRET",
+        allowed={"acme/tool"},
+        clock=lambda: moment,
+        opener=_payload_opener(
+            {
+                "/traffic/views?per=day": {
+                    "count": 3,
+                    "uniques": 2,
+                    "views": [{"timestamp": "2026-04-20T00:00:00Z", "count": 3, "uniques": 2}],
+                },
+                "/traffic/clones?per=day": {"clones": []},
+                "/traffic/popular/referrers": [
+                    {"referrer": "A", "count": 1, "uniques": 1},
+                    {"referrer": "D", "count": 1, "uniques": 1},
+                ],
+                "/traffic/popular/paths": [],
+            }
+        ),
+    )
+    referrer_days = {
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT observed_on FROM owner_traffic_observations WHERE source='referrers'"
+        )
+    }
+    assert referrer_days == {"2026-05-01"}
+    fetched = {
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT fetched_at FROM owner_traffic_observations WHERE source='referrers'"
+        )
+    }
+    assert fetched == {"2026-05-01T08:30:00Z"}
+    assert conn.execute(
+        "SELECT observed_on FROM owner_traffic_observations WHERE metric='daily_views'"
+    ).fetchone()[0] == "2026-04-20"
+    with pytest.raises(TypeError):
+        record_owner_traffic(
+            conn,
+            identity="acme/tool",
+            token="ghp_OWNER_TRAFFIC_SECRET",
+            allowed={"acme/tool"},
+            as_of=moment,
+        )
+
+
+def test_observe_rejects_a_backdated_fetch_and_uses_the_process_clock(monkeypatch, tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from foreshadow.cli import app
+    from foreshadow.db import connect
+
+    secret = "ghp_OWNER_TRAFFIC_SECRET"
+    monkeypatch.setenv("FORESHADOW_OWNER_TRAFFIC_TOKEN", secret)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_BROAD_LOGIN_SECRET")
+    calls = {"n": 0}
+
+    def forbid(*args, **kwargs):
+        calls["n"] += 1
+        raise AssertionError("live fetch")
+
+    monkeypatch.setattr("foreshadow.growth_intel.owner_traffic.fetch_json", forbid)
+    runner = CliRunner()
+    database = tmp_path / "backdate.sqlite3"
+    rejected = runner.invoke(
+        app,
+        [
+            "growth",
+            "observe",
+            "rainhuang0220/whereToken",
+            "--as-of",
+            "2020-01-01T00:00:00Z",
+            "--database",
+            str(database),
+        ],
+    )
+    assert rejected.exit_code != 0
+    assert calls["n"] == 0
+    assert not database.exists()
+    assert secret not in (rejected.stdout + rejected.stderr)
+    assert "ghp_BROAD_LOGIN_SECRET" not in (rejected.stdout + rejected.stderr)
+    help_text = runner.invoke(app, ["growth", "observe", "--help"])
+    assert help_text.exit_code == 0
+    assert "--as-of" not in help_text.stdout
+    plan_help = runner.invoke(app, ["growth", "plan", "--help"])
+    assert "--as-of" in plan_help.stdout
+
+    fixed = datetime(2026, 10, 4, 16, 0, tzinfo=UTC)
+    monkeypatch.setattr("foreshadow.growth_intel.owner_traffic.utc_now", lambda: fixed)
+
+    def fake_fetch(identity, kind, *, token, opener=None, allowed=None):
+        calls["n"] += 1
+        assert token == secret
+        assert "ghp_BROAD_LOGIN_SECRET" not in token
+        if kind == "views":
+            return {
+                "count": 1,
+                "uniques": 1,
+                "views": [{"timestamp": "2026-10-04T00:00:00Z", "count": 1, "uniques": 1}],
+            }
+        if kind == "clones":
+            return {"count": 0, "uniques": 0, "clones": []}
+        if kind == "referrers":
+            return [{"referrer": "A", "count": 2, "uniques": 1}]
+        if kind == "paths":
+            return [{"path": "/readme", "count": 1, "uniques": 1}]
+        raise AssertionError(kind)
+
+    monkeypatch.setattr("foreshadow.growth_intel.owner_traffic.fetch_json", fake_fetch)
+    live = tmp_path / "clock.sqlite3"
+    recorded = runner.invoke(
+        app,
+        ["growth", "observe", "rainhuang0220/whereToken", "--database", str(live)],
+    )
+    assert recorded.exit_code == 0, recorded.stderr
+    assert secret not in (recorded.stdout + recorded.stderr)
+    assert "ghp_BROAD_LOGIN_SECRET" not in (recorded.stdout + recorded.stderr)
+    conn = connect(live)
+    referrers = conn.execute(
+        """
+        SELECT observed_on, fetched_at, metric, value, grain
+        FROM owner_traffic_observations WHERE source='referrers'
+        """
+    ).fetchall()
+    assert referrers
+    assert {row[0] for row in referrers} == {"2026-10-04"}
+    assert {row[1] for row in referrers} == {"2026-10-04T16:00:00Z"}
+    assert {row[4] for row in referrers} == {"window"}
+    blob = live.read_bytes()
+    assert secret.encode() not in blob
+    assert b"ghp_BROAD_LOGIN_SECRET" not in blob
 
 
 def test_observe_refuses_without_the_owner_token(monkeypatch):
