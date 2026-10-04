@@ -60,8 +60,10 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 from foreshadow.decision.cli import app as work_order_app
+from foreshadow.growth_intel.cli import app as growth_app
 
 app.add_typer(work_order_app, name="work-order", rich_help_panel="Decide")
+app.add_typer(growth_app, name="growth", rich_help_panel="Decide")
 
 schedule_app = typer.Typer(
     no_args_is_help=True,
