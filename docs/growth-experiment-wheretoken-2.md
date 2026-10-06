@@ -11,30 +11,38 @@ Recorded 2026-10-05. This replaces `docs/growth-experiment-wheretoken-1.md`, whi
 | id | `wt-description` |
 | target | `rainhuang0220/whereToken` |
 | surface | GitHub repository description, one field |
-| public main | `6948f7522a0a98d4f7d2619583e1b717b9363162` |
+| public main | `cd3213d9d831207766295ed7515c7d8103a455d2` |
 | release | `v0.7.7` |
 | classification | `SAFE_NONFUNCTIONAL` |
 | functional_change | false |
 | treatment_applied | false |
 | owner approval required | false |
-| lifecycle | `PRE_BASELINE_STABILIZATION` |
+| lifecycle | `READY_FOR_BASELINE` |
 | measurement state | `INSUFFICIENT_BASELINE` |
 
-The description write itself does not need owner approval. It is still forbidden until the stabilization cutoff is public and a stored baseline exists.
+The description write itself does not need owner approval. The stabilization cutoff is now public. The write stays forbidden until at least 7 eligible post-cutoff days are stored. No baseline row exists. This is not `TREATMENT_APPLIED` and not `BASELINE_COLLECTING`.
 
 ## Before and after
 
-Before, unauthenticated repository metadata on 2026-10-04, and unchanged by this round:
+Before, unauthenticated repository metadata on 2026-10-04, rechecked at `Date: Tue, 06 Oct 2026 20:07:04 GMT`, and still not written:
 
 `你的 token 都花在哪 — 本机优先的 coding agent 用量观测器`
 
-Proposed after, not written:
+Homepage was `null`. Topics were `cli`, `developer-tools`, `go`, `golang`, `tokens`.
+
+Previous proposed after, recorded 2026-10-05 and not written:
 
 `Local-first token usage analytics for coding agents · 你的 token 都花在哪 — 本机优先的 coding agent 用量观测器`
 
-94 Unicode code points. The English clause is the README hero without its period. The Chinese clause is the current description, kept whole so the query `coding agent` still matches. No agent names. No extra keywords.
+94 Unicode code points, 129 UTF-8 bytes. That line repeats the same job. `Local-first` and `本机优先` say the same placement. `token usage analytics` and `用量观测器` say the same job. `coding agents` and `coding agent` are the same term.
 
-A shorter line that dropped `本机优先的 coding agent 用量观测器` was considered and not chosen. That drop would remove a query the current text already matches.
+Final proposed after, refined 2026-10-06 before any baseline row and before any treatment, and not written:
+
+`Local-first token usage analytics for coding agents · 你的 token 都花在哪`
+
+67 Unicode code points, 80 UTF-8 bytes. One description field. The English clause still contains `coding agents`, `token usage`, `analytics`, and `Local-first`. The Chinese clause keeps the existing brand line. GitHub's description limit is 350 characters. No agent names. No second field.
+
+The shorter line drops the exact phrases `本机优先`, `用量观测器`, and the Latin tokens inside the old Chinese clause. It does not drop the term from the field: `coding agents` remains in the English clause. This record does not claim that GitHub stems `agents` to `agent`. The long line was keyword restatement, not an extra fact. Neither sentence claims that a report never touches the network.
 
 ## Funnel stage
 
@@ -89,7 +97,7 @@ The treatment is readable before the click that creates the observation. Homepag
 
 ## Baseline status
 
-No owner-traffic row is stored. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was unset on 2026-10-05. `growth observe` was not run. The traffic API was not called.
+No owner-traffic row is stored. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was unset on 2026-10-05 and was still unset at the 2026-10-06 stabilization check. `GITHUB_TOKEN` was also unset. `growth observe` was not run. `gh` was not used as a traffic credential. The traffic API was not called.
 
 | Field | Value |
 |---|---|
@@ -100,24 +108,40 @@ No owner-traffic row is stored. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was unset on 20
 
 ## Stabilization
 
-Lifecycle is `PRE_BASELINE_STABILIZATION`. The baseline does not start on the current public main.
+Lifecycle is `READY_FOR_BASELINE`. Public main contains the hygiene, and the live Pages HTML matches that commit. No post-cutoff observation is stored, so the lifecycle is not `BASELINE_COLLECTING`.
 
 | Field | Value |
 |---|---|
-| stabilization_sha | null |
-| stabilization_timestamp | null |
+| stabilization_sha | `cd3213d9d831207766295ed7515c7d8103a455d2` |
+| integration timestamp | `2026-10-06T20:00:15Z` |
+| stabilization_timestamp | `2026-10-06T20:07:01Z` |
+| pages_verified_at | `2026-10-06T20:07:01Z` |
+| pages last-modified | `2026-10-06T20:04:07Z` |
+| pages content sha256 | `b23ecc8283542499c73644c8c50e8e31f6c5c41e64e2272a9af56a89118e92f6` |
+| pages workflow | `37523137243`, success, updated `2026-10-06T20:04:14Z` |
 | hygiene branch | `engineering/pre-baseline-hygiene` |
-| hygiene tip | `b6b741de6500049d115d7c321f6db16d9fcaa2e8` |
+| hygiene tip | `e1ca6caaa2b139dfd9192180c291a640b8e84224` |
+| earlier hygiene commit | `b6b741de6500049d115d7c321f6db16d9fcaa2e8` |
 | hygiene parent | `52dc06cc3dcbf2ba6300ca0760dd239a162f6c0f` |
-| public main | `6948f7522a0a98d4f7d2619583e1b717b9363162` |
+| previous public main | `6948f7522a0a98d4f7d2619583e1b717b9363162` |
 
-The hygiene commits change only `site/index.html`. They narrow privacy sentences that were broader than Cursor and Trae account calls, hosted sync, and profile refresh. They do not change command flags or runtime code. Pages deploys from `main` only, so the live site is still the old copy.
+`6948f752` through `e1ca6ca`, which `origin/main` contains via merge commit `cd3213d`, changes only `site/index.html`. The commits correct static claims about the default report, Cursor and Trae account APIs, commands that print local paths, the Community Rank payload, hosted sync, public-profile refresh, and the Trae account-API label. A later static edit on the same file narrowed two sentences to the upload paths the CLI uses: a plain report does not upload the public snapshot, and a paired hosted sync uploads the sanitized public profile on `sync`, `scan`, a running `serve`, and `login` unless `--no-sync`. No `cmd/`, `internal/`, `scripts/`, or `Formula/` file changed.
 
-Pushing that branch updated the repository `pushed_at` to `2026-10-04T17:05:48Z`. Public `main` did not move. Homepage, description, and topics were unchanged at `Date: Sun, 04 Oct 2026 17:07:04 GMT`. The push is a pre-baseline event, not the description treatment. Baseline collection still waits for `stabilization_sha`.
+Pull request `#12` merged at `2026-10-06T20:00:15Z`. That timestamp is the integration time. It is not the Pages verification time. The live page `https://rainhuang0220.github.io/whereToken/` returned HTTP 200 at `Date: Tue, 06 Oct 2026 20:07:01 GMT`, 12518 bytes, and the sha256 above. That hash is `git show cd3213d:site/index.html`. The body contains the corrected sentences and does not contain "Nothing uploads unless you opt in", "Everything stays on your machine", or "nothing crosses the network".
 
-`stabilization_sha` is the public `main` commit after that hygiene is what `main` contains, recorded at the time Pages has deployed it. It is not `b6b741d` unless a fast-forward makes that commit `main`. A merge commit would be a different sha. Do not fill this field in advance.
+Pushing the hygiene branch earlier updated `pushed_at` to `2026-10-04T17:05:48Z` while public main stayed `6948f752`. That push is a pre-baseline event. The merge moved `pushed_at` to `2026-10-06T20:00:15Z`. Homepage, description, and topics were unchanged at the 2026-10-06 recheck. Neither push is the description treatment.
 
-`Formula/wheretoken.rb` staying on `v0.7.6` is a frozen confounder, not a hygiene gate. The approval packet is `docs/growth-approval-wheretoken-formula-v077.md`. It was not applied.
+`Formula/wheretoken.rb` on `cd3213d` is still the v0.7.6 tarball `384780534bf6051ca546519ac74182d6f6bfb6331677c04299030a18399417bf`. The owner has not approved the v0.7.7 packet. That pin stays a frozen confounder for the whole experiment. The packet is `docs/growth-approval-wheretoken-formula-v077.md`. It was not applied. Classification remains `APPROVAL_REQUIRED_FUNCTIONAL`.
+
+GitHub Actions on `cd3213d` passed `go vet` and `go test` on Ubuntu, Windows, and macOS (`37523137237`, success at `2026-10-06T20:07:04Z`, and the pull-request run `37523123178`). The Pages workflow passed separately.
+
+## Baseline eligibility
+
+Stored historical traffic and the formal baseline are different. A later `growth observe` may return daily rows dated before stabilization. Store those rows as GitHub returned them. Do not fill dates GitHub omitted. An explicit zero stays zero. A missing key stays unstored.
+
+A stored row counts toward the formal baseline only when its `observed_on` calendar date is strictly after `2026-10-06`. That UTC date is ineligible: the merge and the Pages deploy both happened on it, so the day is partial. The first eligible day is `2026-10-07`. Do not move this cutoff earlier to lengthen the window.
+
+The formal baseline still needs at least 7 eligible stored calendar days. Ten to fourteen is preferred. That length is a collection policy, not a significance test. `BASELINE_COLLECTING` starts only after stabilization and at least one eligible observation are both stored. Until the owner-traffic token exists, the lifecycle stays `READY_FOR_BASELINE`.
 
 ## Frozen confounders
 
@@ -126,13 +150,13 @@ Once the cutoff exists, any of these moves between the first baseline day and th
 - Homepage stays `null`.
 - Topics stay `cli`, `developer-tools`, `go`, `golang`, `tokens`.
 - README blob stays the blob at the cutoff.
-- Pages content stays the cutoff deploy, including the hygiene copy once it is the deploy.
+- Pages content stays the cutoff deploy, sha256 `b23ecc8283542499c73644c8c50e8e31f6c5c41e64e2272a9af56a89118e92f6`.
 - In-repo formula stays on the `v0.7.6` source tarball.
 - No new tag, release, or announcement. Latest release stays `v0.7.7`.
 - No social post, promotional Discussion, or star solicitation.
-- The description, once set, stays the one proposed sentence.
+- The description, once set, stays the final proposed sentence: `Local-first token usage analytics for coding agents · 你的 token 都花在哪`.
 - No telemetry is added to whereToken or Pages.
 
 ## What would make a later result invalid
 
-A missing day stored as zero. A rolling 14-day total used as the effect. Stars used as the primary success. A second public string changed in the same window. Baseline days collected before `stabilization_sha` is set. A traffic token reused from `gh` or `GITHUB_TOKEN`.
+A missing day stored as zero. A rolling 14-day total used as the effect. Stars used as the primary success. A second public string changed in the same window. A pre-cutoff day, including `2026-10-06`, counted as a baseline day. A traffic token reused from `gh` or `GITHUB_TOKEN`. An emergency product fix during the window that is still labeled as a clean baseline: mark that window `UNKNOWN` and restart stabilization. Product correctness outranks a clean window.

@@ -2,7 +2,9 @@
 
 Status: `APPROVAL_REQUIRED_FUNCTIONAL`. Not applied. Not committed to whereToken.
 
-Public `main` and the v0.7.7 tree are `6948f7522a0a98d4f7d2619583e1b717b9363162`. The annotated tag object is `61850b5c1ab872d5b94972df6b7248648e7d1666`.
+When this packet was written, public main and the v0.7.7 tree were `6948f7522a0a98d4f7d2619583e1b717b9363162`. The annotated tag object is `61850b5c1ab872d5b94972df6b7248648e7d1666`. The tag was not moved.
+
+Stabilization on 2026-10-06 proceeded without this change. Public main is `cd3213d9d831207766295ed7515c7d8103a455d2`, and `Formula/wheretoken.rb` on that commit is still the v0.7.6 pin. The owner has not approved the bump. v0.7.6 remains a frozen confounder for the whole traffic window.
 
 ## Exact diff
 
@@ -42,4 +44,4 @@ Restore the two v0.7.6 lines. No tag move. No release.
 
 ## Not done
 
-The file was not edited. `brew install` was not run. This packet is not the growth treatment and it is not a baseline gate. While it stays unapplied, the formula URL is a frozen confounder for experiment 2.
+The file was not edited. `brew install` was not run. This packet is not the growth treatment and it is not a baseline gate. It stayed unapplied through the 2026-10-06 stabilization. While it stays unapplied, the v0.7.6 formula URL is a frozen confounder for experiment 2.

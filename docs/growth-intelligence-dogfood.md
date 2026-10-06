@@ -71,4 +71,8 @@ On 2026-10-04 the source review of `rainhuang0220/whereToken` at `6948f752` pre-
 
 ## Design review, 2026-10-05
 
-`wt-homepage` is `SUPERSEDED_BEFORE_TREATMENT` because `daily_unique_visitors` is counted before the About link can be seen. The replacement, still unpublished, is the GitHub description field in `docs/growth-experiment-wheretoken-2.md`. Lifecycle state is `PRE_BASELINE_STABILIZATION`. `stabilization_sha` is null. The in-repo formula packet is `docs/growth-approval-wheretoken-formula-v077.md` and was not applied. `build_plan` still does not name a channel.
+`wt-homepage` is `SUPERSEDED_BEFORE_TREATMENT` because `daily_unique_visitors` is counted before the About link can be seen. The replacement, still unpublished, is the GitHub description field in `docs/growth-experiment-wheretoken-2.md`. `build_plan` still does not name a channel.
+
+## Stabilization, 2026-10-06
+
+The static landing-page correction is on public main `cd3213d9d831207766295ed7515c7d8103a455d2` and on the live Pages HTML. `stabilization_sha` is that commit. `pages_verified_at` is `2026-10-06T20:07:01Z`. The description was not written. The final proposed sentence, still only in the experiment record, is `Local-first token usage analytics for coding agents · 你的 token 都花在哪`. Lifecycle is `READY_FOR_BASELINE`. The formula packet was not applied, so the in-repo v0.7.6 pin is a frozen confounder. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was unset, and `growth observe` was not run.
