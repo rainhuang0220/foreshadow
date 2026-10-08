@@ -76,3 +76,7 @@ On 2026-10-04 the source review of `rainhuang0220/whereToken` at `6948f752` pre-
 ## Stabilization, 2026-10-06
 
 The static landing-page correction is on public main `cd3213d9d831207766295ed7515c7d8103a455d2` and on the live Pages HTML. `stabilization_sha` is that commit. `pages_verified_at` is `2026-10-06T20:07:01Z`. The description was not written. The final proposed sentence, still only in the experiment record, is `Local-first token usage analytics for coding agents · 你的 token 都花在哪`. Lifecycle is `READY_FOR_BASELINE`. The formula packet was not applied, so the in-repo v0.7.6 pin is a frozen confounder. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was unset, and `growth observe` was not run.
+
+## Growth recovery, 2026-10-08
+
+`wt-description` is `SUPERSEDED_BY_GROWTH_RECOVERY` because no eligible baseline day was stored and the owner replaced the single-field plan with an observational sprint. The record is `docs/growth-recovery-wheretoken-2026-10-08.md`. Presentation changes are not a causal treatment. `build_plan` still does not name a channel. Formula v0.7.6 was not edited. No community post was published.

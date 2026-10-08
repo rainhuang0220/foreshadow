@@ -4,6 +4,8 @@ Recorded 2026-10-05. This replaces `docs/growth-experiment-wheretoken-1.md`, whi
 
 `gx-qualified-traffic-v1` in `build_plan` is unchanged. The planner stays channel-agnostic. This page is not a planner output and it is not `TREATMENT_APPLIED`.
 
+Status on 2026-10-08: `SUPERSEDED_BY_GROWTH_RECOVERY`. The sections below are the pre-registration as recorded on 2026-10-05 and the stabilization facts recorded on 2026-10-06. They were not rewritten. No eligible baseline day was stored before the supersession. The later description string is a presentation action inside `docs/growth-recovery-wheretoken-2026-10-08.md`, not a causal result of this experiment.
+
 ## Identity
 
 | Field | Value |
@@ -160,3 +162,9 @@ Once the cutoff exists, any of these moves between the first baseline day and th
 ## What would make a later result invalid
 
 A missing day stored as zero. A rolling 14-day total used as the effect. Stars used as the primary success. A second public string changed in the same window. A pre-cutoff day, including `2026-10-06`, counted as a baseline day. A traffic token reused from `gh` or `GITHUB_TOKEN`. An emergency product fix during the window that is still labeled as a clean baseline: mark that window `UNKNOWN` and restart stabilization. Product correctness outranks a clean window.
+
+## Superseded by the growth recovery sprint
+
+On 2026-10-08 the owner started an observational recovery sprint before any owner-traffic row existed. `FORESHADOW_OWNER_TRAFFIC_TOKEN` was still unset. `finalized_eligible_days` stayed 0. This experiment therefore never entered `BASELINE_COLLECTING` and has no outcome.
+
+The same day, public main moved and the description and homepage were written together with README and landing-page copy. That bundle cannot be attributed to one field. The phase is `SUPERSEDED_BY_GROWTH_RECOVERY`. The replacement record is `docs/growth-recovery-wheretoken-2026-10-08.md`. `treatment_applied` for this single-field experiment stays false.
